@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "radio-link-planner"
+version = "0.1.0"
+description = "Motor científico local para análise de enlaces terrestres VHF/UHF"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "Mario Pin" }
+]
+dependencies = [
+  "numpy>=2.0",
+  "pydantic>=2.10",
+]
+
+[project.optional-dependencies]
+plots = [
+  "matplotlib>=3.9",
+]
+geo = [
+  "rasterio>=1.4",
+]
+models = [
+  "Py1812 @ git+https://github.com/eeveetza/Py1812.git@a5205e6a65db27391a8ba79bd5a365e5391f9fdf",
+  "Py2001 @ git+https://github.com/eeveetza/Py2001.git@a4d61a056bad606d1147ff0c441511762ee9fb24",
+]
+dev = [
+  "pytest>=8.3",
+]
+
+[project.scripts]
+radio-link = "radiolink.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+markers = [
+  "reference: scientific reference tests requiring optional propagation models",
+]

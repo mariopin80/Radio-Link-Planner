@@ -1,0 +1,91 @@
+{
+  "schema_version": "0.1",
+  "name": "Morro do Jacu – Palmira",
+  "frequency_mhz": 146.0,
+  "polarization": "vertical",
+  "primary_mode": "FM",
+  "target_availability_percent": 70.0,
+  "terminal_a": {
+    "name": "Morro do Jacu",
+    "latitude_deg": -23.05570436,
+    "longitude_deg": -45.93130177,
+    "antenna_height_m": 2.0,
+    "antenna_gain_dbi": 2.0,
+    "line_loss_db": 1.0,
+    "tx_power_w": 45.0,
+    "receiver": {
+      "noise_figure_db": 6.0,
+      "external_noise_db": 0.0,
+      "threshold_overrides_dbm": {
+        "FM": -120.98
+      }
+    }
+  },
+  "terminal_b": {
+    "name": "Palmira",
+    "latitude_deg": -23.27871226,
+    "longitude_deg": -47.67718038,
+    "antenna_height_m": 8.0,
+    "antenna_gain_dbi": 9.0,
+    "line_loss_db": 2.0,
+    "tx_power_w": 45.0,
+    "receiver": {
+      "noise_figure_db": 6.0,
+      "external_noise_db": 0.0,
+      "threshold_overrides_dbm": {
+        "FM": -120.98
+      }
+    }
+  },
+  "terrain_profile": "../tests/reference/morro_jacu_palmira/terrain_profile.csv",
+  "terrain_source": "Copernicus GLO-30, COG tiles downloaded 2026-07-28",
+  "terrain_resolution_m": 30.0,
+  "clutter_included": false,
+  "environment": {
+    "effective_earth_k": 1.3333333333333333,
+    "itm_climate": 2,
+    "surface_refractivity_n": 301.0,
+    "ground_permittivity": 15.0,
+    "ground_conductivity_s_m": 0.005,
+    "itm_variability_mode": 1
+  },
+  "models": {
+    "itm": true,
+    "p1812": true,
+    "p2001": true,
+    "comparison_percent": 50.0,
+    "curve_percentiles": [
+      1.0,
+      5.0,
+      10.0,
+      20.0,
+      30.0,
+      40.0,
+      50.0,
+      60.0,
+      70.0,
+      80.0,
+      90.0,
+      95.0,
+      99.0
+    ]
+  },
+  "monte_carlo": {
+    "runs": 20000,
+    "seed": 20260728,
+    "uncertainty": {
+      "tx_power_sd_db": 0.5,
+      "antenna_gain_sd_db": 1.0,
+      "line_loss_sd_db": 0.25,
+      "receiver_threshold_sd_db": 1.0,
+      "pointing_loss_sd_db": 0.5,
+      "polarization_loss_sd_db": 0.5
+    }
+  },
+  "metadata": {
+    "reference_radio_mobile_loss_db": 169.73,
+    "reference_radio_mobile_received_dbm": -115.20,
+    "reference_radio_mobile_margin_db": 5.78,
+    "radio_mobile_precision_m": 90.1
+  }
+}

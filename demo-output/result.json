@@ -1,0 +1,2105 @@
+{
+  "schema_version": "0.1",
+  "engine_version": "0.1.0",
+  "generated_at_utc": "2026-07-29T02:16:33.554717+00:00",
+  "project": {
+    "schema_version": "0.1",
+    "name": "Morro do Jacu – Palmira",
+    "frequency_mhz": 146.0,
+    "polarization": "vertical",
+    "primary_mode": "FM",
+    "target_availability_percent": 70.0,
+    "terminal_a": {
+      "name": "Morro do Jacu",
+      "latitude_deg": -23.05570436,
+      "longitude_deg": -45.93130177,
+      "antenna_height_m": 2.0,
+      "antenna_gain_dbi": 2.0,
+      "line_loss_db": 1.0,
+      "tx_power_w": 45.0,
+      "receiver": {
+        "noise_figure_db": 6.0,
+        "external_noise_db": 0.0,
+        "threshold_overrides_dbm": {
+          "FM": -120.98
+        }
+      }
+    },
+    "terminal_b": {
+      "name": "Palmira",
+      "latitude_deg": -23.27871226,
+      "longitude_deg": -47.67718038,
+      "antenna_height_m": 8.0,
+      "antenna_gain_dbi": 9.0,
+      "line_loss_db": 2.0,
+      "tx_power_w": 45.0,
+      "receiver": {
+        "noise_figure_db": 6.0,
+        "external_noise_db": 0.0,
+        "threshold_overrides_dbm": {
+          "FM": -120.98
+        }
+      }
+    },
+    "terrain_profile": "../tests/reference/morro_jacu_palmira/terrain_profile.csv",
+    "terrain_source": "Copernicus GLO-30, COG tiles downloaded 2026-07-28",
+    "terrain_resolution_m": 30.0,
+    "clutter_included": false,
+    "environment": {
+      "effective_earth_k": 1.3333333333333333,
+      "itm_climate": 2,
+      "surface_refractivity_n": 301.0,
+      "ground_permittivity": 15.0,
+      "ground_conductivity_s_m": 0.005,
+      "itm_variability_mode": 1
+    },
+    "models": {
+      "itm": true,
+      "p1812": true,
+      "p2001": true,
+      "comparison_percent": 50.0,
+      "curve_percentiles": [
+        1.0,
+        5.0,
+        10.0,
+        20.0,
+        30.0,
+        40.0,
+        50.0,
+        60.0,
+        70.0,
+        80.0,
+        90.0,
+        95.0,
+        99.0
+      ]
+    },
+    "monte_carlo": {
+      "runs": 20000,
+      "seed": 20260728,
+      "uncertainty": {
+        "tx_power_sd_db": 0.5,
+        "antenna_gain_sd_db": 1.0,
+        "line_loss_sd_db": 0.25,
+        "receiver_threshold_sd_db": 1.0,
+        "pointing_loss_sd_db": 0.5,
+        "polarization_loss_sd_db": 0.5
+      }
+    },
+    "metadata": {
+      "reference_radio_mobile_loss_db": 169.73,
+      "reference_radio_mobile_received_dbm": -115.2,
+      "reference_radio_mobile_margin_db": 5.78,
+      "radio_mobile_precision_m": 90.1
+    }
+  },
+  "traceability": {
+    "terrain_sha256": "01acb399bfedd326365f20faddff9e99e4adb000a23198821e8aecf21c5ddefe",
+    "terrain_reference": "../tests/reference/morro_jacu_palmira/terrain_profile.csv",
+    "terrain_point_count": 6007,
+    "terrain_nominal_step_m": 30.00191891441892
+  },
+  "geometry": {
+    "geodesic_distance_km": 180.19152498865117,
+    "profile_distance_km": 180.191525,
+    "distance_error_percent": 6.298222995967953e-09,
+    "bearing_a_to_b_deg": 261.74724820232433,
+    "bearing_b_to_a_deg": 82.43415066123623,
+    "wavelength_m": 2.053373,
+    "maximum_earth_bulge_m": 477.78421019778744,
+    "maximum_fresnel_radius_m": 304.13829595425216,
+    "worst_clearance_m": -558.7807075017347,
+    "worst_obstruction_m": 558.7807075017347,
+    "worst_obstruction_distance_km": 40.892615,
+    "terrain_above_direct_ray_percent": 81.65473614116864,
+    "fresnel_60_obstructed_percent": 90.1781255202264,
+    "horizon_from_a_km": 179.95151,
+    "horizon_from_b_km": 180.191525
+  },
+  "free_space_loss_db": 120.84952733220233,
+  "directions": {
+    "a_to_b": {
+      "transmitter": "Morro do Jacu",
+      "receiver": "Palmira",
+      "mode_thresholds": {
+        "FM": {
+          "mode_id": "FM",
+          "threshold_dbm": -120.98,
+          "source": "receiver_override"
+        },
+        "SSB": {
+          "mode_id": "SSB",
+          "label": "SSB voz",
+          "bandwidth_hz": 2400.0,
+          "required_snr_db": 6.0,
+          "notes": "nível aproximado para inteligibilidade",
+          "threshold_dbm": -128.19788758288394,
+          "source": "thermal_noise_budget",
+          "noise_figure_db": 6.0,
+          "external_noise_db": 0.0
+        },
+        "CW": {
+          "mode_id": "CW",
+          "label": "CW 500 Hz",
+          "bandwidth_hz": 500.0,
+          "required_snr_db": -3.0,
+          "notes": "operador e filtro influenciam fortemente",
+          "threshold_dbm": -144.0102999566398,
+          "source": "thermal_noise_budget",
+          "noise_figure_db": 6.0,
+          "external_noise_db": 0.0
+        },
+        "APRS": {
+          "mode_id": "APRS",
+          "label": "APRS 1200 AFSK",
+          "bandwidth_hz": 12000.0,
+          "required_snr_db": 9.0,
+          "notes": "preset inicial; modem e desvio de áudio importam",
+          "threshold_dbm": -118.20818753952375,
+          "source": "thermal_noise_budget",
+          "noise_figure_db": 6.0,
+          "external_noise_db": 0.0
+        },
+        "LORA_SF7": {
+          "mode_id": "LORA_SF7",
+          "label": "LoRa 125 kHz SF7",
+          "bandwidth_hz": 125000.0,
+          "required_snr_db": -7.5,
+          "notes": "depende do chipset e da taxa de código",
+          "threshold_dbm": -124.53089986991944,
+          "source": "thermal_noise_budget",
+          "noise_figure_db": 6.0,
+          "external_noise_db": 0.0
+        },
+        "LORA_SF12": {
+          "mode_id": "LORA_SF12",
+          "label": "LoRa 125 kHz SF12",
+          "bandwidth_hz": 125000.0,
+          "required_snr_db": -20.0,
+          "notes": "depende do chipset, taxa de código e tempo no ar",
+          "threshold_dbm": -137.03089986991944,
+          "source": "thermal_noise_budget",
+          "noise_figure_db": 6.0,
+          "external_noise_db": 0.0
+        }
+      },
+      "comparison_percent": 50.0,
+      "comparison_models": [
+        {
+          "model_id": "itm",
+          "model_name": "NTIA ITS Irregular Terrain Model",
+          "model_version": "1.3 (183ad95bd813)",
+          "status": "ok",
+          "direction": "a_to_b",
+          "loss_db": 164.88393940614947,
+          "percentile": 50.0,
+          "percentile_meaning": "reliability_percent",
+          "mechanism": "diffraction",
+          "warnings": [],
+          "details": {
+            "confidence_percent": 50.0,
+            "warning_bitmask": 0,
+            "free_space_loss_db": 120.85174433220232,
+            "reference_attenuation_db": 45.99983387560702,
+            "terrain_irregularity_m": 258.7451868248488,
+            "horizon_distance_tx_km": 28.291809536296824,
+            "horizon_distance_rx_km": 56.703626748261755,
+            "surface_refractivity_n": 277.7025865514953,
+            "native_library_filename": "libitm.so",
+            "native_library_sha256": "5fab04b7b055eb565ad11dcdd8dbea2cea3db3f32d23d4d8d5a47da7a0de08b1"
+          }
+        },
+        {
+          "model_id": "p1812",
+          "model_name": "ITU-R P.1812-8",
+          "model_version": "6.1",
+          "status": "ok",
+          "direction": "a_to_b",
+          "loss_db": 171.23501212467372,
+          "percentile": 50.0,
+          "percentile_meaning": "time_percent_loss_not_exceeded",
+          "mechanism": "combined_path_specific",
+          "warnings": [],
+          "details": {
+            "field_strength_dbuv_m": 11.412044991015051
+          }
+        },
+        {
+          "model_id": "p2001",
+          "model_name": "ITU-R P.2001-6",
+          "model_version": "4.0",
+          "status": "ok",
+          "direction": "a_to_b",
+          "loss_db": 175.49382517023372,
+          "percentile": 50.0,
+          "percentile_meaning": "time_percent_loss_not_exceeded",
+          "mechanism": "wide_range_combined",
+          "warnings": [],
+          "details": {
+            "note": "terminal antenna gains are also inputs to the troposcatter aperture-coupling term"
+          }
+        }
+      ],
+      "target_availability_percent": 70.0,
+      "design_models": [
+        {
+          "model_id": "itm",
+          "model_name": "NTIA ITS Irregular Terrain Model",
+          "model_version": "1.3 (183ad95bd813)",
+          "status": "ok",
+          "direction": "a_to_b",
+          "loss_db": 168.36555582889633,
+          "percentile": 70.0,
+          "percentile_meaning": "reliability_percent",
+          "mechanism": "diffraction",
+          "warnings": [],
+          "details": {
+            "confidence_percent": 50.0,
+            "warning_bitmask": 0,
+            "free_space_loss_db": 120.85174433220232,
+            "reference_attenuation_db": 45.99983387560702,
+            "terrain_irregularity_m": 258.7451868248488,
+            "horizon_distance_tx_km": 28.291809536296824,
+            "horizon_distance_rx_km": 56.703626748261755,
+            "surface_refractivity_n": 277.7025865514953,
+            "native_library_filename": "libitm.so",
+            "native_library_sha256": "5fab04b7b055eb565ad11dcdd8dbea2cea3db3f32d23d4d8d5a47da7a0de08b1"
+          }
+        },
+        {
+          "model_id": "p1812",
+          "model_name": "ITU-R P.1812-8",
+          "model_version": "6.1",
+          "status": "ok",
+          "direction": "a_to_b",
+          "loss_db": 171.23501212467372,
+          "percentile": 50.0,
+          "percentile_meaning": "time_percent_loss_not_exceeded",
+          "mechanism": "combined_path_specific",
+          "warnings": [],
+          "details": {
+            "field_strength_dbuv_m": 11.412044991015051
+          }
+        },
+        {
+          "model_id": "p2001",
+          "model_name": "ITU-R P.2001-6",
+          "model_version": "4.0",
+          "status": "ok",
+          "direction": "a_to_b",
+          "loss_db": 177.33593312264875,
+          "percentile": 70.0,
+          "percentile_meaning": "time_percent_loss_not_exceeded",
+          "mechanism": "wide_range_combined",
+          "warnings": [],
+          "details": {
+            "note": "terminal antenna gains are also inputs to the troposcatter aperture-coupling term"
+          }
+        }
+      ],
+      "quantile_curves": {
+        "itm": {
+          "model_id": "itm",
+          "direction": "a_to_b",
+          "percentiles": [
+            1.0,
+            5.0,
+            10.0,
+            20.0,
+            30.0,
+            40.0,
+            50.0,
+            60.0,
+            70.0,
+            80.0,
+            90.0,
+            95.0,
+            99.0
+          ],
+          "loss_db": [
+            138.50609007949447,
+            145.96456872598,
+            150.14449560677429,
+            155.20747375681003,
+            158.85809602035613,
+            161.97529224329853,
+            164.88393940614947,
+            166.56450204237407,
+            168.36555582889633,
+            170.4748125104412,
+            173.40010018596854,
+            175.81517843308706,
+            180.34374160274572
+          ],
+          "percentile_meaning": "reliability_percent",
+          "complete_annual_distribution": true,
+          "warnings": []
+        },
+        "p1812": {
+          "model_id": "p1812",
+          "direction": "a_to_b",
+          "percentiles": [
+            1.0,
+            5.0,
+            10.0,
+            20.0,
+            30.0,
+            40.0,
+            50.0
+          ],
+          "loss_db": [
+            154.59334310580823,
+            157.06357870457867,
+            159.0749182618738,
+            164.18566270655148,
+            167.07233680779038,
+            169.09548668857445,
+            171.23501212467372
+          ],
+          "percentile_meaning": "time_percent_loss_not_exceeded",
+          "complete_annual_distribution": false,
+          "warnings": [
+            "P.1812 curve ends at 50%; annual availability is not inferred"
+          ]
+        },
+        "p2001": {
+          "model_id": "p2001",
+          "direction": "a_to_b",
+          "percentiles": [
+            1.0,
+            5.0,
+            10.0,
+            20.0,
+            30.0,
+            40.0,
+            50.0,
+            60.0,
+            70.0,
+            80.0,
+            90.0,
+            95.0,
+            99.0
+          ],
+          "loss_db": [
+            151.02741403065207,
+            165.1432238662232,
+            167.8488118892741,
+            170.59097622254575,
+            172.4287172745551,
+            173.93537429032773,
+            175.49382517023372,
+            176.47846861132743,
+            177.33593312264875,
+            178.43773423600757,
+            180.2644245068922,
+            182.12932696293632,
+            186.8114657807666
+          ],
+          "percentile_meaning": "time_percent_loss_not_exceeded",
+          "complete_annual_distribution": true,
+          "warnings": []
+        }
+      },
+      "link_budgets": [
+        {
+          "direction": "a_to_b",
+          "model_id": "itm",
+          "percentile": 70.0,
+          "tx_power_dbm": 46.53212513775344,
+          "tx_antenna_gain_dbi": 2.0,
+          "tx_line_loss_db": 1.0,
+          "path_loss_db": 168.36555582889633,
+          "rx_antenna_gain_dbi": 9.0,
+          "rx_line_loss_db": 2.0,
+          "received_power_dbm": -113.8334306911429,
+          "mode": "FM",
+          "receiver_threshold_dbm": -120.98,
+          "fade_margin_db": 7.14656930885711
+        },
+        {
+          "direction": "a_to_b",
+          "model_id": "p1812",
+          "percentile": 50.0,
+          "tx_power_dbm": 46.53212513775344,
+          "tx_antenna_gain_dbi": 2.0,
+          "tx_line_loss_db": 1.0,
+          "path_loss_db": 171.23501212467372,
+          "rx_antenna_gain_dbi": 9.0,
+          "rx_line_loss_db": 2.0,
+          "received_power_dbm": -116.70288698692028,
+          "mode": "FM",
+          "receiver_threshold_dbm": -120.98,
+          "fade_margin_db": 4.2771130130797275
+        },
+        {
+          "direction": "a_to_b",
+          "model_id": "p2001",
+          "percentile": 70.0,
+          "tx_power_dbm": 46.53212513775344,
+          "tx_antenna_gain_dbi": 2.0,
+          "tx_line_loss_db": 1.0,
+          "path_loss_db": 177.33593312264875,
+          "rx_antenna_gain_dbi": 9.0,
+          "rx_line_loss_db": 2.0,
+          "received_power_dbm": -122.80380798489531,
+          "mode": "FM",
+          "receiver_threshold_dbm": -120.98,
+          "fade_margin_db": -1.8238079848953106
+        }
+      ],
+      "monte_carlo": [
+        {
+          "model_id": "itm",
+          "direction": "a_to_b",
+          "runs": 20000,
+          "seed": 1974360585664554642,
+          "temporal_sampling": "model_temporal_quantile_curve",
+          "received_power_p05_dbm": -121.9601781776082,
+          "received_power_p50_dbm": -110.74397791571747,
+          "received_power_p95_dbm": -92.58815013034877,
+          "mode_results": [
+            {
+              "mode": "FM",
+              "threshold_dbm": -120.98,
+              "success_probability_percent": 92.855,
+              "margin_p05_db": -1.1273227149601848,
+              "margin_p50_db": 10.34999281383297,
+              "margin_p95_db": 28.537384739015906
+            },
+            {
+              "mode": "SSB",
+              "threshold_dbm": -128.19788758288394,
+              "success_probability_percent": 99.815,
+              "margin_p05_db": 6.0905648679237485,
+              "margin_p50_db": 17.5678803967169,
+              "margin_p95_db": 35.75527232189984
+            },
+            {
+              "mode": "CW",
+              "threshold_dbm": -144.0102999566398,
+              "success_probability_percent": 100.0,
+              "margin_p05_db": 21.902977241679626,
+              "margin_p50_db": 33.38029277047277,
+              "margin_p95_db": 51.567684695655714
+            },
+            {
+              "mode": "APRS",
+              "threshold_dbm": -118.20818753952375,
+              "success_probability_percent": 85.075,
+              "margin_p05_db": -3.89913517543644,
+              "margin_p50_db": 7.578180353356714,
+              "margin_p95_db": 25.76557227853965
+            },
+            {
+              "mode": "LORA_SF7",
+              "threshold_dbm": -124.53089986991944,
+              "success_probability_percent": 97.86,
+              "margin_p05_db": 2.423577154959249,
+              "margin_p50_db": 13.900892683752403,
+              "margin_p95_db": 32.08828460893534
+            },
+            {
+              "mode": "LORA_SF12",
+              "threshold_dbm": -137.03089986991944,
+              "success_probability_percent": 100.0,
+              "margin_p05_db": 14.923577154959249,
+              "margin_p50_db": 26.400892683752396,
+              "margin_p95_db": 44.58828460893534
+            }
+          ],
+          "sensitivity": [
+            {
+              "factor": "propagation_loss",
+              "correlation_with_margin": 0.9776782802704113,
+              "absolute_correlation": 0.9776782802704113
+            },
+            {
+              "factor": "rx_antenna_gain",
+              "correlation_with_margin": 0.1264841177505307,
+              "absolute_correlation": 0.1264841177505307
+            },
+            {
+              "factor": "receiver_threshold",
+              "correlation_with_margin": 0.12483903011469037,
+              "absolute_correlation": 0.12483903011469037
+            },
+            {
+              "factor": "tx_antenna_gain",
+              "correlation_with_margin": 0.11478358443453837,
+              "absolute_correlation": 0.11478358443453837
+            },
+            {
+              "factor": "tx_power",
+              "correlation_with_margin": 0.05736615547045204,
+              "absolute_correlation": 0.05736615547045204
+            },
+            {
+              "factor": "pointing_loss",
+              "correlation_with_margin": 0.033523366597229175,
+              "absolute_correlation": 0.033523366597229175
+            },
+            {
+              "factor": "rx_line_loss",
+              "correlation_with_margin": 0.029052804524063083,
+              "absolute_correlation": 0.029052804524063083
+            },
+            {
+              "factor": "tx_line_loss",
+              "correlation_with_margin": 0.027919443435153242,
+              "absolute_correlation": 0.027919443435153242
+            }
+          ],
+          "histogram_edges_dbm": [
+            -130.56455123091666,
+            -129.5494510238757,
+            -128.53435081683472,
+            -127.51925060979373,
+            -126.50415040275276,
+            -125.48905019571178,
+            -124.4739499886708,
+            -123.45884978162982,
+            -122.44374957458885,
+            -121.42864936754788,
+            -120.41354916050689,
+            -119.39844895346592,
+            -118.38334874642494,
+            -117.36824853938396,
+            -116.35314833234298,
+            -115.33804812530201,
+            -114.32294791826104,
+            -113.30784771122005,
+            -112.29274750417908,
+            -111.2776472971381,
+            -110.26254709009712,
+            -109.24744688305614,
+            -108.23234667601517,
+            -107.2172464689742,
+            -106.20214626193321,
+            -105.18704605489224,
+            -104.17194584785126,
+            -103.15684564081027,
+            -102.1417454337693,
+            -101.12664522672833,
+            -100.11154501968736,
+            -99.09644481264637,
+            -98.0813446056054,
+            -97.06624439856441,
+            -96.05114419152343,
+            -95.03604398448246,
+            -94.02094377744149,
+            -93.00584357040051,
+            -91.99074336335954,
+            -90.97564315631855,
+            -89.96054294927758,
+            -88.9454427422366,
+            -87.93034253519562,
+            -86.91524232815465,
+            -85.90014212111367,
+            -84.8850419140727,
+            -83.86994170703171,
+            -82.85484149999074,
+            -81.83974129294975,
+            -80.82464108590878,
+            -79.80954087886781
+          ],
+          "histogram_counts": [
+            4,
+            4,
+            46,
+            60,
+            134,
+            174,
+            207,
+            235,
+            325,
+            485,
+            535,
+            638,
+            727,
+            788,
+            930,
+            1025,
+            1097,
+            1051,
+            1028,
+            897,
+            814,
+            784,
+            686,
+            656,
+            625,
+            608,
+            551,
+            542,
+            516,
+            484,
+            396,
+            373,
+            409,
+            354,
+            278,
+            238,
+            217,
+            186,
+            158,
+            152,
+            126,
+            110,
+            106,
+            91,
+            77,
+            48,
+            13,
+            9,
+            2,
+            1
+          ],
+          "warnings": []
+        },
+        {
+          "model_id": "p1812",
+          "direction": "a_to_b",
+          "runs": 20000,
+          "seed": 4183034719660155218,
+          "temporal_sampling": "conditional_fixed_quantile",
+          "received_power_p05_dbm": -120.14094418107199,
+          "received_power_p50_dbm": -117.49015133546108,
+          "received_power_p95_dbm": -114.8679571304212,
+          "mode_results": [
+            {
+              "mode": "FM",
+              "threshold_dbm": -120.98,
+              "success_probability_percent": 96.625,
+              "margin_p05_db": 0.3582958658637545,
+              "margin_p50_db": 3.4774957280542935,
+              "margin_p95_db": 6.599833429821481
+            },
+            {
+              "mode": "SSB",
+              "threshold_dbm": -128.19788758288394,
+              "success_probability_percent": 100.0,
+              "margin_p05_db": 7.576183448747701,
+              "margin_p50_db": 10.695383310938219,
+              "margin_p95_db": 13.8177210127054
+            },
+            {
+              "mode": "CW",
+              "threshold_dbm": -144.0102999566398,
+              "success_probability_percent": 100.0,
+              "margin_p05_db": 23.388595822503575,
+              "margin_p50_db": 26.507795684694102,
+              "margin_p95_db": 29.630133386461274
+            },
+            {
+              "mode": "APRS",
+              "threshold_dbm": -118.20818753952375,
+              "success_probability_percent": 64.715,
+              "margin_p05_db": -2.4135165946125006,
+              "margin_p50_db": 0.7056832675780385,
+              "margin_p95_db": 3.8280209693452254
+            },
+            {
+              "mode": "LORA_SF7",
+              "threshold_dbm": -124.53089986991944,
+              "success_probability_percent": 99.99,
+              "margin_p05_db": 3.909195735783188,
+              "margin_p50_db": 7.028395597973727,
+              "margin_p95_db": 10.150733299740914
+            },
+            {
+              "mode": "LORA_SF12",
+              "threshold_dbm": -137.03089986991944,
+              "success_probability_percent": 100.0,
+              "margin_p05_db": 16.4091957357832,
+              "margin_p50_db": 19.528395597973727,
+              "margin_p95_db": 22.6507332997409
+            }
+          ],
+          "sensitivity": [
+            {
+              "factor": "receiver_threshold",
+              "correlation_with_margin": 0.5362561044162006,
+              "absolute_correlation": 0.5362561044162006
+            },
+            {
+              "factor": "tx_antenna_gain",
+              "correlation_with_margin": 0.5306946194076565,
+              "absolute_correlation": 0.5306946194076565
+            },
+            {
+              "factor": "rx_antenna_gain",
+              "correlation_with_margin": 0.5274398150006068,
+              "absolute_correlation": 0.5274398150006068
+            },
+            {
+              "factor": "tx_power",
+              "correlation_with_margin": 0.2622328821449505,
+              "absolute_correlation": 0.2622328821449505
+            },
+            {
+              "factor": "polarization_loss",
+              "correlation_with_margin": 0.15845252077103744,
+              "absolute_correlation": 0.15845252077103744
+            },
+            {
+              "factor": "pointing_loss",
+              "correlation_with_margin": 0.1499890271533837,
+              "absolute_correlation": 0.1499890271533837
+            },
+            {
+              "factor": "tx_line_loss",
+              "correlation_with_margin": 0.14390426989943286,
+              "absolute_correlation": 0.14390426989943286
+            },
+            {
+              "factor": "rx_line_loss",
+              "correlation_with_margin": 0.1325138479846214,
+              "absolute_correlation": 0.1325138479846214
+            }
+          ],
+          "histogram_edges_dbm": [
+            -123.9791131528054,
+            -123.72388205636699,
+            -123.46865095992857,
+            -123.21341986349016,
+            -122.95818876705175,
+            -122.70295767061333,
+            -122.44772657417492,
+            -122.19249547773651,
+            -121.93726438129809,
+            -121.68203328485968,
+            -121.42680218842128,
+            -121.17157109198286,
+            -120.91633999554445,
+            -120.66110889910604,
+            -120.40587780266762,
+            -120.15064670622921,
+            -119.8954156097908,
+            -119.6401845133524,
+            -119.38495341691397,
+            -119.12972232047557,
+            -118.87449122403716,
+            -118.61926012759874,
+            -118.36402903116033,
+            -118.10879793472192,
+            -117.8535668382835,
+            -117.59833574184509,
+            -117.34310464540668,
+            -117.08787354896826,
+            -116.83264245252985,
+            -116.57741135609145,
+            -116.32218025965302,
+            -116.06694916321462,
+            -115.81171806677621,
+            -115.55648697033779,
+            -115.30125587389938,
+            -115.04602477746097,
+            -114.79079368102256,
+            -114.53556258458414,
+            -114.28033148814573,
+            -114.02510039170733,
+            -113.7698692952689,
+            -113.5146381988305,
+            -113.25940710239209,
+            -113.00417600595367,
+            -112.74894490951526,
+            -112.49371381307685,
+            -112.23848271663843,
+            -111.98325162020002,
+            -111.72802052376161,
+            -111.47278942732319,
+            -111.21755833088478
+          ],
+          "histogram_counts": [
+            1,
+            0,
+            3,
+            4,
+            2,
+            8,
+            17,
+            20,
+            38,
+            41,
+            69,
+            126,
+            159,
+            227,
+            278,
+            358,
+            455,
+            600,
+            666,
+            815,
+            928,
+            986,
+            1143,
+            1196,
+            1338,
+            1278,
+            1273,
+            1215,
+            1123,
+            1043,
+            868,
+            804,
+            670,
+            558,
+            451,
+            331,
+            272,
+            199,
+            133,
+            92,
+            85,
+            53,
+            24,
+            17,
+            10,
+            7,
+            6,
+            4,
+            3,
+            3
+          ],
+          "warnings": [
+            "result is conditional on one propagation quantile, not annual availability"
+          ]
+        },
+        {
+          "model_id": "p2001",
+          "direction": "a_to_b",
+          "runs": 20000,
+          "seed": 1263981897963826229,
+          "temporal_sampling": "model_temporal_quantile_curve",
+          "received_power_p05_dbm": -128.66690480262497,
+          "received_power_p50_dbm": -121.53422582841529,
+          "received_power_p95_dbm": -111.31808355690562,
+          "mode_results": [
+            {
+              "mode": "FM",
+              "threshold_dbm": -120.98,
+              "success_probability_percent": 45.955,
+              "margin_p05_db": -7.840976705359283,
+              "margin_p50_db": -0.5187423751256333,
+              "margin_p95_db": 9.931567813655226
+            },
+            {
+              "mode": "SSB",
+              "threshold_dbm": -128.19788758288394,
+              "success_probability_percent": 93.565,
+              "margin_p05_db": -0.6230891224753505,
+              "margin_p50_db": 6.699145207758299,
+              "margin_p95_db": 17.14945539653917
+            },
+            {
+              "mode": "CW",
+              "threshold_dbm": -144.0102999566398,
+              "success_probability_percent": 100.0,
+              "margin_p05_db": 15.189323251280525,
+              "margin_p50_db": 22.511557581514175,
+              "margin_p95_db": 32.96186777029505
+            },
+            {
+              "mode": "APRS",
+              "threshold_dbm": -118.20818753952375,
+              "success_probability_percent": 27.675,
+              "margin_p05_db": -10.612789165835538,
+              "margin_p50_db": -3.2905548356018883,
+              "margin_p95_db": 7.159755353178971
+            },
+            {
+              "mode": "LORA_SF7",
+              "threshold_dbm": -124.53089986991944,
+              "success_probability_percent": 75.405,
+              "margin_p05_db": -4.29007683543985,
+              "margin_p50_db": 3.0321574947938004,
+              "margin_p95_db": 13.48246768357466
+            },
+            {
+              "mode": "LORA_SF12",
+              "threshold_dbm": -137.03089986991944,
+              "success_probability_percent": 99.985,
+              "margin_p05_db": 8.20992316456015,
+              "margin_p50_db": 15.5321574947938,
+              "margin_p95_db": 25.982467683574672
+            }
+          ],
+          "sensitivity": [
+            {
+              "factor": "propagation_loss",
+              "correlation_with_margin": 0.9443795463419985,
+              "absolute_correlation": 0.9443795463419985
+            },
+            {
+              "factor": "receiver_threshold",
+              "correlation_with_margin": 0.17144982508892725,
+              "absolute_correlation": 0.17144982508892725
+            },
+            {
+              "factor": "tx_antenna_gain",
+              "correlation_with_margin": 0.17119750079827584,
+              "absolute_correlation": 0.17119750079827584
+            },
+            {
+              "factor": "rx_antenna_gain",
+              "correlation_with_margin": 0.1673382975400884,
+              "absolute_correlation": 0.1673382975400884
+            },
+            {
+              "factor": "tx_power",
+              "correlation_with_margin": 0.08578985178583641,
+              "absolute_correlation": 0.08578985178583641
+            },
+            {
+              "factor": "polarization_loss",
+              "correlation_with_margin": 0.04691152652691542,
+              "absolute_correlation": 0.04691152652691542
+            },
+            {
+              "factor": "tx_line_loss",
+              "correlation_with_margin": 0.046751147767355235,
+              "absolute_correlation": 0.046751147767355235
+            },
+            {
+              "factor": "pointing_loss",
+              "correlation_with_margin": 0.03938547599532258,
+              "absolute_correlation": 0.03938547599532258
+            }
+          ],
+          "histogram_edges_dbm": [
+            -138.97556407988958,
+            -138.06136013096364,
+            -137.14715618203766,
+            -136.23295223311172,
+            -135.31874828418574,
+            -134.4045443352598,
+            -133.49034038633383,
+            -132.57613643740788,
+            -131.6619324884819,
+            -130.74772853955596,
+            -129.83352459063,
+            -128.91932064170405,
+            -128.00511669277807,
+            -127.09091274385213,
+            -126.17670879492617,
+            -125.26250484600021,
+            -124.34830089707425,
+            -123.4340969481483,
+            -122.51989299922235,
+            -121.60568905029638,
+            -120.69148510137043,
+            -119.77728115244447,
+            -118.86307720351851,
+            -117.94887325459256,
+            -117.0346693056666,
+            -116.12046535674064,
+            -115.20626140781468,
+            -114.29205745888872,
+            -113.37785350996276,
+            -112.4636495610368,
+            -111.54944561211084,
+            -110.6352416631849,
+            -109.72103771425893,
+            -108.80683376533298,
+            -107.89262981640702,
+            -106.97842586748106,
+            -106.0642219185551,
+            -105.15001796962915,
+            -104.23581402070319,
+            -103.32161007177723,
+            -102.40740612285127,
+            -101.49320217392531,
+            -100.57899822499937,
+            -99.6647942760734,
+            -98.75059032714745,
+            -97.83638637822148,
+            -96.92218242929553,
+            -96.00797848036956,
+            -95.09377453144361,
+            -94.17957058251766,
+            -93.2653666335917
+          ],
+          "histogram_counts": [
+            1,
+            0,
+            2,
+            3,
+            18,
+            47,
+            72,
+            108,
+            163,
+            212,
+            278,
+            397,
+            577,
+            875,
+            1004,
+            1346,
+            1545,
+            1623,
+            1614,
+            1464,
+            1274,
+            1221,
+            1009,
+            900,
+            814,
+            648,
+            625,
+            486,
+            358,
+            261,
+            183,
+            117,
+            86,
+            59,
+            53,
+            53,
+            56,
+            57,
+            40,
+            58,
+            61,
+            56,
+            42,
+            44,
+            45,
+            23,
+            14,
+            6,
+            0,
+            2
+          ],
+          "warnings": []
+        }
+      ],
+      "assessment": {
+        "classification": "marginal",
+        "confidence": "low",
+        "model_spread_db": 10.609885764084254,
+        "limiting_factors": [
+          "deep_terrain_obstruction",
+          "first_fresnel_zone_obstructed",
+          "strong_model_divergence",
+          "small_or_negative_fade_margin"
+        ],
+        "uncertainties": [
+          "vegetação e edificações não estão representadas",
+          "o ruído local do receptor ainda não foi medido",
+          "erros verticais do DEM não são amostrados no Monte Carlo 0.1"
+        ],
+        "recommendations": [
+          {
+            "action": "usar SSB quando isso for operacionalmente aceitável",
+            "estimated_margin_improvement_db": 7.217887582883932,
+            "basis": "modelo de ruído configurado para o receptor"
+          },
+          {
+            "action": "aumentar o ganho da antena de Morro do Jacu para 9 dBi",
+            "estimated_margin_improvement_db": 7.0,
+            "basis": "ganho direto no orçamento do enlace"
+          },
+          {
+            "action": "reduzir cada perda de linha para aproximadamente 0,5 dB",
+            "estimated_margin_improvement_db": 2.0,
+            "basis": "redução direta no orçamento do enlace"
+          }
+        ]
+      }
+    },
+    "b_to_a": {
+      "transmitter": "Palmira",
+      "receiver": "Morro do Jacu",
+      "mode_thresholds": {
+        "FM": {
+          "mode_id": "FM",
+          "threshold_dbm": -120.98,
+          "source": "receiver_override"
+        },
+        "SSB": {
+          "mode_id": "SSB",
+          "label": "SSB voz",
+          "bandwidth_hz": 2400.0,
+          "required_snr_db": 6.0,
+          "notes": "nível aproximado para inteligibilidade",
+          "threshold_dbm": -128.19788758288394,
+          "source": "thermal_noise_budget",
+          "noise_figure_db": 6.0,
+          "external_noise_db": 0.0
+        },
+        "CW": {
+          "mode_id": "CW",
+          "label": "CW 500 Hz",
+          "bandwidth_hz": 500.0,
+          "required_snr_db": -3.0,
+          "notes": "operador e filtro influenciam fortemente",
+          "threshold_dbm": -144.0102999566398,
+          "source": "thermal_noise_budget",
+          "noise_figure_db": 6.0,
+          "external_noise_db": 0.0
+        },
+        "APRS": {
+          "mode_id": "APRS",
+          "label": "APRS 1200 AFSK",
+          "bandwidth_hz": 12000.0,
+          "required_snr_db": 9.0,
+          "notes": "preset inicial; modem e desvio de áudio importam",
+          "threshold_dbm": -118.20818753952375,
+          "source": "thermal_noise_budget",
+          "noise_figure_db": 6.0,
+          "external_noise_db": 0.0
+        },
+        "LORA_SF7": {
+          "mode_id": "LORA_SF7",
+          "label": "LoRa 125 kHz SF7",
+          "bandwidth_hz": 125000.0,
+          "required_snr_db": -7.5,
+          "notes": "depende do chipset e da taxa de código",
+          "threshold_dbm": -124.53089986991944,
+          "source": "thermal_noise_budget",
+          "noise_figure_db": 6.0,
+          "external_noise_db": 0.0
+        },
+        "LORA_SF12": {
+          "mode_id": "LORA_SF12",
+          "label": "LoRa 125 kHz SF12",
+          "bandwidth_hz": 125000.0,
+          "required_snr_db": -20.0,
+          "notes": "depende do chipset, taxa de código e tempo no ar",
+          "threshold_dbm": -137.03089986991944,
+          "source": "thermal_noise_budget",
+          "noise_figure_db": 6.0,
+          "external_noise_db": 0.0
+        }
+      },
+      "comparison_percent": 50.0,
+      "comparison_models": [
+        {
+          "model_id": "itm",
+          "model_name": "NTIA ITS Irregular Terrain Model",
+          "model_version": "1.3 (183ad95bd813)",
+          "status": "ok",
+          "direction": "b_to_a",
+          "loss_db": 164.88393940614952,
+          "percentile": 50.0,
+          "percentile_meaning": "reliability_percent",
+          "mechanism": "diffraction",
+          "warnings": [],
+          "details": {
+            "confidence_percent": 50.0,
+            "warning_bitmask": 0,
+            "free_space_loss_db": 120.85174433220232,
+            "reference_attenuation_db": 45.99983387560707,
+            "terrain_irregularity_m": 258.74518682484216,
+            "horizon_distance_tx_km": 56.70362674825417,
+            "horizon_distance_rx_km": 28.291809536304406,
+            "surface_refractivity_n": 277.7025865514953,
+            "native_library_filename": "libitm.so",
+            "native_library_sha256": "5fab04b7b055eb565ad11dcdd8dbea2cea3db3f32d23d4d8d5a47da7a0de08b1"
+          }
+        },
+        {
+          "model_id": "p1812",
+          "model_name": "ITU-R P.1812-8",
+          "model_version": "6.1",
+          "status": "ok",
+          "direction": "b_to_a",
+          "loss_db": 171.23501205870664,
+          "percentile": 50.0,
+          "percentile_meaning": "time_percent_loss_not_exceeded",
+          "mechanism": "combined_path_specific",
+          "warnings": [],
+          "details": {
+            "field_strength_dbuv_m": 11.412045056982123
+          }
+        },
+        {
+          "model_id": "p2001",
+          "model_name": "ITU-R P.2001-6",
+          "model_version": "4.0",
+          "status": "ok",
+          "direction": "b_to_a",
+          "loss_db": 175.49382511549103,
+          "percentile": 50.0,
+          "percentile_meaning": "time_percent_loss_not_exceeded",
+          "mechanism": "wide_range_combined",
+          "warnings": [],
+          "details": {
+            "note": "terminal antenna gains are also inputs to the troposcatter aperture-coupling term"
+          }
+        }
+      ],
+      "target_availability_percent": 70.0,
+      "design_models": [
+        {
+          "model_id": "itm",
+          "model_name": "NTIA ITS Irregular Terrain Model",
+          "model_version": "1.3 (183ad95bd813)",
+          "status": "ok",
+          "direction": "b_to_a",
+          "loss_db": 168.3655558288964,
+          "percentile": 70.0,
+          "percentile_meaning": "reliability_percent",
+          "mechanism": "diffraction",
+          "warnings": [],
+          "details": {
+            "confidence_percent": 50.0,
+            "warning_bitmask": 0,
+            "free_space_loss_db": 120.85174433220232,
+            "reference_attenuation_db": 45.99983387560707,
+            "terrain_irregularity_m": 258.74518682484216,
+            "horizon_distance_tx_km": 56.70362674825417,
+            "horizon_distance_rx_km": 28.291809536304406,
+            "surface_refractivity_n": 277.7025865514953,
+            "native_library_filename": "libitm.so",
+            "native_library_sha256": "5fab04b7b055eb565ad11dcdd8dbea2cea3db3f32d23d4d8d5a47da7a0de08b1"
+          }
+        },
+        {
+          "model_id": "p1812",
+          "model_name": "ITU-R P.1812-8",
+          "model_version": "6.1",
+          "status": "ok",
+          "direction": "b_to_a",
+          "loss_db": 171.23501205870664,
+          "percentile": 50.0,
+          "percentile_meaning": "time_percent_loss_not_exceeded",
+          "mechanism": "combined_path_specific",
+          "warnings": [],
+          "details": {
+            "field_strength_dbuv_m": 11.412045056982123
+          }
+        },
+        {
+          "model_id": "p2001",
+          "model_name": "ITU-R P.2001-6",
+          "model_version": "4.0",
+          "status": "ok",
+          "direction": "b_to_a",
+          "loss_db": 177.33593304890894,
+          "percentile": 70.0,
+          "percentile_meaning": "time_percent_loss_not_exceeded",
+          "mechanism": "wide_range_combined",
+          "warnings": [],
+          "details": {
+            "note": "terminal antenna gains are also inputs to the troposcatter aperture-coupling term"
+          }
+        }
+      ],
+      "quantile_curves": {
+        "itm": {
+          "model_id": "itm",
+          "direction": "b_to_a",
+          "percentiles": [
+            1.0,
+            5.0,
+            10.0,
+            20.0,
+            30.0,
+            40.0,
+            50.0,
+            60.0,
+            70.0,
+            80.0,
+            90.0,
+            95.0,
+            99.0
+          ],
+          "loss_db": [
+            138.50609007949453,
+            145.96456872598006,
+            150.14449560677434,
+            155.2074737568101,
+            158.8580960203562,
+            161.97529224329858,
+            164.88393940614952,
+            166.56450204237413,
+            168.3655558288964,
+            170.47481251044127,
+            173.40010018596857,
+            175.8151784330871,
+            180.34374160274575
+          ],
+          "percentile_meaning": "reliability_percent",
+          "complete_annual_distribution": true,
+          "warnings": []
+        },
+        "p1812": {
+          "model_id": "p1812",
+          "direction": "b_to_a",
+          "percentiles": [
+            1.0,
+            5.0,
+            10.0,
+            20.0,
+            30.0,
+            40.0,
+            50.0
+          ],
+          "loss_db": [
+            154.59334308203762,
+            157.06357869544917,
+            159.0749181393679,
+            164.18566261457636,
+            167.072336732616,
+            169.0954866203129,
+            171.23501205870664
+          ],
+          "percentile_meaning": "time_percent_loss_not_exceeded",
+          "complete_annual_distribution": false,
+          "warnings": [
+            "P.1812 curve ends at 50%; annual availability is not inferred"
+          ]
+        },
+        "p2001": {
+          "model_id": "p2001",
+          "direction": "b_to_a",
+          "percentiles": [
+            1.0,
+            5.0,
+            10.0,
+            20.0,
+            30.0,
+            40.0,
+            50.0,
+            60.0,
+            70.0,
+            80.0,
+            90.0,
+            95.0,
+            99.0
+          ],
+          "loss_db": [
+            151.02741387910302,
+            165.14322380348446,
+            167.84881184401772,
+            170.59097617891862,
+            172.4287172297516,
+            173.93537424314528,
+            175.49382511549103,
+            176.47846854467343,
+            177.33593304890894,
+            178.43773415420662,
+            180.26442441274006,
+            182.1293268570293,
+            186.81146564869306
+          ],
+          "percentile_meaning": "time_percent_loss_not_exceeded",
+          "complete_annual_distribution": true,
+          "warnings": []
+        }
+      },
+      "link_budgets": [
+        {
+          "direction": "b_to_a",
+          "model_id": "itm",
+          "percentile": 70.0,
+          "tx_power_dbm": 46.53212513775344,
+          "tx_antenna_gain_dbi": 9.0,
+          "tx_line_loss_db": 2.0,
+          "path_loss_db": 168.3655558288964,
+          "rx_antenna_gain_dbi": 2.0,
+          "rx_line_loss_db": 1.0,
+          "received_power_dbm": -113.83343069114295,
+          "mode": "FM",
+          "receiver_threshold_dbm": -120.98,
+          "fade_margin_db": 7.146569308857053
+        },
+        {
+          "direction": "b_to_a",
+          "model_id": "p1812",
+          "percentile": 50.0,
+          "tx_power_dbm": 46.53212513775344,
+          "tx_antenna_gain_dbi": 9.0,
+          "tx_line_loss_db": 2.0,
+          "path_loss_db": 171.23501205870664,
+          "rx_antenna_gain_dbi": 2.0,
+          "rx_line_loss_db": 1.0,
+          "received_power_dbm": -116.7028869209532,
+          "mode": "FM",
+          "receiver_threshold_dbm": -120.98,
+          "fade_margin_db": 4.277113079046799
+        },
+        {
+          "direction": "b_to_a",
+          "model_id": "p2001",
+          "percentile": 70.0,
+          "tx_power_dbm": 46.53212513775344,
+          "tx_antenna_gain_dbi": 9.0,
+          "tx_line_loss_db": 2.0,
+          "path_loss_db": 177.33593304890894,
+          "rx_antenna_gain_dbi": 2.0,
+          "rx_line_loss_db": 1.0,
+          "received_power_dbm": -122.8038079111555,
+          "mode": "FM",
+          "receiver_threshold_dbm": -120.98,
+          "fade_margin_db": -1.8238079111554981
+        }
+      ],
+      "monte_carlo": [
+        {
+          "model_id": "itm",
+          "direction": "b_to_a",
+          "runs": 20000,
+          "seed": 1895823776528169794,
+          "temporal_sampling": "model_temporal_quantile_curve",
+          "received_power_p05_dbm": -122.01087939532873,
+          "received_power_p50_dbm": -110.95533740548828,
+          "received_power_p95_dbm": -92.70366276921506,
+          "mode_results": [
+            {
+              "mode": "FM",
+              "threshold_dbm": -120.98,
+              "success_probability_percent": 92.735,
+              "margin_p05_db": -1.1241622006475558,
+              "margin_p50_db": 10.028481681824786,
+              "margin_p95_db": 28.24784394295663
+            },
+            {
+              "mode": "SSB",
+              "threshold_dbm": -128.19788758288394,
+              "success_probability_percent": 99.79,
+              "margin_p05_db": 6.093725382236377,
+              "margin_p50_db": 17.24636926470872,
+              "margin_p95_db": 35.465731525840546
+            },
+            {
+              "mode": "CW",
+              "threshold_dbm": -144.0102999566398,
+              "success_probability_percent": 100.0,
+              "margin_p05_db": 21.906137755992265,
+              "margin_p50_db": 33.05878163846459,
+              "margin_p95_db": 51.27814389959643
+            },
+            {
+              "mode": "APRS",
+              "threshold_dbm": -118.20818753952375,
+              "success_probability_percent": 85.045,
+              "margin_p05_db": -3.8959746611238106,
+              "margin_p50_db": 7.256669221348531,
+              "margin_p95_db": 25.476031482480376
+            },
+            {
+              "mode": "LORA_SF7",
+              "threshold_dbm": -124.53089986991944,
+              "success_probability_percent": 97.955,
+              "margin_p05_db": 2.426737669271878,
+              "margin_p50_db": 13.57938155174422,
+              "margin_p95_db": 31.798743812876065
+            },
+            {
+              "mode": "LORA_SF12",
+              "threshold_dbm": -137.03089986991944,
+              "success_probability_percent": 100.0,
+              "margin_p05_db": 14.926737669271892,
+              "margin_p50_db": 26.079381551744213,
+              "margin_p95_db": 44.298743812876054
+            }
+          ],
+          "sensitivity": [
+            {
+              "factor": "propagation_loss",
+              "correlation_with_margin": 0.9774751183187363,
+              "absolute_correlation": 0.9774751183187363
+            },
+            {
+              "factor": "receiver_threshold",
+              "correlation_with_margin": 0.1108527286980375,
+              "absolute_correlation": 0.1108527286980375
+            },
+            {
+              "factor": "rx_antenna_gain",
+              "correlation_with_margin": 0.11028155611855518,
+              "absolute_correlation": 0.11028155611855518
+            },
+            {
+              "factor": "tx_antenna_gain",
+              "correlation_with_margin": 0.0997753403431617,
+              "absolute_correlation": 0.0997753403431617
+            },
+            {
+              "factor": "tx_power",
+              "correlation_with_margin": 0.05621467171732949,
+              "absolute_correlation": 0.05621467171732949
+            },
+            {
+              "factor": "rx_line_loss",
+              "correlation_with_margin": 0.034562520333463125,
+              "absolute_correlation": 0.034562520333463125
+            },
+            {
+              "factor": "pointing_loss",
+              "correlation_with_margin": 0.03303648312656441,
+              "absolute_correlation": 0.03303648312656441
+            },
+            {
+              "factor": "tx_line_loss",
+              "correlation_with_margin": 0.03118303952711261,
+              "absolute_correlation": 0.03118303952711261
+            }
+          ],
+          "histogram_edges_dbm": [
+            -130.28757881670583,
+            -129.30665799994085,
+            -128.32573718317587,
+            -127.34481636641091,
+            -126.36389554964595,
+            -125.38297473288097,
+            -124.402053916116,
+            -123.42113309935102,
+            -122.44021228258606,
+            -121.45929146582108,
+            -120.47837064905612,
+            -119.49744983229114,
+            -118.51652901552617,
+            -117.5356081987612,
+            -116.55468738199623,
+            -115.57376656523125,
+            -114.59284574846629,
+            -113.61192493170131,
+            -112.63100411493633,
+            -111.65008329817137,
+            -110.6691624814064,
+            -109.68824166464142,
+            -108.70732084787645,
+            -107.72640003111148,
+            -106.74547921434652,
+            -105.76455839758154,
+            -104.78363758081656,
+            -103.8027167640516,
+            -102.82179594728662,
+            -101.84087513052165,
+            -100.85995431375667,
+            -99.87903349699171,
+            -98.89811268022673,
+            -97.91719186346177,
+            -96.93627104669679,
+            -95.95535022993181,
+            -94.97442941316685,
+            -93.99350859640188,
+            -93.0125877796369,
+            -92.03166696287192,
+            -91.05074614610696,
+            -90.069825329342,
+            -89.08890451257702,
+            -88.10798369581204,
+            -87.12706287904707,
+            -86.14614206228211,
+            -85.16522124551713,
+            -84.18430042875215,
+            -83.20337961198719,
+            -82.22245879522222,
+            -81.24153797845725
+          ],
+          "histogram_counts": [
+            5,
+            17,
+            43,
+            85,
+            113,
+            143,
+            202,
+            261,
+            329,
+            439,
+            496,
+            613,
+            672,
+            823,
+            912,
+            1046,
+            1058,
+            1043,
+            1027,
+            944,
+            783,
+            741,
+            679,
+            650,
+            637,
+            553,
+            566,
+            538,
+            494,
+            461,
+            420,
+            403,
+            379,
+            354,
+            304,
+            272,
+            242,
+            183,
+            210,
+            135,
+            117,
+            132,
+            99,
+            102,
+            90,
+            73,
+            57,
+            30,
+            17,
+            8
+          ],
+          "warnings": []
+        },
+        {
+          "model_id": "p1812",
+          "direction": "b_to_a",
+          "runs": 20000,
+          "seed": 7684762642911005439,
+          "temporal_sampling": "conditional_fixed_quantile",
+          "received_power_p05_dbm": -120.13180323729483,
+          "received_power_p50_dbm": -117.48037224220788,
+          "received_power_p95_dbm": -114.87607073390069,
+          "mode_results": [
+            {
+              "mode": "FM",
+              "threshold_dbm": -120.98,
+              "success_probability_percent": 96.87,
+              "margin_p05_db": 0.3741209939015363,
+              "margin_p50_db": 3.4802585721192543,
+              "margin_p95_db": 6.5669690571543216
+            },
+            {
+              "mode": "SSB",
+              "threshold_dbm": -128.19788758288394,
+              "success_probability_percent": 100.0,
+              "margin_p05_db": 7.592008576785469,
+              "margin_p50_db": 10.6981461550032,
+              "margin_p95_db": 13.784856640038255
+            },
+            {
+              "mode": "CW",
+              "threshold_dbm": -144.0102999566398,
+              "success_probability_percent": 100.0,
+              "margin_p05_db": 23.404420950541343,
+              "margin_p50_db": 26.510558528759077,
+              "margin_p95_db": 29.59726901379413
+            },
+            {
+              "mode": "APRS",
+              "threshold_dbm": -118.20818753952375,
+              "success_probability_percent": 64.71000000000001,
+              "margin_p05_db": -2.397691466574719,
+              "margin_p50_db": 0.7084461116429992,
+              "margin_p95_db": 3.795156596678067
+            },
+            {
+              "mode": "LORA_SF7",
+              "threshold_dbm": -124.53089986991944,
+              "success_probability_percent": 99.995,
+              "margin_p05_db": 3.92502086382097,
+              "margin_p50_db": 7.031158442038688,
+              "margin_p95_db": 10.117868927073756
+            },
+            {
+              "mode": "LORA_SF12",
+              "threshold_dbm": -137.03089986991944,
+              "success_probability_percent": 100.0,
+              "margin_p05_db": 16.42502086382097,
+              "margin_p50_db": 19.531158442038702,
+              "margin_p95_db": 22.617868927073754
+            }
+          ],
+          "sensitivity": [
+            {
+              "factor": "receiver_threshold",
+              "correlation_with_margin": 0.5301298082995417,
+              "absolute_correlation": 0.5301298082995417
+            },
+            {
+              "factor": "rx_antenna_gain",
+              "correlation_with_margin": 0.5279756207776053,
+              "absolute_correlation": 0.5279756207776053
+            },
+            {
+              "factor": "tx_antenna_gain",
+              "correlation_with_margin": 0.5237302591825779,
+              "absolute_correlation": 0.5237302591825779
+            },
+            {
+              "factor": "tx_power",
+              "correlation_with_margin": 0.2633348563686262,
+              "absolute_correlation": 0.2633348563686262
+            },
+            {
+              "factor": "polarization_loss",
+              "correlation_with_margin": 0.16580120672052964,
+              "absolute_correlation": 0.16580120672052964
+            },
+            {
+              "factor": "pointing_loss",
+              "correlation_with_margin": 0.15351857757520823,
+              "absolute_correlation": 0.15351857757520823
+            },
+            {
+              "factor": "tx_line_loss",
+              "correlation_with_margin": 0.14779111410634416,
+              "absolute_correlation": 0.14779111410634416
+            },
+            {
+              "factor": "rx_line_loss",
+              "correlation_with_margin": 0.12822731324404343,
+              "absolute_correlation": 0.12822731324404343
+            }
+          ],
+          "histogram_edges_dbm": [
+            -123.6497923773221,
+            -123.39621799105133,
+            -123.14264360478055,
+            -122.88906921850977,
+            -122.635494832239,
+            -122.38192044596823,
+            -122.12834605969745,
+            -121.87477167342668,
+            -121.62119728715591,
+            -121.36762290088512,
+            -121.11404851461435,
+            -120.86047412834358,
+            -120.6068997420728,
+            -120.35332535580203,
+            -120.09975096953126,
+            -119.84617658326047,
+            -119.5926021969897,
+            -119.33902781071893,
+            -119.08545342444816,
+            -118.83187903817738,
+            -118.5783046519066,
+            -118.32473026563584,
+            -118.07115587936505,
+            -117.81758149309428,
+            -117.56400710682351,
+            -117.31043272055274,
+            -117.05685833428196,
+            -116.80328394801118,
+            -116.54970956174041,
+            -116.29613517546963,
+            -116.04256078919886,
+            -115.78898640292809,
+            -115.5354120166573,
+            -115.28183763038653,
+            -115.02826324411576,
+            -114.77468885784498,
+            -114.52111447157421,
+            -114.26754008530344,
+            -114.01396569903267,
+            -113.76039131276188,
+            -113.50681692649111,
+            -113.25324254022034,
+            -112.99966815394956,
+            -112.74609376767879,
+            -112.49251938140802,
+            -112.23894499513725,
+            -111.98537060886646,
+            -111.73179622259569,
+            -111.4782218363249,
+            -111.22464745005414,
+            -110.97107306378336
+          ],
+          "histogram_counts": [
+            1,
+            1,
+            3,
+            5,
+            13,
+            24,
+            27,
+            29,
+            53,
+            72,
+            112,
+            168,
+            222,
+            315,
+            373,
+            498,
+            595,
+            690,
+            823,
+            947,
+            1029,
+            1088,
+            1226,
+            1250,
+            1366,
+            1266,
+            1174,
+            1118,
+            1025,
+            905,
+            746,
+            634,
+            559,
+            411,
+            378,
+            258,
+            195,
+            139,
+            87,
+            63,
+            41,
+            30,
+            13,
+            9,
+            9,
+            4,
+            3,
+            1,
+            0,
+            2
+          ],
+          "warnings": [
+            "result is conditional on one propagation quantile, not annual availability"
+          ]
+        },
+        {
+          "model_id": "p2001",
+          "direction": "b_to_a",
+          "runs": 20000,
+          "seed": 5356309201375935489,
+          "temporal_sampling": "model_temporal_quantile_curve",
+          "received_power_p05_dbm": -128.54906798321315,
+          "received_power_p50_dbm": -121.46094871482356,
+          "received_power_p95_dbm": -111.3803775670645,
+          "mode_results": [
+            {
+              "mode": "FM",
+              "threshold_dbm": -120.98,
+              "success_probability_percent": 46.78,
+              "margin_p05_db": -7.808629779220301,
+              "margin_p50_db": -0.40237051136224977,
+              "margin_p95_db": 9.77838997213059
+            },
+            {
+              "mode": "SSB",
+              "threshold_dbm": -128.19788758288394,
+              "success_probability_percent": 93.76,
+              "margin_p05_db": -0.5907421963363679,
+              "margin_p50_db": 6.815517071521683,
+              "margin_p95_db": 16.996277555014508
+            },
+            {
+              "mode": "CW",
+              "threshold_dbm": -144.0102999566398,
+              "success_probability_percent": 100.0,
+              "margin_p05_db": 15.221670177419496,
+              "margin_p50_db": 22.62792944527756,
+              "margin_p95_db": 32.808689928770384
+            },
+            {
+              "mode": "APRS",
+              "threshold_dbm": -118.20818753952375,
+              "success_probability_percent": 28.405,
+              "margin_p05_db": -10.580442239696556,
+              "margin_p50_db": -3.174182971838505,
+              "margin_p95_db": 7.006577511654334
+            },
+            {
+              "mode": "LORA_SF7",
+              "threshold_dbm": -124.53089986991944,
+              "success_probability_percent": 75.965,
+              "margin_p05_db": -4.257729909300868,
+              "margin_p50_db": 3.148529358557184,
+              "margin_p95_db": 13.329289842050024
+            },
+            {
+              "mode": "LORA_SF12",
+              "threshold_dbm": -137.03089986991944,
+              "success_probability_percent": 99.995,
+              "margin_p05_db": 8.24227009069912,
+              "margin_p50_db": 15.648529358557184,
+              "margin_p95_db": 25.82928984205001
+            }
+          ],
+          "sensitivity": [
+            {
+              "factor": "propagation_loss",
+              "correlation_with_margin": 0.9439523509276164,
+              "absolute_correlation": 0.9439523509276164
+            },
+            {
+              "factor": "tx_antenna_gain",
+              "correlation_with_margin": 0.18465582223365148,
+              "absolute_correlation": 0.18465582223365148
+            },
+            {
+              "factor": "rx_antenna_gain",
+              "correlation_with_margin": 0.181426957962592,
+              "absolute_correlation": 0.181426957962592
+            },
+            {
+              "factor": "receiver_threshold",
+              "correlation_with_margin": 0.16688647557767483,
+              "absolute_correlation": 0.16688647557767483
+            },
+            {
+              "factor": "tx_power",
+              "correlation_with_margin": 0.087617762766822,
+              "absolute_correlation": 0.087617762766822
+            },
+            {
+              "factor": "pointing_loss",
+              "correlation_with_margin": 0.05153430214880641,
+              "absolute_correlation": 0.05153430214880641
+            },
+            {
+              "factor": "tx_line_loss",
+              "correlation_with_margin": 0.05126376978489559,
+              "absolute_correlation": 0.05126376978489559
+            },
+            {
+              "factor": "polarization_loss",
+              "correlation_with_margin": 0.03941256904506727,
+              "absolute_correlation": 0.03941256904506727
+            }
+          ],
+          "histogram_edges_dbm": [
+            -137.00324386786843,
+            -136.12081653127578,
+            -135.23838919468312,
+            -134.35596185809044,
+            -133.47353452149778,
+            -132.59110718490513,
+            -131.70867984831247,
+            -130.8262525117198,
+            -129.94382517512713,
+            -129.06139783853448,
+            -128.17897050194182,
+            -127.29654316534915,
+            -126.4141158287565,
+            -125.53168849216382,
+            -124.64926115557117,
+            -123.76683381897851,
+            -122.88440648238584,
+            -122.00197914579317,
+            -121.11955180920052,
+            -120.23712447260786,
+            -119.35469713601519,
+            -118.47226979942253,
+            -117.58984246282986,
+            -116.70741512623721,
+            -115.82498778964455,
+            -114.94256045305188,
+            -114.06013311645921,
+            -113.17770577986656,
+            -112.2952784432739,
+            -111.41285110668123,
+            -110.53042377008857,
+            -109.6479964334959,
+            -108.76556909690325,
+            -107.8831417603106,
+            -107.00071442371792,
+            -106.11828708712527,
+            -105.2358597505326,
+            -104.35343241393994,
+            -103.47100507734729,
+            -102.58857774075462,
+            -101.70615040416195,
+            -100.82372306756929,
+            -99.94129573097663,
+            -99.05886839438396,
+            -98.17644105779131,
+            -97.29401372119864,
+            -96.41158638460598,
+            -95.52915904801333,
+            -94.64673171142066,
+            -93.76430437482799,
+            -92.88187703823533
+          ],
+          "histogram_counts": [
+            2,
+            12,
+            20,
+            47,
+            81,
+            105,
+            139,
+            167,
+            248,
+            333,
+            515,
+            679,
+            995,
+            1173,
+            1383,
+            1534,
+            1636,
+            1438,
+            1323,
+            1172,
+            1096,
+            1025,
+            874,
+            751,
+            668,
+            514,
+            449,
+            362,
+            250,
+            190,
+            113,
+            75,
+            61,
+            48,
+            38,
+            54,
+            46,
+            59,
+            41,
+            54,
+            45,
+            43,
+            46,
+            37,
+            30,
+            15,
+            9,
+            2,
+            2,
+            1
+          ],
+          "warnings": []
+        }
+      ],
+      "assessment": {
+        "classification": "marginal",
+        "confidence": "low",
+        "model_spread_db": 10.609885709341512,
+        "limiting_factors": [
+          "deep_terrain_obstruction",
+          "first_fresnel_zone_obstructed",
+          "strong_model_divergence",
+          "small_or_negative_fade_margin"
+        ],
+        "uncertainties": [
+          "vegetação e edificações não estão representadas",
+          "o ruído local do receptor ainda não foi medido",
+          "erros verticais do DEM não são amostrados no Monte Carlo 0.1"
+        ],
+        "recommendations": [
+          {
+            "action": "usar SSB quando isso for operacionalmente aceitável",
+            "estimated_margin_improvement_db": 7.217887582883932,
+            "basis": "modelo de ruído configurado para o receptor"
+          },
+          {
+            "action": "aumentar o ganho da antena de Morro do Jacu para 9 dBi",
+            "estimated_margin_improvement_db": 7.0,
+            "basis": "ganho direto no orçamento do enlace"
+          },
+          {
+            "action": "reduzir cada perda de linha para aproximadamente 0,5 dB",
+            "estimated_margin_improvement_db": 2.0,
+            "basis": "redução direta no orçamento do enlace"
+          }
+        ]
+      }
+    }
+  },
+  "result_sha256": "029328ba7d6ec068ca0b5a8e2893aeff1a35eb226db1c7662330fc31d7cd951b"
+}

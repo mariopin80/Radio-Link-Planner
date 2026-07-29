@@ -1,0 +1,23 @@
+{
+  "geometry": {
+    "distance_km": 180.191525,
+    "maximum_earth_bulge_m": 477.7842,
+    "maximum_fresnel_radius_m": 304.1383,
+    "worst_obstruction_m": 558.7807,
+    "worst_obstruction_distance_km": 40.8926,
+    "terrain_above_direct_ray_percent": 81.6547,
+    "fresnel_60_obstructed_percent": 90.1781
+  },
+  "models": {
+    "itm_climate_2_reliability_70_loss_db": 168.36556,
+    "itm_climate_6_reliability_70_loss_db": 169.52487,
+    "p1812_time_50_loss_db": 171.23501,
+    "p2001_time_50_loss_db": 175.49383,
+    "p2001_time_70_loss_db": 177.33593
+  },
+  "radio_mobile": {
+    "loss_db": 169.73,
+    "received_power_dbm": -115.20,
+    "fade_margin_db": 5.78
+  }
+}

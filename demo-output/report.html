@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Morro do Jacu – Palmira — Radio Link Planner</title>
+  <style>
+    :root { --ink:#17191d; --muted:#60646c; --line:#d7dae0;
+             --accent:#c91f37; --paper:#ffffff; --wash:#f4f5f7; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:var(--wash);
+            font:15px/1.55 Inter,Segoe UI,Arial,sans-serif; }
+    header { background:#15171b; color:white; padding:30px 6vw 26px;
+              border-bottom:5px solid var(--accent); }
+    header .version { color:#c7cbd2; letter-spacing:.08em;
+                       text-transform:uppercase; font-size:12px; }
+    header h1 { margin:5px 0 2px; font-size:30px; }
+    main { max-width:1200px; margin:26px auto; padding:0 22px 60px; }
+    article, .visual { background:var(--paper); border:1px solid var(--line);
+                        border-radius:10px; padding:24px 30px; margin:18px 0;
+                        box-shadow:0 4px 18px rgba(0,0,0,.045); }
+    .visual { padding:10px; }
+    .visual img { display:block; width:100%; height:auto; }
+    h1,h2,h3 { line-height:1.2; }
+    h2 { margin-top:30px; border-bottom:1px solid var(--line);
+          padding-bottom:8px; }
+    table { border-collapse:collapse; width:100%; margin:14px 0 22px; }
+    th,td { border-bottom:1px solid var(--line); padding:9px 8px;
+             text-align:right; }
+    th:first-child,td:first-child { text-align:left; }
+    th { background:#f0f1f3; }
+    code { overflow-wrap:anywhere; }
+    .footer { color:var(--muted); font-size:12px; margin-top:30px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="version">Radio Link Planner 0.1.0</div>
+    <h1>Morro do Jacu – Palmira</h1>
+    <div>146.000 MHz · análise local e rastreável</div>
+  </header>
+  <main>
+    <section class="visual"><img src="profile.png" alt="Perfil técnico do enlace"></section><section class="visual"><img src="monte_carlo.png" alt="Resultado de Monte Carlo"></section>
+    <article><h1>Morro do Jacu – Palmira</h1>
+<p>Versão do motor: 0.1.0</p>
+<h2>Geometria</h2>
+<ul>
+<li>Distância: 180.192 km</li>
+<li>Pior bloqueio geométrico: 558.8 m a 40.9 km</li>
+<li>Raio máximo da primeira Fresnel: 304.1 m</li>
+<li>Fresnel de 60% obstruída em 90.2% do percurso</li>
+</ul>
+<h2>Morro do Jacu → Palmira</h2>
+<p>Parecer: marginal</p>
+<p>Confiança: baixa</p>
+<h3>Comparação coerente em 50%</h3>
+<table>
+<tr><th>Modelo</th><th>Perda (dB)</th></tr>
+<tr><td>ITM</td><td>164.88</td></tr>
+<tr><td>P1812</td><td>171.24</td></tr>
+<tr><td>P2001</td><td>175.49</td></tr>
+</table>
+<p>Dispersão entre modelos: 10.61 dB.</p>
+<h3>Ponto de projeto: 70%</h3>
+<table>
+<tr><th>Modelo</th><th>Quantil de projeto</th><th>Perda (dB)</th><th>Potência (dBm)</th><th>Margem (dB)</th></tr>
+<tr><td>ITM</td><td>70.0%</td><td>168.37</td><td>-113.83</td><td>7.15</td></tr>
+<tr><td>P1812</td><td>50.0%</td><td>171.24</td><td>-116.70</td><td>4.28</td></tr>
+<tr><td>P2001</td><td>70.0%</td><td>177.34</td><td>-122.80</td><td>-1.82</td></tr>
+</table>
+<p>&gt; A P.1812 é limitada a 1–50% do tempo. Seu valor na tabela é mediano e não representa a meta de 70%.</p>
+<h3>Recomendações</h3>
+<ul>
+<li>usar SSB quando isso for operacionalmente aceitável: aproximadamente +7.2 dB (modelo de ruído configurado para o receptor).</li>
+<li>aumentar o ganho da antena de Morro do Jacu para 9 dBi: aproximadamente +7.0 dB (ganho direto no orçamento do enlace).</li>
+<li>reduzir cada perda de linha para aproximadamente 0,5 dB: aproximadamente +2.0 dB (redução direta no orçamento do enlace).</li>
+</ul>
+<h3>Incertezas declaradas</h3>
+<ul>
+<li>vegetação e edificações não estão representadas.</li>
+<li>o ruído local do receptor ainda não foi medido.</li>
+<li>erros verticais do DEM não são amostrados no Monte Carlo 0.1.</li>
+</ul>
+<h2>Palmira → Morro do Jacu</h2>
+<p>Parecer: marginal</p>
+<p>Confiança: baixa</p>
+<h3>Comparação coerente em 50%</h3>
+<table>
+<tr><th>Modelo</th><th>Perda (dB)</th></tr>
+<tr><td>ITM</td><td>164.88</td></tr>
+<tr><td>P1812</td><td>171.24</td></tr>
+<tr><td>P2001</td><td>175.49</td></tr>
+</table>
+<p>Dispersão entre modelos: 10.61 dB.</p>
+<h3>Ponto de projeto: 70%</h3>
+<table>
+<tr><th>Modelo</th><th>Quantil de projeto</th><th>Perda (dB)</th><th>Potência (dBm)</th><th>Margem (dB)</th></tr>
+<tr><td>ITM</td><td>70.0%</td><td>168.37</td><td>-113.83</td><td>7.15</td></tr>
+<tr><td>P1812</td><td>50.0%</td><td>171.24</td><td>-116.70</td><td>4.28</td></tr>
+<tr><td>P2001</td><td>70.0%</td><td>177.34</td><td>-122.80</td><td>-1.82</td></tr>
+</table>
+<p>&gt; A P.1812 é limitada a 1–50% do tempo. Seu valor na tabela é mediano e não representa a meta de 70%.</p>
+<h3>Recomendações</h3>
+<ul>
+<li>usar SSB quando isso for operacionalmente aceitável: aproximadamente +7.2 dB (modelo de ruído configurado para o receptor).</li>
+<li>aumentar o ganho da antena de Morro do Jacu para 9 dBi: aproximadamente +7.0 dB (ganho direto no orçamento do enlace).</li>
+<li>reduzir cada perda de linha para aproximadamente 0,5 dB: aproximadamente +2.0 dB (redução direta no orçamento do enlace).</li>
+</ul>
+<h3>Incertezas declaradas</h3>
+<ul>
+<li>vegetação e edificações não estão representadas.</li>
+<li>o ruído local do receptor ainda não foi medido.</li>
+<li>erros verticais do DEM não são amostrados no Monte Carlo 0.1.</li>
+</ul>
+<h2>Rastreabilidade</h2>
+<ul>
+<li>SHA-256 do perfil: `01acb399bfedd326365f20faddff9e99e4adb000a23198821e8aecf21c5ddefe`</li>
+<li>Pontos do perfil: 6007</li>
+<li>Passo nominal: 30.002 m</li>
+<li>SHA-256 do resultado: `029328ba7d6ec068ca0b5a8e2893aeff1a35eb226db1c7662330fc31d7cd951b`</li>
+</ul>
+<p>Os modelos permanecem separados; a divergência entre eles não é tratada como uma distribuição aleatória.</p></article>
+    <div class="footer">Gerado em 2026-07-29T02:16:33.554717+00:00</div>
+  </main>
+</body>
+</html>
