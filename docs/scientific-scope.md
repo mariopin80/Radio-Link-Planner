@@ -1,9 +1,9 @@
-# Escopo científico da versão 0.1
+# Escopo científico da versão 0.2
 
 ## Aplicação declarada
 
 Enlaces terrestres fixos, predominantemente entre 3 e 1.000 km, nas faixas de
-VHF e UHF. A versão 0.1 não deve ser usada como modelo validado para enlaces
+VHF e UHF. A versão 0.2 não deve ser usada como modelo validado para enlaces
 móveis urbanos, aeronáuticos, via satélite ou HF ionosférico.
 
 ## Modelos
@@ -44,9 +44,17 @@ As variáveis iniciais são:
 - polarização;
 - limiar efetivo do receptor.
 
-Erros do DEM e alturas ainda não são perturbados no Monte Carlo da 0.1. Eles
+Erros do DEM e alturas ainda não são perturbados no Monte Carlo atual. Eles
 aparecem como limitações do parecer. Uma versão futura deverá usar erros
 espacialmente correlacionados e reexecutar o modelo ou um metamodelo validado.
+
+## Terreno automático da versão 0.2
+
+O editor obtém elevações do Copernicus GLO-30 e mantém os blocos em cache
+local. O perfil automático ainda atribui a classe de zona terrestre interior
+ao percurso inteiro e não inclui vegetação ou edificações. Enlaces costeiros,
+sobre mar ou sobre grandes corpos d'água exigem revisão manual da coluna
+`zone_code` do perfil antes de um parecer definitivo.
 
 ## Critérios de classificação
 

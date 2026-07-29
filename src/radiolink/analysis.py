@@ -78,6 +78,12 @@ def assess(
         else "o ruído externo se baseia na estimativa configurada",
         "erros verticais do DEM não são amostrados no Monte Carlo 0.1",
     ]
+    if project.metadata.get("terrain_zone_assumption") == "all_inland_land":
+        uncertainties.append(
+            "o perfil automático assume zona terrestre interior em todo o "
+            "percurso; enlaces costeiros ou sobre água exigem revisão da "
+            "classificação mar/terra"
+        )
     recommendations = _recommendations(project, direction)
     return TechnicalAssessment(
         classification=classification,

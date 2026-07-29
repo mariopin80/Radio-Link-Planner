@@ -3,6 +3,8 @@ from __future__ import annotations
 import html
 import json
 import os
+import shutil
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -10,14 +12,29 @@ from typing import Any
 import numpy as np
 
 from .domain import Project
+from .geodesy import great_circle_points
 from .geometry import GeometryArrays
 from .terrain import TerrainProfile
-
 
 _MATPLOTLIB_CACHE = Path(tempfile.gettempdir()) / "radio-link-planner-matplotlib"
 _MATPLOTLIB_CACHE.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("MPLCONFIGDIR", str(_MATPLOTLIB_CACHE))
 os.environ.setdefault("MPLBACKEND", "Agg")
+MAPLIBRE_VERSION = "5.24.0"
+
+
+def describe_geometry_clearance(geometry: dict[str, Any]) -> str:
+    """Describe the limiting terrain point without calling a clear path blocked."""
+    distance_km = geometry["worst_obstruction_distance_km"]
+    obstruction_m = geometry["worst_obstruction_m"]
+    if obstruction_m > 0.0:
+        return (
+            f"Pior obstrução geométrica: {obstruction_m:.1f} m a {distance_km:.1f} km"
+        )
+    return (
+        f"Menor folga geométrica: {geometry['worst_clearance_m']:.1f} m "
+        f"a {distance_km:.1f} km"
+    )
 
 
 def write_outputs(
@@ -46,16 +63,22 @@ def write_outputs(
     if make_plots:
         profile_path = destination / "profile.png"
         monte_carlo_path = destination / "monte_carlo.png"
-        render_profile_plot(
-            project, profile, result, geometry_arrays, profile_path
-        )
+        render_profile_plot(project, profile, result, geometry_arrays, profile_path)
         render_monte_carlo_plot(project, result, monte_carlo_path)
         paths["profile_plot"] = profile_path
         paths["monte_carlo_plot"] = monte_carlo_path
+    map_assets = _install_map_assets(destination)
     report_path.write_text(
-        build_html_report(project, result, make_plots=make_plots),
+        build_html_report(
+            project,
+            profile,
+            result,
+            make_plots=make_plots,
+            map_assets=map_assets,
+        ),
         encoding="utf-8",
     )
+    paths["interactive_map"] = report_path
     return paths
 
 
@@ -107,17 +130,22 @@ def render_profile_plot(
         linewidth=0.9,
     )
     geometry = result["geometry"]
+    is_obstructed = geometry["worst_obstruction_m"] > 0.0
+    marker_color = "#f6c85f" if is_obstructed else "#3a9d62"
+    box_color = "#fff7df" if is_obstructed else "#eaf7ef"
+    annotation = (
+        f"Pior bloqueio: {geometry['worst_obstruction_m']:.1f} m"
+        if is_obstructed
+        else f"Menor folga: {geometry['worst_clearance_m']:.1f} m"
+    )
     axis.axvline(
         geometry["worst_obstruction_distance_km"],
-        color="#f6c85f",
+        color=marker_color,
         linestyle="--",
         linewidth=1.0,
     )
     axis.annotate(
-        (
-            f"Pior bloqueio: {geometry['worst_obstruction_m']:.1f} m\n"
-            f"a {geometry['worst_obstruction_distance_km']:.1f} km"
-        ),
+        (f"{annotation}\na {geometry['worst_obstruction_distance_km']:.1f} km"),
         xy=(
             geometry["worst_obstruction_distance_km"],
             np.interp(
@@ -133,8 +161,8 @@ def render_profile_plot(
         color="#111111",
         bbox={
             "boxstyle": "round,pad=0.35",
-            "facecolor": "#fff7df",
-            "edgecolor": "#f6c85f",
+            "facecolor": box_color,
+            "edgecolor": marker_color,
         },
     )
     axis.set_title(
@@ -149,10 +177,13 @@ def render_profile_plot(
     axis.legend(loc="upper right", ncol=2, fontsize=8)
     axis.set_xlim(0.0, profile.total_distance_km)
     lower = min(ground.min(), arrays.direct_ray_m_asl.min()) - 80.0
-    upper = max(
-        arrays.apparent_terrain_m_asl.max(),
-        (arrays.direct_ray_m_asl + 0.6 * arrays.fresnel_radius_m).max(),
-    ) + 80.0
+    upper = (
+        max(
+            arrays.apparent_terrain_m_asl.max(),
+            (arrays.direct_ray_m_asl + 0.6 * arrays.fresnel_radius_m).max(),
+        )
+        + 80.0
+    )
     axis.set_ylim(lower, upper)
     fig.tight_layout()
     fig.savefig(output_path, bbox_inches="tight")
@@ -228,9 +259,7 @@ def render_monte_carlo_plot(
     )
     axis_bar.set_ylim(0.0, 105.0)
     axis_bar.set_ylabel("Probabilidade estimada (%)")
-    axis_bar.set_title(
-        f"Funcionamento em {project.primary_mode.upper()}", loc="left"
-    )
+    axis_bar.set_title(f"Funcionamento em {project.primary_mode.upper()}", loc="left")
     axis_bar.grid(True, axis="y", alpha=0.18)
     axis_bar.legend(fontsize=8)
     for bar, value, simulation in zip(bars, probabilities, simulations):
@@ -283,15 +312,18 @@ def build_markdown_summary(project: Project, result: dict[str, Any]) -> str:
         "## Geometria",
         "",
         f"- Distância: {geometry['profile_distance_km']:.3f} km",
-        f"- Pior bloqueio geométrico: {geometry['worst_obstruction_m']:.1f} m "
-        f"a {geometry['worst_obstruction_distance_km']:.1f} km",
-        f"- Raio máximo da primeira Fresnel: "
-        f"{geometry['maximum_fresnel_radius_m']:.1f} m",
-        f"- Fresnel de 60% obstruída em "
-        f"{geometry['fresnel_60_obstructed_percent']:.1f}% do percurso",
+        f"- {describe_geometry_clearance(geometry)}",
+        (
+            "- Raio máximo da primeira Fresnel: "
+            f"{geometry['maximum_fresnel_radius_m']:.1f} m"
+        ),
+        (
+            "- Fresnel de 60% obstruída em "
+            f"{geometry['fresnel_60_obstructed_percent']:.1f}% do percurso"
+        ),
         "",
     ]
-    for direction_id, direction in result["directions"].items():
+    for direction in result["directions"].values():
         assessment = direction["assessment"]
         classification_label = {
             "robust": "robusto",
@@ -324,15 +356,15 @@ def build_markdown_summary(project: Project, result: dict[str, Any]) -> str:
                     f"| {model['model_id'].upper()} | {model['loss_db']:.2f} |"
                 )
             else:
-                lines.append(
-                    f"| {model['model_id'].upper()} | {model['status']} |"
-                )
+                lines.append(f"| {model['model_id'].upper()} | {model['status']} |")
         if assessment["model_spread_db"] is not None:
             lines.extend(
                 [
                     "",
-                    f"Dispersão entre modelos: "
-                    f"**{assessment['model_spread_db']:.2f} dB**.",
+                    (
+                        "Dispersão entre modelos: "
+                        f"**{assessment['model_spread_db']:.2f} dB**."
+                    ),
                 ]
             )
         lines.extend(
@@ -344,9 +376,7 @@ def build_markdown_summary(project: Project, result: dict[str, Any]) -> str:
                 "|---|---:|---:|---:|---:|",
             ]
         )
-        budgets = {
-            item["model_id"]: item for item in direction["link_budgets"]
-        }
+        budgets = {item["model_id"]: item for item in direction["link_budgets"]}
         for model in direction["design_models"]:
             budget = budgets.get(model["model_id"])
             if model["status"] != "ok" or budget is None:
@@ -365,9 +395,11 @@ def build_markdown_summary(project: Project, result: dict[str, Any]) -> str:
             lines.extend(
                 [
                     "",
-                    "> A P.1812 é limitada a 1–50% do tempo. Seu valor na "
-                    "tabela é mediano e não representa a meta de "
-                    f"{project.target_availability_percent:.0f}%.",
+                    (
+                        "> A P.1812 é limitada a 1–50% do tempo. Seu valor na "
+                        "tabela é mediano e não representa a meta de "
+                        f"{project.target_availability_percent:.0f}%."
+                    ),
                 ]
             )
         lines.extend(["", "### Recomendações", ""])
@@ -387,12 +419,16 @@ def build_markdown_summary(project: Project, result: dict[str, Any]) -> str:
             "",
             f"- SHA-256 do perfil: `{result['traceability']['terrain_sha256']}`",
             f"- Pontos do perfil: {result['traceability']['terrain_point_count']}",
-            f"- Passo nominal: "
-            f"{result['traceability']['terrain_nominal_step_m']:.3f} m",
+            (
+                "- Passo nominal: "
+                f"{result['traceability']['terrain_nominal_step_m']:.3f} m"
+            ),
             f"- SHA-256 do resultado: `{result['result_sha256']}`",
             "",
-            "Os modelos permanecem separados; a divergência entre eles não é "
-            "tratada como uma distribuição aleatória.",
+            (
+                "Os modelos permanecem separados; a divergência entre eles "
+                "não é tratada como uma distribuição aleatória."
+            ),
             "",
         ]
     )
@@ -400,11 +436,22 @@ def build_markdown_summary(project: Project, result: dict[str, Any]) -> str:
 
 
 def build_html_report(
-    project: Project, result: dict[str, Any], make_plots: bool
+    project: Project,
+    profile: TerrainProfile,
+    result: dict[str, Any],
+    make_plots: bool,
+    map_assets: tuple[str, str] | None = None,
 ) -> str:
     summary_html = _markdown_summary_to_simple_html(
         build_markdown_summary(project, result)
     )
+    if map_assets is None:
+        map_assets = (
+            (f"https://unpkg.com/maplibre-gl@{MAPLIBRE_VERSION}/dist/maplibre-gl.css"),
+            (f"https://unpkg.com/maplibre-gl@{MAPLIBRE_VERSION}/dist/maplibre-gl.js"),
+        )
+    map_css, map_js = map_assets
+    route_json = _route_json(project, profile)
     images = ""
     if make_plots:
         images = (
@@ -419,6 +466,7 @@ def build_html_report(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{html.escape(project.name)} — Radio Link Planner</title>
+  <link rel="stylesheet" href="{html.escape(map_css, quote=True)}">
   <style>
     :root {{ --ink:#17191d; --muted:#60646c; --line:#d7dae0;
              --accent:#c91f37; --paper:#ffffff; --wash:#f4f5f7; }}
@@ -436,6 +484,12 @@ def build_html_report(
                         box-shadow:0 4px 18px rgba(0,0,0,.045); }}
     .visual {{ padding:10px; }}
     .visual img {{ display:block; width:100%; height:auto; }}
+    .map-card {{ background:var(--paper); border:1px solid var(--line);
+                 border-radius:10px; padding:14px; margin:18px 0;
+                 box-shadow:0 4px 18px rgba(0,0,0,.045); }}
+    #route-map {{ width:100%; height:470px; border-radius:7px;
+                  background:#dfe4e8; }}
+    .map-note {{ color:var(--muted); font-size:12px; margin:9px 3px 0; }}
     h1,h2,h3 {{ line-height:1.2; }}
     h2 {{ margin-top:30px; border-bottom:1px solid var(--line);
           padding-bottom:8px; }}
@@ -450,18 +504,143 @@ def build_html_report(
 </head>
 <body>
   <header>
-    <div class="version">Radio Link Planner {html.escape(result['engine_version'])}</div>
+    <div class="version">Radio Link Planner {html.escape(result["engine_version"])}</div>
     <h1>{html.escape(project.name)}</h1>
     <div>{project.frequency_mhz:.3f} MHz · análise local e rastreável</div>
   </header>
   <main>
+    <section class="map-card">
+      <div id="route-map" aria-label="Mapa interativo do enlace"></div>
+      <div class="map-note">Mapa interativo MapLibre. A camada OpenStreetMap
+      requer internet; o cálculo científico usa o perfil Copernicus salvo
+      localmente e não depende do mapa.</div>
+    </section>
     {images}
     <article>{summary_html}</article>
-    <div class="footer">Gerado em {html.escape(result['generated_at_utc'])}</div>
+    <div class="footer">Gerado em {html.escape(result["generated_at_utc"])}</div>
   </main>
+  <script src="{html.escape(map_js, quote=True)}"></script>
+  <script>
+    const routeData = {route_json};
+    const map = new maplibregl.Map({{
+      container: "route-map",
+      style: {{
+        version: 8,
+        sources: {{
+          osm: {{
+            type: "raster",
+            tiles: ["https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png"],
+            tileSize: 256,
+            attribution: "© OpenStreetMap contributors"
+          }}
+        }},
+        layers: [{{ id: "osm", type: "raster", source: "osm" }}]
+      }},
+      attributionControl: true
+    }});
+    map.addControl(new maplibregl.NavigationControl(), "top-right");
+    map.on("load", () => {{
+      map.addSource("route", {{
+        type: "geojson",
+        data: {{
+          type: "Feature",
+          properties: {{}},
+          geometry: {{ type: "LineString", coordinates: routeData.coordinates }}
+        }}
+      }});
+      map.addLayer({{
+        id: "route-halo",
+        type: "line",
+        source: "route",
+        paint: {{ "line-color": "#ffffff", "line-width": 7, "line-opacity": 0.9 }}
+      }});
+      map.addLayer({{
+        id: "route-line",
+        type: "line",
+        source: "route",
+        paint: {{ "line-color": "#c91f37", "line-width": 4 }}
+      }});
+      new maplibregl.Marker({{ color: "#2264a7" }})
+        .setLngLat(routeData.coordinates[0])
+        .setPopup(new maplibregl.Popup().setText(routeData.terminalA))
+        .addTo(map);
+      new maplibregl.Marker({{ color: "#c91f37" }})
+        .setLngLat(routeData.coordinates[routeData.coordinates.length - 1])
+        .setPopup(new maplibregl.Popup().setText(routeData.terminalB))
+        .addTo(map);
+      const bounds = new maplibregl.LngLatBounds(
+        routeData.coordinates[0],
+        routeData.coordinates[0]
+      );
+      routeData.coordinates.forEach((point) => bounds.extend(point));
+      map.fitBounds(bounds, {{ padding: 70, maxZoom: 13, duration: 0 }});
+    }});
+  </script>
 </body>
 </html>
 """
+
+
+def _route_json(project: Project, profile: TerrainProfile) -> str:
+    maximum_points = 3000
+    latitudes = profile.latitude_deg
+    longitudes = profile.longitude_deg
+    if not np.all(np.isfinite(latitudes)) or not np.all(np.isfinite(longitudes)):
+        latitudes, longitudes = great_circle_points(
+            project.terminal_a.latitude_deg,
+            project.terminal_a.longitude_deg,
+            project.terminal_b.latitude_deg,
+            project.terminal_b.longitude_deg,
+            len(profile.distance_km),
+        )
+    if len(longitudes) > maximum_points:
+        indices = np.linspace(
+            0,
+            len(longitudes) - 1,
+            maximum_points,
+            dtype=int,
+        )
+    else:
+        indices = np.arange(len(longitudes))
+    coordinates = [
+        [float(longitudes[index]), float(latitudes[index])] for index in indices
+    ]
+    data = {
+        "terminalA": project.terminal_a.name,
+        "terminalB": project.terminal_b.name,
+        "coordinates": coordinates,
+    }
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace(
+        "</", "<\\/"
+    )
+
+
+def _install_map_assets(destination: Path) -> tuple[str, str]:
+    frozen_root = getattr(sys, "_MEIPASS", None)
+    source_root = (
+        Path(frozen_root).resolve()
+        if frozen_root
+        else Path(__file__).resolve().parents[2]
+    )
+    source = source_root / "map-assets"
+    javascript = source / "maplibre-gl.js"
+    stylesheet = source / "maplibre-gl.css"
+    if javascript.is_file() and stylesheet.is_file():
+        target = destination / "report-assets"
+        target.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(javascript, target / javascript.name)
+        shutil.copy2(stylesheet, target / stylesheet.name)
+        license_path = source / "LICENSE.txt"
+        if license_path.is_file():
+            shutil.copy2(license_path, target / license_path.name)
+        return (
+            "report-assets/maplibre-gl.css",
+            "report-assets/maplibre-gl.js",
+        )
+    return (
+        (f"https://unpkg.com/maplibre-gl@{MAPLIBRE_VERSION}/dist/maplibre-gl.css"),
+        (f"https://unpkg.com/maplibre-gl@{MAPLIBRE_VERSION}/dist/maplibre-gl.js"),
+    )
 
 
 def _markdown_summary_to_simple_html(markdown: str) -> str:

@@ -30,6 +30,10 @@ jobs:
           architecture: "x64"
           cache: "pip"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
@@ -37,7 +41,10 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev,plots,models,desktop]"
+          python -m pip install -e ".[dev,plots,geo,models,desktop]"
+
+      - name: Install local MapLibre report assets
+        run: npm install --prefix .map-deps maplibre-gl@5.24.0
 
       - name: Build official NTIA ITM library
         run: python scripts/build_itm.py
@@ -60,9 +67,13 @@ jobs:
             --paths src `
             --add-data "examples/morro_jacu_palmira.json;examples" `
             --add-data "tests/reference/morro_jacu_palmira/terrain_profile.csv;tests/reference/morro_jacu_palmira" `
+            --add-data ".map-deps/node_modules/maplibre-gl/dist/maplibre-gl.js;map-assets" `
+            --add-data ".map-deps/node_modules/maplibre-gl/dist/maplibre-gl.css;map-assets" `
+            --add-data ".map-deps/node_modules/maplibre-gl/LICENSE.txt;map-assets" `
             --add-binary "vendor/ntia-itm/build/itm.dll;vendor/ntia-itm/build" `
             --collect-submodules Py1812 `
             --collect-submodules Py2001 `
+            --collect-all rasterio `
             --copy-metadata Py1812 `
             --copy-metadata Py2001 `
             scripts/windows_gui.py
@@ -125,37 +136,37 @@ jobs:
         run: |
           Compress-Archive `
             -Path "dist\RadioLinkPlanner\*" `
-            -DestinationPath "RadioLinkPlanner-MVP-Windows-x64.zip"
+            -DestinationPath "RadioLinkPlanner-0.2-Windows-x64.zip"
 
       - name: Publish private MVP prerelease
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v0.1.0-mvp.1"
+          $tag = "v0.2.0-mvp.1"
           gh release view `
             $tag `
             --repo "$env:GITHUB_REPOSITORY" *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload `
               $tag `
-              "RadioLinkPlanner-MVP-Windows-x64.zip" `
+              "RadioLinkPlanner-0.2-Windows-x64.zip" `
               --clobber `
               --repo "$env:GITHUB_REPOSITORY"
           } else {
             gh release create `
               $tag `
-              "RadioLinkPlanner-MVP-Windows-x64.zip" `
+              "RadioLinkPlanner-0.2-Windows-x64.zip" `
               --target "$env:GITHUB_SHA" `
-              --title "Radio Link Planner 0.1 MVP" `
-              --notes "Primeiro MVP desktop portátil para Windows x64. Na primeira análise, os produtos digitais integrais são obtidos diretamente da ITU." `
+              --title "Radio Link Planner 0.2 MVP" `
+              --notes "MVP desktop para Windows x64 com editor de enlace, terreno Copernicus GLO-30 automático, mapa MapLibre, ITM, P.1812, P.2001 e Monte Carlo." `
               --prerelease `
               --repo "$env:GITHUB_REPOSITORY"
           }
 
       - uses: actions/upload-artifact@v4
         with:
-          name: RadioLinkPlanner-MVP-Windows-x64
-          path: RadioLinkPlanner-MVP-Windows-x64.zip
+          name: RadioLinkPlanner-0.2-Windows-x64
+          path: RadioLinkPlanner-0.2-Windows-x64.zip
           if-no-files-found: error
           retention-days: 30

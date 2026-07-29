@@ -1,17 +1,20 @@
-# Radio Link Planner 0.1
+# Radio Link Planner 0.2
 
 Protótipo científico local para análise de enlaces terrestres de
 radioamadorismo em VHF e UHF. O programa calcula a geometria do percurso,
 executa modelos de propagação independentes, aplica Monte Carlo às
 incertezas e gera um relatório rastreável.
 
-Esta versão reúne o **motor científico de linha de comando** e um primeiro
-MVP desktop. Ela não depende de servidor próprio e ainda não possui a
-interface cartográfica planejada para o produto final.
+Esta versão reúne o **motor científico de linha de comando** e um MVP desktop
+capaz de criar enlaces próprios. Ela não depende de servidor, não abre porta
+local e não exige Python no computador do usuário.
 
 ## O que já funciona
 
 - perfil de terreno Copernicus GLO-30 ou CSV importado;
+- obtenção automática e cache local dos blocos Copernicus necessários;
+- editor visual dos dois terminais e dos parâmetros principais do enlace;
+- mapa interativo MapLibre com o percurso entre os terminais;
 - curvatura terrestre com fator k configurável;
 - primeira zona de Fresnel e obstruções críticas;
 - ITM 1.3 oficial da NTIA em modo ponto a ponto;
@@ -57,7 +60,7 @@ PYTHONPATH=src python -m radiolink analyze \
 
 ## MVP desktop para Windows
 
-O pacote portátil `RadioLinkPlanner-MVP-Windows-x64.zip` é produzido
+O pacote portátil `RadioLinkPlanner-0.2-Windows-x64.zip` é produzido
 automaticamente pelo workflow **Windows MVP**. Depois de descompactar, execute
 `RadioLinkPlanner.exe`; não é necessário instalar Python.
 
@@ -66,20 +69,44 @@ O ZIP aprovado fica disponível na seção
 repositório privado.
 
 Na primeira análise, o aplicativo precisa de internet para obter os produtos
-digitais integrais diretamente da ITU. Eles não são redistribuídos no ZIP.
-Depois desse primeiro download, as análises podem ser repetidas offline.
+digitais integrais diretamente da ITU e os blocos Copernicus GLO-30 do
+percurso. Eles não são redistribuídos no ZIP. Os dados ficam em cache e as
+análises seguintes dos mesmos locais podem ser repetidas offline. A camada
+cartográfica OpenStreetMap requer internet para aparecer, mas não participa de
+nenhum cálculo.
 
 O MVP permite:
 
 - executar por duplo clique, sem terminal;
 - analisar o caso real Morro do Jacu–Palmira já incluído;
-- selecionar outro projeto JSON e sua pasta de resultados;
+- criar um enlace por coordenadas, frequência, modo, polarização e meta;
+- configurar altura, ganho, cabo, potência e sensibilidade de cada terminal;
+- abrir e editar outro projeto JSON;
+- gerar automaticamente um pacote reproduzível com `project.json` e
+  `terrain_profile.csv`;
 - escolher o número de execuções Monte Carlo;
-- gerar e abrir o relatório HTML e os gráficos técnicos.
+- gerar e abrir mapa, relatório HTML e gráficos técnicos.
 
 O pacote é uma pasta portátil, não um instalador. Todos os arquivos extraídos
-devem permanecer juntos e em uma pasta gravável pelo usuário. A interface
-cartográfica e a criação visual de novos enlaces pertencem à próxima etapa.
+devem permanecer juntos e em uma pasta gravável pelo usuário.
+
+### Criar o primeiro enlace próprio
+
+1. Abra `RadioLinkPlanner.exe` e clique em **Novo enlace**.
+2. Preencha as coordenadas e os dados de rádio dos terminais A e B.
+3. Na aba **Análise e resultados**, escolha a pasta de saída e o número de
+   execuções Monte Carlo.
+4. Clique em **Obter terreno e analisar**.
+5. Use **Mapa e relatório** para ver o percurso, o perfil e o parecer completo.
+
+A interface 0.2 é deliberadamente limitada a 30–3000 MHz e percursos de
+3–1000 km. Esses limites correspondem ao foco VHF/UHF desta etapa; o motor
+científico mantém faixas mais amplas para evolução futura.
+
+O perfil automático ainda assume zona terrestre interior ao longo de todo o
+percurso e não contém vegetação ou edificações. O relatório declara essa
+limitação; trajetos costeiros ou sobre água precisam de revisão do
+`zone_code`.
 
 Para executar a interface durante o desenvolvimento:
 
@@ -115,7 +142,7 @@ Os testes geométricos e de orçamento não exigem internet. Os ensaios completo
 dos três modelos são executados quando os componentes opcionais foram
 instalados.
 
-## Estado científico da 0.1
+## Estado científico da 0.2
 
 O programa separa três perguntas que calculadoras simples costumam misturar:
 
