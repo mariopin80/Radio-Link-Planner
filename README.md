@@ -61,6 +61,10 @@ O pacote portátil `RadioLinkPlanner-MVP-Windows-x64.zip` é produzido
 automaticamente pelo workflow **Windows MVP**. Depois de descompactar, execute
 `RadioLinkPlanner.exe`; não é necessário instalar Python.
 
+O ZIP aprovado fica disponível na seção
+[Releases](https://github.com/mariopin80/radio-link-planner/releases) do
+repositório privado.
+
 Na primeira análise, o aplicativo precisa de internet para obter os produtos
 digitais integrais diretamente da ITU. Eles não são redistribuídos no ZIP.
 Depois desse primeiro download, as análises podem ser repetidas offline.
