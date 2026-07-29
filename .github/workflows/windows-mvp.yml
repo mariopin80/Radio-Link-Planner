@@ -1,0 +1,135 @@
+name: Windows MVP
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/windows-mvp.yml"
+      - "examples/**"
+      - "pyproject.toml"
+      - "scripts/**"
+      - "src/**"
+      - "tests/**"
+      - "vendor/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: "x64"
+          cache: "pip"
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,plots,models,desktop]"
+
+      - name: Build official NTIA ITM library
+        run: python scripts/build_itm.py
+
+      - name: Install official ITU-R P.1812/P.2001 digital products
+        run: python scripts/bootstrap_itu_data.py
+
+      - name: Run scientific test suite
+        run: pytest
+
+      - name: Build portable desktop application
+        shell: pwsh
+        run: |
+          pyinstaller `
+            --noconfirm `
+            --clean `
+            --windowed `
+            --onedir `
+            --name RadioLinkPlanner `
+            --paths src `
+            --add-data "examples/morro_jacu_palmira.json;examples" `
+            --add-data "tests/reference/morro_jacu_palmira/terrain_profile.csv;tests/reference/morro_jacu_palmira" `
+            --add-binary "vendor/ntia-itm/build/itm.dll;vendor/ntia-itm/build" `
+            --collect-submodules Py1812 `
+            --collect-submodules Py2001 `
+            --copy-metadata Py1812 `
+            --copy-metadata Py2001 `
+            scripts/windows_gui.py
+
+      - name: Smoke-test packaged executable
+        shell: pwsh
+        run: |
+          Copy-Item `
+            -Path "dist\RadioLinkPlanner" `
+            -Destination "smoke-package" `
+            -Recurse
+          $process = Start-Process `
+            -FilePath "smoke-package\RadioLinkPlanner.exe" `
+            -ArgumentList "--smoke-test", "smoke-output" `
+            -Wait `
+            -PassThru
+          if ($process.ExitCode -ne 0) {
+            if (Test-Path "smoke-output\smoke-error.txt") {
+              Get-Content "smoke-output\smoke-error.txt"
+            }
+            exit $process.ExitCode
+          }
+          Remove-Item "smoke-package" -Recurse -Force
+
+      - name: Reject redistribution of ITU integral digital products
+        shell: pwsh
+        run: |
+          $forbiddenNames = @(
+            "P1812.npz",
+            "P2001.npz",
+            "DN50.TXT",
+            "N050.TXT",
+            "DN_Median.txt",
+            "DN_SubSlope.txt",
+            "DN_SupSlope.txt",
+            "dndz_01.txt",
+            "Esarain_Mt_v5.txt",
+            "Esarain_Pr6_v5.txt",
+            "Esarain_Beta_v5.txt",
+            "FoEs0.1.txt",
+            "FoEs01.txt",
+            "FoEs10.txt",
+            "FoEs50.txt",
+            "h0.txt",
+            "surfwv_50_fixed.txt",
+            "TropoClim.txt"
+          )
+          $forbidden = Get-ChildItem `
+            -Path "dist\RadioLinkPlanner" `
+            -Recurse `
+            -File |
+            Where-Object { $_.Name -cin $forbiddenNames }
+          if ($forbidden) {
+            $forbidden | ForEach-Object { Write-Error $_.FullName }
+            throw "ITU integral digital products must not be redistributed."
+          }
+
+      - name: Create portable ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path "dist\RadioLinkPlanner\*" `
+            -DestinationPath "RadioLinkPlanner-MVP-Windows-x64.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RadioLinkPlanner-MVP-Windows-x64
+          path: RadioLinkPlanner-MVP-Windows-x64.zip
+          if-no-files-found: error
+          retention-days: 30

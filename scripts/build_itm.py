@@ -7,7 +7,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 VENDOR = ROOT / "vendor" / "ntia-itm"
 INCLUDE = VENDOR / "include"
@@ -38,6 +37,7 @@ def main() -> int:
             "/nologo",
             "/LD",
             "/EHsc",
+            "/MT",
             "/O2",
             "/std:c++17",
             f"/I{INCLUDE}",

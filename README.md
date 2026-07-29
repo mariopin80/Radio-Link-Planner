@@ -5,9 +5,9 @@ radioamadorismo em VHF e UHF. O programa calcula a geometria do percurso,
 executa modelos de propagação independentes, aplica Monte Carlo às
 incertezas e gera um relatório rastreável.
 
-Esta versão é um **motor científico de linha de comando**. Ela não depende de
-servidor próprio e não possui ainda a interface cartográfica do produto
-desktop.
+Esta versão reúne o **motor científico de linha de comando** e um primeiro
+MVP desktop. Ela não depende de servidor próprio e ainda não possui a
+interface cartográfica planejada para o produto final.
 
 ## O que já funciona
 
@@ -53,6 +53,34 @@ Ou, sem instalar o comando:
 PYTHONPATH=src python -m radiolink analyze \
   examples/morro_jacu_palmira.json \
   --output results/morro_jacu_palmira
+```
+
+## MVP desktop para Windows
+
+O pacote portátil `RadioLinkPlanner-MVP-Windows-x64.zip` é produzido
+automaticamente pelo workflow **Windows MVP**. Depois de descompactar, execute
+`RadioLinkPlanner.exe`; não é necessário instalar Python.
+
+Na primeira análise, o aplicativo precisa de internet para obter os produtos
+digitais integrais diretamente da ITU. Eles não são redistribuídos no ZIP.
+Depois desse primeiro download, as análises podem ser repetidas offline.
+
+O MVP permite:
+
+- executar por duplo clique, sem terminal;
+- analisar o caso real Morro do Jacu–Palmira já incluído;
+- selecionar outro projeto JSON e sua pasta de resultados;
+- escolher o número de execuções Monte Carlo;
+- gerar e abrir o relatório HTML e os gráficos técnicos.
+
+O pacote é uma pasta portátil, não um instalador. Todos os arquivos extraídos
+devem permanecer juntos e em uma pasta gravável pelo usuário. A interface
+cartográfica e a criação visual de novos enlaces pertencem à próxima etapa.
+
+Para executar a interface durante o desenvolvimento:
+
+```bash
+radio-link-desktop
 ```
 
 Arquivos gerados:

@@ -4,18 +4,18 @@ import ctypes
 import hashlib
 import os
 import platform
+import sys
 from pathlib import Path
 
 import numpy as np
 
-from ..domain import Direction, Polarization
+from ..domain import Polarization
 from .base import (
     ModelContext,
     ModelEvaluation,
     ModelStatus,
     QuantileCurve,
 )
-
 
 ITM_COMMIT = "183ad95bd813a8be11009df396e1c631356864b2"
 
@@ -61,7 +61,12 @@ class ItmModel:
             "Windows": "itm.dll",
             "Darwin": "libitm.dylib",
         }.get(platform.system(), "libitm.so")
-        project_root = Path(__file__).resolve().parents[3]
+        frozen_root = getattr(sys, "_MEIPASS", None)
+        project_root = (
+            Path(frozen_root).resolve()
+            if frozen_root
+            else Path(__file__).resolve().parents[3]
+        )
         candidates = [
             project_root / "vendor" / "ntia-itm" / "build" / suffix,
             project_root / ".local" / "models" / suffix,

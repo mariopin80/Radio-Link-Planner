@@ -17,6 +17,7 @@ from .terrain import TerrainProfile
 _MATPLOTLIB_CACHE = Path(tempfile.gettempdir()) / "radio-link-planner-matplotlib"
 _MATPLOTLIB_CACHE.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("MPLCONFIGDIR", str(_MATPLOTLIB_CACHE))
+os.environ.setdefault("MPLBACKEND", "Agg")
 
 
 def write_outputs(
@@ -246,17 +247,18 @@ def render_monte_carlo_plot(
             va="bottom",
             fontsize=9,
         )
-    if any(
+    has_conditional_result = any(
         item["temporal_sampling"] == "conditional_fixed_quantile"
         for item in simulations
-    ):
-        axis_bar.text(
-            0.01,
-            0.015,
+    )
+    if has_conditional_result:
+        fig.text(
+            0.55,
+            0.018,
             "* P.1812: probabilidade condicional ao p50; não é disponibilidade anual.",
-            transform=axis_bar.transAxes,
             fontsize=7.5,
             color="#555555",
+            ha="left",
         )
     fig.suptitle(
         f"Monte Carlo — {result['directions']['a_to_b']['transmitter']} → "
@@ -266,7 +268,7 @@ def render_monte_carlo_plot(
         x=0.04,
         ha="left",
     )
-    fig.tight_layout()
+    fig.tight_layout(rect=(0.0, 0.055 if has_conditional_result else 0.0, 1.0, 0.95))
     fig.savefig(output_path, bbox_inches="tight")
     plt.close(fig)
 
