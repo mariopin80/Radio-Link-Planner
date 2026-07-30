@@ -72,14 +72,16 @@ PYTHONPATH=src python -m radiolink analyze \
 
 O workflow **Windows MVP** produz dois formatos:
 
-- `RadioLinkPlanner-0.3.0-Windows-x64-Setup.exe`: instalador recomendado;
-- `RadioLinkPlanner-0.3.0-Windows-x64.zip`: pacote portátil para testes.
+- `RadioLinkPlanner-0.3.1-Windows-x64-Setup.exe`: instalador recomendado;
+- `RadioLinkPlanner-0.3.1-Windows-x64.zip`: pacote portátil para testes.
 
 O instalador cria a pasta `Program Files\Radio Link Planner`, atalhos no menu
 Iniciar, um atalho opcional na área de trabalho e o desinstalador. Não é
 necessário instalar Python. Resultados permanecem no perfil do usuário, em
-`Radio Link Planner\Resultados`, e o cache de terreno fica em
-`%LOCALAPPDATA%\RadioLinkPlanner`; a desinstalação não apaga esses dados.
+`Radio Link Planner\Resultados`. O cache de terreno fica em
+`%LOCALAPPDATA%\RadioLinkPlanner\Copernicus-GLO-30`, e os produtos digitais
+da P.1812/P.2001 ficam em `%LOCALAPPDATA%\RadioLinkPlanner\ITU-R`; a
+desinstalação não apaga esses dados.
 
 Os arquivos aprovados ficam disponíveis na seção
 [Releases](https://github.com/mariopin80/radio-link-planner/releases) do
