@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import html
+import importlib.util
 import json
+import multiprocessing
 import secrets
 import threading
 import webbrowser
@@ -16,6 +18,21 @@ from .report import MAPLIBRE_VERSION
 CoordinateCallback = Callable[[float, float], None]
 
 
+def _run_embedded_picker(title: str, url: str) -> None:
+    """Run the map in a separate native WebView window."""
+    import webview
+
+    webview.create_window(
+        title,
+        url,
+        width=1120,
+        height=760,
+        min_size=(800, 520),
+        background_color="#11151a",
+    )
+    webview.start(debug=False)
+
+
 def open_coordinate_picker(
     *,
     title: str,
@@ -23,13 +40,18 @@ def open_coordinate_picker(
     initial_longitude: float | None,
     on_selected: CoordinateCallback,
 ) -> ThreadingHTTPServer:
-    """Open a localhost MapLibre picker and return its temporary web server."""
+    """Open a localhost MapLibre picker in an app window when available."""
     assets = bundle_root() / "map-assets"
     token = secrets.token_urlsafe(18)
+    picker_process: multiprocessing.Process | None = None
 
     def stop_server() -> None:
         server.shutdown()
         server.server_close()
+        if picker_process is not None and picker_process.is_alive():
+            timer = threading.Timer(1.0, picker_process.terminate)
+            timer.daemon = True
+            timer.start()
 
     class PickerHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
@@ -80,7 +102,9 @@ def open_coordinate_picker(
                         "<body style='font:18px Segoe UI;padding:40px'>"
                         "<h2>Local selecionado</h2>"
                         "<p>As coordenadas foram enviadas ao Radio Link Planner. "
-                        "Esta janela pode ser fechada.</p></body>"
+                        "Esta janela será fechada automaticamente.</p>"
+                        "<script>setTimeout(() => window.close(), 350);</script>"
+                        "</body>"
                     ).encode("utf-8"),
                 )
                 on_selected(latitude, longitude)
@@ -119,7 +143,23 @@ def open_coordinate_picker(
     timeout.daemon = True
     timeout.start()
     host, port = server.server_address
-    webbrowser.open(f"http://{host}:{port}/?token={token}")
+    url = f"http://{host}:{port}/?token={token}"
+    display_mode = "browser"
+    if importlib.util.find_spec("webview") is not None:
+        try:
+            picker_process = multiprocessing.get_context("spawn").Process(
+                target=_run_embedded_picker,
+                args=(title, url),
+                daemon=True,
+            )
+            picker_process.start()
+            display_mode = "embedded"
+        except (OSError, RuntimeError):
+            picker_process = None
+    if display_mode == "browser":
+        webbrowser.open(url)
+    setattr(server, "display_mode", display_mode)
+    setattr(server, "picker_process", picker_process)
     return server
 
 
