@@ -86,17 +86,23 @@ def write_coverage_outputs(
         ),
         encoding="utf-8",
     )
+    paths = {
+        "report_html": report_path,
+        "heatmap": heatmap_path,
+        "map_overlay": overlay_path,
+        "contours": contours_path,
+    }
+    from .pdf_reports import write_coverage_pdf
+
+    paths["report_pdf"] = write_coverage_pdf(
+        request=request,
+        statistics=statistics,
+        paths=paths,
+        output_path=output_directory / "relatorio_cobertura.pdf",
+    )
     _check_cancelled(cancel_check)
     _notify(progress, "Cobertura: mapa e relatório finalizados.")
-    return (
-        {
-            "report_html": report_path,
-            "heatmap": heatmap_path,
-            "map_overlay": overlay_path,
-            "contours": contours_path,
-        },
-        statistics,
-    )
+    return paths, statistics
 
 
 def _sample_grid_for_rendering(
