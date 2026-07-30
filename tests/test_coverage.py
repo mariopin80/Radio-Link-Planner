@@ -14,8 +14,10 @@ from radiolink.coverage import (
     interpolate_radials_to_grid,
     run_coverage_analysis,
 )
+from radiolink.coverage_report import _build_coverage_report
 from radiolink.geodesy import destination_point, great_circle_distance_m
 from radiolink.map_picker import build_picker_html
+from radiolink.report_server import start_report_server
 
 
 def _request(tmp_path: Path, **updates) -> CoverageRequest:
@@ -125,6 +127,72 @@ def test_map_picker_exposes_click_confirmation() -> None:
     assert "Usar este local" in page
     assert 'map.on("click"' in page
     assert "© OpenStreetMap contributors" in page
+
+
+def test_local_report_server_serves_relative_map_assets(
+    tmp_path: Path,
+) -> None:
+    import urllib.parse
+    import urllib.request
+
+    report = tmp_path / "coverage report.html"
+    asset = tmp_path / "coverage_overlay_r0_c0.png"
+    report.write_text(
+        '<html><img src="coverage_overlay_r0_c0.png"></html>',
+        encoding="utf-8",
+    )
+    asset.write_bytes(b"overlay")
+
+    server, report_url = start_report_server(report, timeout_seconds=30.0)
+    try:
+        assert report_url.startswith("http://127.0.0.1:")
+        with urllib.request.urlopen(report_url, timeout=5.0) as response:
+            assert response.read().startswith(b"<html>")
+            assert (
+                response.headers["Referrer-Policy"]
+                == "strict-origin-when-cross-origin"
+            )
+        asset_url = urllib.parse.urljoin(
+            report_url,
+            "coverage_overlay_r0_c0.png",
+        )
+        with urllib.request.urlopen(asset_url, timeout=5.0) as response:
+            assert response.read() == b"overlay"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_coverage_report_fits_bounds_before_loading_overlay(
+    tmp_path: Path,
+) -> None:
+    report = _build_coverage_report(
+        request=_request(tmp_path),
+        radials=(_radial(0.0, [-1.0, 15.0]),),
+        statistics={
+            "minimum_margin_db": -1.0,
+            "maximum_margin_db": 15.0,
+            "covered_percent": 90.0,
+            "margin_3_db_percent": 80.0,
+            "margin_6_db_percent": 70.0,
+            "margin_12_db_percent": 50.0,
+        },
+        grid_metadata={"valid_circle_cells": 100},
+        contour_geojson={"type": "FeatureCollection", "features": []},
+        overlay_tiles=[],
+        map_assets=(
+            "report-assets/maplibre-gl.css",
+            "report-assets/maplibre-gl.js",
+        ),
+    )
+
+    assert (
+        '<meta name="referrer" content="strict-origin-when-cross-origin">'
+        in report
+    )
+    assert report.index("map.fitBounds(coverageBounds") < report.index(
+        'map.on("load"'
+    )
 
 
 def test_coverage_pipeline_records_calculated_and_interpolated_counts(
