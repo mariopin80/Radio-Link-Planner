@@ -1,8 +1,8 @@
-# Radio Link Planner 0.3
+# Radio Link Planner 0.4
 
 Protótipo científico local para análise de enlaces terrestres de
 radioamadorismo em VHF e UHF. O programa analisa enlaces ponto a ponto e
-produz mapas de cobertura com radiais adaptativos, além de calcular a
+produz mapas de cobertura por grade métrica direta, além de calcular a
 geometria, comparar modelos de propagação, aplicar Monte Carlo às incertezas
 e gerar relatórios rastreáveis.
 
@@ -21,9 +21,14 @@ rede externa.
 - seleção de localidades por coordenadas ou clique no mapa;
 - mapa interativo MapLibre com o percurso entre os terminais;
 - cobertura P.1812 com raios de 50, 100, 200, 300, 400 ou 500 km;
-- resolução final automática de 50, 100 ou 200 m conforme o raio;
-- perfis radiais refinados conforme relevo, margem e borda de cobertura;
-- mapa de calor interpolado com escala de margem;
+- resolução rápida, recomendada, detalhada ou personalizada;
+- uma execução independente da P.1812 para cada centro de célula a partir
+  de 250 m, sem interpolação de propagação;
+- perfis de terreno amostrados a 30 m, independentemente da resolução visual;
+- previsão de tempo e memória antes da execução;
+- progresso percentual, etapa, células concluídas e tempo restante;
+- cancelamento e retomada automática dos blocos já concluídos;
+- mapa de calor com escala de margem;
 - contornos de 0, +3, +6 e +12 dB;
 - curvatura terrestre com fator k configurável;
 - primeira zona de Fresnel e obstruções críticas;
@@ -72,8 +77,8 @@ PYTHONPATH=src python -m radiolink analyze \
 
 O workflow **Windows MVP** produz dois formatos:
 
-- `RadioLinkPlanner-0.3.2-Windows-x64-Setup.exe`: instalador recomendado;
-- `RadioLinkPlanner-0.3.2-Windows-x64.zip`: pacote portátil para testes.
+- `RadioLinkPlanner-0.4.0-Windows-x64-Setup.exe`: instalador recomendado;
+- `RadioLinkPlanner-0.4.0-Windows-x64.zip`: pacote portátil para testes.
 
 O instalador cria a pasta `Program Files\Radio Link Planner`, atalhos no menu
 Iniciar, um atalho opcional na área de trabalho e o desinstalador. Não é
@@ -121,15 +126,39 @@ O MVP permite:
    **Escolher no mapa**.
 3. Configure frequência, polarização, altura, ganho, perdas, potência e o
    receptor de referência.
-4. Escolha o raio. A resolução é definida automaticamente: 50 m para 50 km;
-   100 m para 100–200 km; 200 m para 300–500 km.
-5. Clique em **Calcular cobertura** e abra o mapa interativo ao concluir.
+4. Escolha o raio e a resolução **Rápida**, **Recomendada**, **Detalhada** ou
+   **Personalizada**. A interface mostra a grade, as células, o tempo e a
+   memória previstos.
+5. Confirme o aviso quando a previsão ultrapassar 10 minutos e clique em
+   **Calcular cobertura**.
+6. Acompanhe percentual, etapa, células concluídas e tempo restante. O botão
+   **Cancelar** preserva os blocos prontos; repetir os mesmos parâmetros e a
+   mesma pasta retoma a execução.
+7. Abra o mapa interativo ao concluir.
 
 A cobertura usa a ITU-R P.1812-8 em um percentual de tempo entre 1 e 50%. O
-raster visual é interpolado entre cálculos radiais adaptativos: o relatório
-registra separadamente a quantidade de perfis, os pontos avaliados fisicamente
-e as células do raster. Portanto, uma célula de 200 m não é apresentada como
-se necessariamente correspondesse a uma execução independente do modelo.
+raster é uma grade azimutal equidistante centrada no transmissor. Cada célula
+a partir de 250 m recebe uma execução independente da P.1812 com seu próprio
+perfil Copernicus GLO-30. Abaixo de 250 m, fora do escopo de distância
+declarado pela recomendação, é usada perda em espaço livre e essa exceção é
+registrada separadamente. A imagem pode ser reamostrada apenas para exibição;
+o motor não interpola perda entre células.
+
+Resoluções recomendadas:
+
+| Raio | Rápida | Recomendada | Detalhada |
+|---:|---:|---:|---:|
+| 50 km | 200 m | 100 m | 50 m |
+| 100 km | 400 m | 200 m | 100 m |
+| 200 km | 800 m | 400 m | 200 m |
+| 300 km | 1.200 m | 600 m | 300 m |
+| 400 km | 1.600 m | 800 m | 400 m |
+| 500 km | 2.000 m | 1.000 m | 500 m |
+
+A grade recomendada mantém aproximadamente 785 mil células dentro do círculo.
+O custo de cada célula ainda cresce com o comprimento do perfil, portanto
+raios grandes podem levar horas mesmo com a mesma quantidade de células. A
+estimativa inicial é recalibrada com o desempenho medido no computador.
 
 No pacote portátil, todos os arquivos extraídos devem permanecer juntos. Para
 uso normal, prefira o instalador.
@@ -143,7 +172,7 @@ uso normal, prefira o instalador.
 4. Clique em **Obter terreno e analisar**.
 5. Use **Mapa e relatório** para ver o percurso, o perfil e o parecer completo.
 
-A interface 0.3 é deliberadamente limitada a 30–3000 MHz e percursos de
+A interface 0.4 é deliberadamente limitada a 30–3000 MHz e percursos de
 3–1000 km. Esses limites correspondem ao foco VHF/UHF desta etapa; o motor
 científico mantém faixas mais amplas para evolução futura.
 
@@ -169,8 +198,9 @@ Arquivos gerados:
 Para a cobertura:
 
 - `coverage_project.json`: parâmetros usados no cálculo;
-- `coverage_radials.npz`: relevo e margem dos perfis calculados;
-- `coverage_margin_db.npy`: raster final de margem;
+- `coverage_margin_db.npy`: grade direta final de margem;
+- `coverage_metadata.json`: motor, versão, células, perfis, tempos,
+  paralelismo e hipóteses científicas;
 - `coverage_overlay.png`: camada transparente para o mapa;
 - `coverage_contours.geojson`: linhas de 0, +3, +6 e +12 dB;
 - `coverage_heatmap.png`: mapa técnico com escala;
@@ -196,7 +226,7 @@ Os testes geométricos e de orçamento não exigem internet. Os ensaios completo
 dos três modelos são executados quando os componentes opcionais foram
 instalados.
 
-## Estado científico da 0.3
+## Estado científico da 0.4
 
 O programa separa três perguntas que calculadoras simples costumam misturar:
 

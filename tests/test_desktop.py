@@ -144,6 +144,34 @@ def test_itu_product_defaults_to_local_app_data(
     assert output.is_file()
 
 
+def test_itu_product_install_can_be_cancelled(
+    tmp_path: Path,
+) -> None:
+    archive = tmp_path / "p1812.zip"
+    with ZipFile(archive, "w") as bundle:
+        bundle.writestr("DN50.TXT", "1 2\n3 4\n")
+        bundle.writestr("N050.TXT", "5 6\n7 8\n")
+    package_dir = tmp_path / "Py1812"
+    checks = 0
+
+    def cancel_after_preflight() -> bool:
+        nonlocal checks
+        checks += 1
+        return checks > 1
+
+    with pytest.raises(InterruptedError, match="cancelled"):
+        install_digital_product(
+            P1812_PRODUCT,
+            package_dir=package_dir,
+            archive_path=archive,
+            cleanup_source_maps=True,
+            progress=None,
+            cancel_check=cancel_after_preflight,
+        )
+
+    assert not (package_dir / "P1812.npz").exists()
+
+
 def test_reference_module_reads_product_from_user_data(
     tmp_path: Path,
     monkeypatch,

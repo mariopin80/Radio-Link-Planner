@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import threading
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -28,15 +29,60 @@ from .terrain import TerrainProfile
 
 ProgressCallback = Callable[[str], None]
 
-COVERAGE_RESOLUTION_M: dict[int, int] = {
-    50: 50,
-    100: 100,
-    200: 100,
-    300: 200,
-    400: 200,
-    500: 200,
+COVERAGE_RESOLUTION_PRESETS: dict[int, dict[str, int]] = {
+    50: {"quick": 200, "recommended": 100, "detailed": 50},
+    100: {"quick": 400, "recommended": 200, "detailed": 100},
+    200: {"quick": 800, "recommended": 400, "detailed": 200},
+    300: {"quick": 1200, "recommended": 600, "detailed": 300},
+    400: {"quick": 1600, "recommended": 800, "detailed": 400},
+    500: {"quick": 2000, "recommended": 1000, "detailed": 500},
 }
+COVERAGE_RESOLUTION_M: dict[int, int] = {
+    radius: presets["recommended"]
+    for radius, presets in COVERAGE_RESOLUTION_PRESETS.items()
+}
+RESOLUTION_PRESETS = frozenset({"quick", "recommended", "detailed", "custom"})
 CONTOUR_LEVELS_DB = (0.0, 3.0, 6.0, 12.0)
+DEFAULT_TERRAIN_STEP_M = 30.0
+
+
+@dataclass(frozen=True)
+class CoverageProgress:
+    """Structured, monotonic progress for a coverage calculation."""
+
+    overall_percent: float
+    phase: str
+    message: str
+    completed: int = 0
+    total: int = 0
+    elapsed_seconds: float = 0.0
+    remaining_seconds: float | None = None
+
+    def __str__(self) -> str:
+        return self.message
+
+
+CoverageStateCallback = Callable[[CoverageProgress], None]
+
+
+class CoverageCancelled(RuntimeError):
+    """Raised after a direct-grid run has saved a resumable checkpoint."""
+
+    def __init__(
+        self,
+        *,
+        completed_cells: int,
+        total_cells: int,
+        checkpoint_directory: Path,
+    ) -> None:
+        self.completed_cells = completed_cells
+        self.total_cells = total_cells
+        self.checkpoint_directory = checkpoint_directory
+        super().__init__(
+            "Cálculo cancelado após "
+            f"{completed_cells:,} de {total_cells:,} células. "
+            "O progresso foi preservado para retomada."
+        )
 
 
 @dataclass(frozen=True)
@@ -58,16 +104,25 @@ class CoverageRequest:
     receiver_threshold_dbm: float
     output_directory: Path
     time_percentage: float = 50.0
+    resolution_preset: str = "recommended"
+    custom_resolution_m: int | None = None
+    terrain_step_m: float = DEFAULT_TERRAIN_STEP_M
 
     @property
     def resolution_m(self) -> int:
-        return coverage_resolution_m(self.radius_km)
+        return coverage_resolution_m(
+            self.radius_km,
+            preset=self.resolution_preset,
+            custom_resolution_m=self.custom_resolution_m,
+        )
 
     def validate(self) -> None:
         if not self.name.strip():
             raise ValueError("Informe um nome para a cobertura.")
-        if not -90.0 <= self.latitude_deg <= 90.0:
-            raise ValueError("A latitude deve estar entre -90 e 90°.")
+        if not -80.0 <= self.latitude_deg <= 80.0:
+            raise ValueError(
+                "A latitude deve estar entre -80 e 80° para a P.1812."
+            )
         if not -180.0 <= self.longitude_deg <= 180.0:
             raise ValueError("A longitude deve estar entre -180 e 180°.")
         if not 30.0 <= self.frequency_mhz <= 3000.0:
@@ -78,18 +133,35 @@ class CoverageRequest:
             raise ValueError("Escolha uma polarização válida.")
         if self.mode.upper() not in MODE_PROFILES:
             raise ValueError("Escolha um modo de recepção válido.")
-        if self.radius_km not in COVERAGE_RESOLUTION_M:
+        if self.radius_km not in COVERAGE_RESOLUTION_PRESETS:
             raise ValueError("Escolha um dos raios de cobertura disponíveis.")
+        if self.resolution_preset not in RESOLUTION_PRESETS:
+            raise ValueError("Escolha uma resolução de cobertura válida.")
+        if self.resolution_preset == "custom":
+            if self.custom_resolution_m is None:
+                raise ValueError("Informe a resolução personalizada.")
+            if not 25 <= int(self.custom_resolution_m) <= 10_000:
+                raise ValueError(
+                    "A resolução personalizada deve estar entre 25 e 10.000 m."
+                )
+        if not 10.0 <= self.terrain_step_m <= 100.0:
+            raise ValueError(
+                "A amostragem do perfil deve estar entre 10 e 100 m."
+            )
         if not 1.0 <= self.time_percentage <= 50.0:
             raise ValueError("A P.1812 aceita percentuais de tempo entre 1 e 50%.")
-        positive = {
+        heights = {
             "altura da antena transmissora": self.transmitter_height_m,
-            "potência transmissora": self.transmitter_power_w,
             "altura da antena receptora": self.receiver_height_m,
         }
-        for label, value in positive.items():
-            if value <= 0.0:
-                raise ValueError(f"A {label} deve ser positiva.")
+        for label, value in heights.items():
+            if value < 1.0 or value > 3000.0:
+                raise ValueError(
+                    f"A {label} deve estar entre 1 e 3.000 m "
+                    "para a P.1812."
+                )
+        if self.transmitter_power_w <= 0.0:
+            raise ValueError("A potência transmissora deve ser positiva.")
         for label, value in {
             "perda da linha transmissora": self.transmitter_line_loss_db,
             "perda da linha receptora": self.receiver_line_loss_db,
@@ -124,18 +196,52 @@ class CoverageOutcome:
     statistics: dict[str, Any]
 
 
-def coverage_resolution_m(radius_km: int) -> int:
+def coverage_resolution_m(
+    radius_km: int,
+    *,
+    preset: str = "recommended",
+    custom_resolution_m: int | None = None,
+) -> int:
     try:
-        return COVERAGE_RESOLUTION_M[int(radius_km)]
+        radius = int(radius_km)
+        if preset == "custom":
+            if custom_resolution_m is None:
+                raise ValueError("custom resolution is required")
+            resolution = int(custom_resolution_m)
+            if not 25 <= resolution <= 10_000:
+                raise ValueError("custom resolution outside supported range")
+            return resolution
+        return COVERAGE_RESOLUTION_PRESETS[radius][preset]
     except (KeyError, ValueError) as exc:
-        raise ValueError(f"unsupported coverage radius: {radius_km}") from exc
+        raise ValueError(
+            f"unsupported coverage resolution: radius={radius_km}, "
+            f"preset={preset}"
+        ) from exc
 
 
 def run_coverage_analysis(
     request: CoverageRequest,
+    progress: CoverageStateCallback | None = None,
+    *,
+    cancel_event: threading.Event | None = None,
+    worker_count: int | None = None,
+) -> CoverageOutcome:
+    """Calculate direct P.1812 coverage at every metric-grid cell."""
+    from .coverage_grid import run_direct_grid_coverage
+
+    return run_direct_grid_coverage(
+        request,
+        progress=progress,
+        cancel_event=cancel_event,
+        worker_count=worker_count,
+    )
+
+
+def run_radial_coverage_analysis_legacy(
+    request: CoverageRequest,
     progress: ProgressCallback | None = None,
 ) -> CoverageOutcome:
-    """Calculate an adaptive P.1812 radial coverage and render its products."""
+    """Retain the v0.3 radial engine only for controlled comparisons."""
     request.validate()
     destination = request.output_directory.expanduser().resolve()
     destination.mkdir(parents=True, exist_ok=True)

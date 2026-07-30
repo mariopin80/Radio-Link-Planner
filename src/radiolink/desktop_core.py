@@ -281,6 +281,9 @@ def smoke_test(output_directory: str | Path) -> AnalysisOutcome:
     }
     if unavailable:
         raise RuntimeError(f"propagation models unavailable: {unavailable}")
+    from .coverage_grid import smoke_test_direct_grid_worker
+
+    smoke_test_direct_grid_worker()
     for key in ("result_json", "summary_markdown", "report_html"):
         if not outcome.paths[key].is_file():
             raise FileNotFoundError(f"expected output not found: {key}")

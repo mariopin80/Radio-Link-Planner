@@ -5,6 +5,7 @@ import json
 import math
 import os
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -28,11 +29,12 @@ os.environ.setdefault("MPLBACKEND", "Agg")
 def write_coverage_outputs(
     *,
     request: CoverageRequest,
-    radials: tuple[RadialCoverage, ...],
     grid: np.ndarray,
     grid_metadata: dict[str, Any],
     output_directory: Path,
     progress: ProgressCallback | None = None,
+    radials: tuple[RadialCoverage, ...] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> tuple[dict[str, Path], dict[str, Any]]:
     output_directory.mkdir(parents=True, exist_ok=True)
     overlay_path = output_directory / "coverage_overlay.png"
@@ -40,42 +42,52 @@ def write_coverage_outputs(
     contours_path = output_directory / "coverage_contours.geojson"
     report_path = output_directory / "coverage_report.html"
 
+    _check_cancelled(cancel_check)
     _notify(progress, "Cobertura: renderizando escala de cores…")
     sampled, axis_km = _sample_grid_for_rendering(
         grid,
         request.radius_km,
         request.resolution_m,
     )
+    _check_cancelled(cancel_check)
+    _notify(progress, "Cobertura: grade preparada para renderização.")
     overlay_tiles = _render_overlay(
         request,
         sampled,
         axis_km,
         overlay_path,
     )
+    _check_cancelled(cancel_check)
+    _notify(progress, "Cobertura: heatmap interativo renderizado.")
     contour_geojson = _render_heatmap_and_contours(
         request,
         sampled,
         axis_km,
         heatmap_path,
     )
+    _check_cancelled(cancel_check)
+    _notify(progress, "Cobertura: contornos científicos gerados.")
     contours_path.write_text(
         json.dumps(contour_geojson, ensure_ascii=False, separators=(",", ":")),
         encoding="utf-8",
     )
     map_assets = _install_map_assets(output_directory)
+    _check_cancelled(cancel_check)
     statistics = _coverage_statistics(grid)
     report_path.write_text(
         _build_coverage_report(
             request=request,
-            radials=radials,
             statistics=statistics,
             grid_metadata=grid_metadata,
             contour_geojson=contour_geojson,
             overlay_tiles=overlay_tiles,
             map_assets=map_assets,
+            radials=radials,
         ),
         encoding="utf-8",
     )
+    _check_cancelled(cancel_check)
+    _notify(progress, "Cobertura: mapa e relatório finalizados.")
     return (
         {
             "report_html": report_path,
@@ -312,12 +324,12 @@ def _coverage_statistics(grid: np.ndarray) -> dict[str, Any]:
 def _build_coverage_report(
     *,
     request: CoverageRequest,
-    radials: tuple[RadialCoverage, ...],
     statistics: dict[str, Any],
     grid_metadata: dict[str, Any],
     contour_geojson: dict[str, Any],
     overlay_tiles: list[dict[str, Any]],
     map_assets: tuple[str, str],
+    radials: tuple[RadialCoverage, ...] | None = None,
 ) -> str:
     map_css, map_js = map_assets
     bounds = _coverage_bounds(request)
@@ -330,8 +342,63 @@ def _build_coverage_report(
         overlay_tiles,
         separators=(",", ":"),
     )
-    evaluated = sum(item.evaluated_point_count for item in radials)
     raster_cells = grid_metadata["valid_circle_cells"]
+    failed_cells = int(grid_metadata.get("failed_cells", 0))
+    resume_count = int(grid_metadata.get("resume_count", 0))
+    compute_duration = _format_duration(
+        float(grid_metadata.get("compute_seconds", 0.0))
+    )
+    if radials is None:
+        eyebrow = "Radio Link Planner · grade métrica direta"
+        traceability_rows = f"""
+        <tr><th>Modelo</th><td>ITU-R P.1812-8</td></tr>
+        <tr><th>Implementação</th>
+          <td>{html.escape(str(grid_metadata["model_version"]))}</td></tr>
+        <tr><th>Método</th><td>Grade métrica direta (AEQD)</td></tr>
+        <tr><th>Resolução das células</th>
+          <td>{request.resolution_m} m</td></tr>
+        <tr><th>Amostragem do terreno nos perfis</th>
+          <td>{request.terrain_step_m:g} m</td></tr>
+        <tr><th>Células dentro do círculo</th><td>{raster_cells:,}</td></tr>
+        <tr><th>Células concluídas</th>
+          <td>{grid_metadata.get("calculated_cells", raster_cells):,}</td></tr>
+        <tr><th>Células P.1812 calculadas</th>
+          <td>{grid_metadata["p1812_cells"]:,}</td></tr>
+        <tr><th>Células de curta distância (espaço livre)</th>
+          <td>{grid_metadata["short_range_free_space_cells"]:,}</td></tr>
+        <tr><th>Células com falha</th><td>{failed_cells:,}</td></tr>
+        <tr><th>Células interpoladas pelo motor</th><td>0</td></tr>
+        <tr><th>Pontos de terreno processados</th>
+          <td>{grid_metadata["terrain_profile_points"]:,}</td></tr>
+        <tr><th>Processos de cálculo</th>
+          <td>{grid_metadata["worker_count"]}</td></tr>
+        <tr><th>Tempo acumulado da grade</th>
+          <td>{html.escape(compute_duration)}</td></tr>
+        <tr><th>Retomadas de checkpoint</th><td>{resume_count}</td></tr>
+        <tr><th>Relevo</th><td>Copernicus GLO-30</td></tr>"""
+        method_notes = """
+      <p class="note">Cada centro de célula a partir de 250 m recebeu uma
+      execução independente da P.1812 com seu próprio perfil de terreno.
+      Não há interpolação de perda entre radiais ou entre células. A imagem
+      pode ser reamostrada apenas para exibição no navegador.</p>
+      <p class="note">A P.1812-8 declara escopo a partir de 0,25 km.
+      Dentro dessa distância, o programa utiliza perda em espaço livre,
+      identificada separadamente nos metadados.</p>"""
+    else:
+        eyebrow = "Radio Link Planner · comparação radial legada"
+        evaluated = sum(item.evaluated_point_count for item in radials)
+        traceability_rows = f"""
+        <tr><th>Modelo</th><td>ITU-R P.1812-8</td></tr>
+        <tr><th>Método</th><td>Radiais adaptativos legados</td></tr>
+        <tr><th>Resolução visual</th><td>{request.resolution_m} m</td></tr>
+        <tr><th>Perfis radiais calculados</th><td>{len(radials)}</td></tr>
+        <tr><th>Pontos avaliados fisicamente</th><td>{evaluated:,}</td></tr>
+        <tr><th>Células do raster interpolado</th><td>{raster_cells:,}</td></tr>
+        <tr><th>Relevo</th><td>Copernicus GLO-30</td></tr>"""
+        method_notes = """
+      <p class="note">Resultado legado mantido somente para comparações
+      controladas. O raster foi interpolado entre perfis radiais e não
+      representa uma execução independente da P.1812 em cada célula.</p>"""
     return f"""<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -382,7 +449,7 @@ def _build_coverage_report(
 </head>
 <body>
   <header>
-    <div class="eyebrow">Radio Link Planner · cobertura adaptativa</div>
+    <div class="eyebrow">{eyebrow}</div>
     <h1>{html.escape(request.name)}</h1>
     <div>{request.frequency_mhz:.3f} MHz · P.1812 a
          {request.time_percentage:.0f}% do tempo · raio {request.radius_km} km</div>
@@ -413,17 +480,9 @@ def _build_coverage_report(
     <section class="card">
       <h2>Rastreabilidade do cálculo</h2>
       <table>
-        <tr><th>Modelo</th><td>ITU-R P.1812-8</td></tr>
-        <tr><th>Resolução visual</th><td>{request.resolution_m} m</td></tr>
-        <tr><th>Perfis radiais calculados</th><td>{len(radials)}</td></tr>
-        <tr><th>Pontos avaliados fisicamente</th><td>{evaluated:,}</td></tr>
-        <tr><th>Células do raster final</th><td>{raster_cells:,}</td></tr>
-        <tr><th>Relevo</th><td>Copernicus GLO-30</td></tr>
+        {traceability_rows}
       </table>
-      <p class="note">O raster é interpolado entre perfis radiais adaptativos.
-      A resolução visual não significa que uma execução independente da P.1812
-      tenha sido feita em cada célula. O refinamento aumenta onde o relevo,
-      a margem ou a borda de cobertura variam rapidamente.</p>
+      {method_notes}
       <p class="note">Vegetação, edificações e ruído local ainda não estão
       representados nesta versão; áreas urbanas e florestais devem ser
       interpretadas com essa limitação.</p>
@@ -503,6 +562,17 @@ def _build_coverage_report(
 """
 
 
+def _format_duration(seconds: float) -> str:
+    value = max(0, round(seconds))
+    hours, remainder = divmod(value, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours} h {minutes:02d} min {secs:02d} s"
+    if minutes:
+        return f"{minutes} min {secs:02d} s"
+    return f"{secs} s"
+
+
 def _local_point_to_lon_lat(
     request: CoverageRequest,
     east_km: float,
@@ -544,3 +614,8 @@ def _coverage_bounds(request: CoverageRequest) -> list[list[float]]:
 def _notify(progress: ProgressCallback | None, message: str) -> None:
     if progress is not None:
         progress(message)
+
+
+def _check_cancelled(cancel_check: Callable[[], bool] | None) -> None:
+    if cancel_check is not None and cancel_check():
+        raise InterruptedError("coverage report rendering cancelled")
