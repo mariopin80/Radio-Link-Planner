@@ -8,6 +8,7 @@ import math
 import multiprocessing
 import os
 import platform
+import shutil
 import sys
 import threading
 import time
@@ -733,12 +734,13 @@ def run_direct_grid_coverage(
     _close_memmap(grid)
     _close_memmap(completed)
     _close_memmap(block_statistics)
-    # Windows does not allow replacing an open memory-mapped file. Dropping
-    # the arrays releases NumPy's final references before moving the checkpoint.
+    # Windows can retain a file lock briefly after the memory map is closed.
+    # Do not promote the checkpoint with os.replace(): copying keeps the
+    # completed result independent of that transient lock.
     del grid, completed, block_statistics
     gc.collect()
     final_grid_path = destination / "coverage_margin_db.npy"
-    os.replace(checkpoint.grid, final_grid_path)
+    _copy_completed_grid(checkpoint.grid, final_grid_path)
     _remove_completed_checkpoint(checkpoint)
     tracker.emit(
         100.0,
@@ -1282,14 +1284,26 @@ def _update_checkpoint_metadata(
 def _remove_completed_checkpoint(paths: _CheckpointPaths) -> None:
     for path in (
         paths.metadata,
+        paths.grid,
         paths.completed,
         paths.block_statistics,
     ):
-        path.unlink(missing_ok=True)
+        try:
+            path.unlink(missing_ok=True)
+        except PermissionError:
+            # A Windows memory-map handle can outlive its Python object for a
+            # moment. Leaving this otherwise complete checkpoint is harmless;
+            # it can be cleaned up on a later run.
+            pass
     try:
         paths.directory.rmdir()
     except OSError:
         pass
+
+
+def _copy_completed_grid(source: Path, destination: Path) -> None:
+    """Publish a completed checkpoint grid without renaming its source file."""
+    shutil.copyfile(source, destination)
 
 
 def _resumable_cell_count(request: CoverageRequest) -> int:
