@@ -168,12 +168,6 @@ def extract_profile(
 ) -> TerrainProfile:
     if step_m <= 0.0:
         raise ValueError("terrain step must be positive")
-    try:
-        import rasterio
-    except ImportError as exc:
-        raise RuntimeError(
-            "O componente geográfico não está disponível nesta instalação."
-        ) from exc
 
     distance_m = great_circle_distance_m(
         latitude_a_deg,
@@ -197,6 +191,7 @@ def extract_profile(
     )
 
     elevations = np.empty(count, dtype=float)
+    rasterio = None
     for code, indices in tile_groups:
         try:
             source = download_tile(code, cache_dir=cache_dir, progress=progress)
@@ -204,6 +199,8 @@ def extract_profile(
             _notify(progress, f"Terreno: bloco {code} é marítimo; usando 0 m.")
             elevations[indices] = 0.0
             continue
+        if rasterio is None:
+            rasterio = _require_rasterio()
         samples, nodata = _sample_raster(
             source,
             longitudes[indices],
@@ -236,13 +233,6 @@ def sample_elevations(
     progress: ProgressCallback | None = None,
 ) -> np.ndarray:
     """Sample Copernicus GLO-30 elevations for arbitrary coordinate arrays."""
-    try:
-        import rasterio
-    except ImportError as exc:
-        raise RuntimeError(
-            "O componente geográfico não está disponível nesta instalação."
-        ) from exc
-
     latitudes = np.asarray(latitudes_deg, dtype=float)
     longitudes = np.asarray(longitudes_deg, dtype=float)
     if latitudes.shape != longitudes.shape or latitudes.ndim != 1:
@@ -253,6 +243,7 @@ def sample_elevations(
         raise ValueError("coordinates must be finite")
 
     elevations = np.empty(len(latitudes), dtype=float)
+    rasterio = None
     for code, indices in _tile_groups(latitudes, longitudes):
         try:
             source = download_tile(code, cache_dir=cache_dir, progress=progress)
@@ -260,6 +251,8 @@ def sample_elevations(
             _notify(progress, f"Terreno: bloco {code} é marítimo; usando 0 m.")
             elevations[indices] = 0.0
             continue
+        if rasterio is None:
+            rasterio = _require_rasterio()
         samples, nodata = _sample_raster(
             source,
             longitudes[indices],
@@ -270,6 +263,16 @@ def sample_elevations(
             samples[np.isclose(samples, nodata)] = np.nan
         elevations[indices] = samples
     return repair_elevation_samples(elevations)
+
+
+def _require_rasterio() -> Any:
+    try:
+        import rasterio
+    except ImportError as exc:
+        raise RuntimeError(
+            "O componente geográfico não está disponível nesta instalação."
+        ) from exc
+    return rasterio
 
 
 def _sample_raster(
