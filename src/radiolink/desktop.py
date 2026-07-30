@@ -37,6 +37,7 @@ from .project_editor import (
     project_from_editor_values,
     project_slug,
 )
+from .report_server import open_report_in_browser
 from .version import __version__
 
 
@@ -1657,9 +1658,9 @@ class RadioLinkPlannerApp:
 
     def _open_report(self) -> None:
         if self.current_mode == "coverage" and self.last_coverage:
-            _open_path(self.last_coverage.paths["report_html"])
+            open_report_in_browser(self.last_coverage.paths["report_html"])
         elif self.last_outcome:
-            _open_path(self.last_outcome.paths["report_html"])
+            open_report_in_browser(self.last_outcome.paths["report_html"])
 
     def _open_profile(self) -> None:
         if self.last_outcome and "profile_plot" in self.last_outcome.paths:
