@@ -303,7 +303,16 @@ def _sample_dataset_blocks(
 
     longitudes = np.asarray(longitudes, dtype=float)
     latitudes = np.asarray(latitudes, dtype=float)
-    rows_raw, columns_raw = dataset.index(longitudes, latitudes)
+    # ``DatasetReader.index`` converts its return values to Python ``int`` and
+    # therefore only accepts scalar coordinates in some Rasterio versions.
+    # ``rowcol`` is the vectorized API and preserves the block-grouping speedup.
+    from rasterio.transform import rowcol
+
+    rows_raw, columns_raw = rowcol(
+        dataset.transform,
+        longitudes,
+        latitudes,
+    )
     rows = np.clip(np.asarray(rows_raw, dtype=int), 0, dataset.height - 1)
     columns = np.clip(
         np.asarray(columns_raw, dtype=int),
