@@ -72,8 +72,8 @@ PYTHONPATH=src python -m radiolink analyze \
 
 O workflow **Windows MVP** produz dois formatos:
 
-- `RadioLinkPlanner-0.3.1-Windows-x64-Setup.exe`: instalador recomendado;
-- `RadioLinkPlanner-0.3.1-Windows-x64.zip`: pacote portátil para testes.
+- `RadioLinkPlanner-0.3.2-Windows-x64-Setup.exe`: instalador recomendado;
+- `RadioLinkPlanner-0.3.2-Windows-x64.zip`: pacote portátil para testes.
 
 O instalador cria a pasta `Program Files\Radio Link Planner`, atalhos no menu
 Iniciar, um atalho opcional na área de trabalho e o desinstalador. Não é
@@ -94,6 +94,11 @@ percurso. Eles não são redistribuídos no ZIP. Os dados ficam em cache e as
 análises seguintes dos mesmos locais podem ser repetidas offline. A camada
 cartográfica OpenStreetMap requer internet para aparecer, mas não participa de
 nenhum cálculo.
+
+Os relatórios cartográficos devem ser abertos pelo botão **Mapa e relatório**
+do aplicativo. O programa os disponibiliza temporariamente somente em
+`127.0.0.1`, com uma URL aleatória, para que o navegador carregue corretamente
+o mapa-base, o heatmap e os contornos sem expor os arquivos à rede externa.
 
 O MVP permite:
 
