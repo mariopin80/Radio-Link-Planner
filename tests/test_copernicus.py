@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import urllib.error
 
 import numpy as np
 import pytest
 
 from radiolink.copernicus import (
+    CopernicusSeaTileError,
     _tile_groups,
     extract_profile,
     repair_elevation_samples,
@@ -38,6 +40,29 @@ def test_tile_grouping_is_vectorized_and_wraps_the_antimeridian() -> None:
     assert grouped["S24_00_W047_00"] == [0, 1]
     assert grouped["S25_00_W047_00"] == [2]
     assert grouped["S24_00_W180_00"] == [3, 4]
+
+
+def test_missing_copernicus_tile_is_cached_as_sea_level(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from radiolink.copernicus import download_tile, sample_elevations
+
+    calls = 0
+
+    def missing_tile(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        raise urllib.error.HTTPError("https://example.invalid", 404, "missing", {}, None)
+
+    monkeypatch.setattr("radiolink.copernicus.urllib.request.urlopen", missing_tile)
+    with pytest.raises(CopernicusSeaTileError):
+        download_tile("S25_00_W045_00", cache_dir=tmp_path)
+    assert (tmp_path / "S25_00_W045_00.sea").is_file()
+    assert np.all(sample_elevations(
+        np.asarray([-24.5, -24.6]), np.asarray([-44.5, -44.6]), cache_dir=tmp_path
+    ) == 0.0)
+    assert calls == 1
 
 
 def test_repair_elevation_samples_interpolates_nodata_and_isolated_zero() -> None:
