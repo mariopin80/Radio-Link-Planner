@@ -82,3 +82,57 @@ def great_circle_points(
     )
     longitudes = np.degrees(np.arctan2(vectors[:, 1], vectors[:, 0]))
     return latitudes, longitudes
+
+
+def destination_point(
+    latitude_deg: float,
+    longitude_deg: float,
+    bearing_deg: float,
+    distance_m: float,
+) -> tuple[float, float]:
+    """Return the point reached along a spherical great-circle path."""
+    latitudes, longitudes = destination_points(
+        latitude_deg,
+        longitude_deg,
+        bearing_deg,
+        np.asarray([distance_m], dtype=float),
+    )
+    return float(latitudes[0]), float(longitudes[0])
+
+
+def destination_points(
+    latitude_deg: float,
+    longitude_deg: float,
+    bearing_deg: float,
+    distances_m: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Vectorized spherical direct-geodesic calculation."""
+    distances = np.asarray(distances_m, dtype=float)
+    if np.any(distances < 0.0) or not np.all(np.isfinite(distances)):
+        raise ValueError("distances must be finite and non-negative")
+
+    latitude = math.radians(latitude_deg)
+    longitude = math.radians(longitude_deg)
+    bearing = math.radians(bearing_deg)
+    angular_distance = distances / EARTH_MEAN_RADIUS_M
+    sin_latitude = math.sin(latitude)
+    cos_latitude = math.cos(latitude)
+    sin_angular = np.sin(angular_distance)
+    cos_angular = np.cos(angular_distance)
+
+    destination_latitude = np.arcsin(
+        np.clip(
+            sin_latitude * cos_angular
+            + cos_latitude * sin_angular * math.cos(bearing),
+            -1.0,
+            1.0,
+        )
+    )
+    destination_longitude = longitude + np.arctan2(
+        math.sin(bearing) * sin_angular * cos_latitude,
+        cos_angular - sin_latitude * np.sin(destination_latitude),
+    )
+    normalized_longitude = (
+        destination_longitude + math.pi
+    ) % (2.0 * math.pi) - math.pi
+    return np.degrees(destination_latitude), np.degrees(normalized_longitude)

@@ -1,9 +1,9 @@
-# Escopo científico da versão 0.2
+# Escopo científico da versão 0.3
 
 ## Aplicação declarada
 
 Enlaces terrestres fixos, predominantemente entre 3 e 1.000 km, nas faixas de
-VHF e UHF. A versão 0.2 não deve ser usada como modelo validado para enlaces
+VHF e UHF. A versão 0.3 não deve ser usada como modelo validado para enlaces
 móveis urbanos, aeronáuticos, via satélite ou HF ionosférico.
 
 ## Modelos
@@ -48,13 +48,33 @@ Erros do DEM e alturas ainda não são perturbados no Monte Carlo atual. Eles
 aparecem como limitações do parecer. Uma versão futura deverá usar erros
 espacialmente correlacionados e reexecutar o modelo ou um metamodelo validado.
 
-## Terreno automático da versão 0.2
+## Terreno automático da versão 0.3
 
 O editor obtém elevações do Copernicus GLO-30 e mantém os blocos em cache
 local. O perfil automático ainda atribui a classe de zona terrestre interior
 ao percurso inteiro e não inclui vegetação ou edificações. Enlaces costeiros,
 sobre mar ou sobre grandes corpos d'água exigem revisão manual da coluna
 `zone_code` do perfil antes de um parecer definitivo.
+
+## Cobertura adaptativa da versão 0.3
+
+O módulo ponto-área usa a ITU-R P.1812-8 como modelo único. Uma primeira
+passagem calcula perfis com separação de 10°. Pares de perfis são subdivididos
+quando apresentam descontinuidade relevante de relevo, margem ou alcance com
+margem positiva. Ao longo de cada radial, pontos intermediários também são
+adicionados quando a margem não é linear, o terreno se afasta fortemente da
+tendência local ou um contorno operacional é atravessado.
+
+O raster final tem 50 m para raio de 50 km, 100 m para 100–200 km e 200 m para
+300–500 km. Esses valores descrevem a grade interpolada, não a distância entre
+todas as execuções independentes da P.1812. A saída registra ambos os números
+para impedir que a resolução visual seja confundida com densidade física.
+
+Os contornos operacionais são 0, +3, +6 e +12 dB. A cobertura ainda assume
+zona terrestre interior, receptor uniforme e ausência de vegetação e
+edificações. O método adaptativo precisa ser validado contra uma grade
+cartesiana densa e medições de campo antes de qualquer afirmação geral de
+superioridade.
 
 ## Critérios de classificação
 

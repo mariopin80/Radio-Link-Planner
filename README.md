@@ -1,20 +1,30 @@
-# Radio Link Planner 0.2
+# Radio Link Planner 0.3
 
 Protótipo científico local para análise de enlaces terrestres de
-radioamadorismo em VHF e UHF. O programa calcula a geometria do percurso,
-executa modelos de propagação independentes, aplica Monte Carlo às
-incertezas e gera um relatório rastreável.
+radioamadorismo em VHF e UHF. O programa analisa enlaces ponto a ponto e
+produz mapas de cobertura com radiais adaptativos, além de calcular a
+geometria, comparar modelos de propagação, aplicar Monte Carlo às incertezas
+e gerar relatórios rastreáveis.
 
 Esta versão reúne o **motor científico de linha de comando** e um MVP desktop
-capaz de criar enlaces próprios. Ela não depende de servidor, não abre porta
-local e não exige Python no computador do usuário.
+com dois módulos: **Enlace ponto a ponto** e **Mapa de cobertura**. Ela não
+depende de servidor e não exige Python no computador do usuário. O seletor
+cartográfico abre temporariamente uma página somente em `127.0.0.1`; ela é
+encerrada assim que as coordenadas são confirmadas e não recebe conexões da
+rede externa.
 
 ## O que já funciona
 
 - perfil de terreno Copernicus GLO-30 ou CSV importado;
 - obtenção automática e cache local dos blocos Copernicus necessários;
 - editor visual dos dois terminais e dos parâmetros principais do enlace;
+- seleção de localidades por coordenadas ou clique no mapa;
 - mapa interativo MapLibre com o percurso entre os terminais;
+- cobertura P.1812 com raios de 50, 100, 200, 300, 400 ou 500 km;
+- resolução final automática de 50, 100 ou 200 m conforme o raio;
+- perfis radiais refinados conforme relevo, margem e borda de cobertura;
+- mapa de calor interpolado com escala de margem;
+- contornos de 0, +3, +6 e +12 dB;
 - curvatura terrestre com fator k configurável;
 - primeira zona de Fresnel e obstruções críticas;
 - ITM 1.3 oficial da NTIA em modo ponto a ponto;
@@ -60,13 +70,21 @@ PYTHONPATH=src python -m radiolink analyze \
 
 ## MVP desktop para Windows
 
-O pacote portátil `RadioLinkPlanner-0.2-Windows-x64.zip` é produzido
-automaticamente pelo workflow **Windows MVP**. Depois de descompactar, execute
-`RadioLinkPlanner.exe`; não é necessário instalar Python.
+O workflow **Windows MVP** produz dois formatos:
 
-O ZIP aprovado fica disponível na seção
+- `RadioLinkPlanner-0.3.0-Windows-x64-Setup.exe`: instalador recomendado;
+- `RadioLinkPlanner-0.3.0-Windows-x64.zip`: pacote portátil para testes.
+
+O instalador cria a pasta `Program Files\Radio Link Planner`, atalhos no menu
+Iniciar, um atalho opcional na área de trabalho e o desinstalador. Não é
+necessário instalar Python. Resultados permanecem no perfil do usuário, em
+`Radio Link Planner\Resultados`, e o cache de terreno fica em
+`%LOCALAPPDATA%\RadioLinkPlanner`; a desinstalação não apaga esses dados.
+
+Os arquivos aprovados ficam disponíveis na seção
 [Releases](https://github.com/mariopin80/radio-link-planner/releases) do
-repositório privado.
+repositório privado. A Release também inclui `SHA256SUMS.txt` para conferir a
+integridade dos downloads.
 
 Na primeira análise, o aplicativo precisa de internet para obter os produtos
 digitais integrais diretamente da ITU e os blocos Copernicus GLO-30 do
@@ -78,8 +96,10 @@ nenhum cálculo.
 O MVP permite:
 
 - executar por duplo clique, sem terminal;
+- escolher entre enlace ponto a ponto e mapa de cobertura na abertura;
 - analisar o caso real Morro do Jacu–Palmira já incluído;
 - criar um enlace por coordenadas, frequência, modo, polarização e meta;
+- escolher os locais digitando as coordenadas ou clicando no mapa;
 - configurar altura, ganho, cabo, potência e sensibilidade de cada terminal;
 - abrir e editar outro projeto JSON;
 - gerar automaticamente um pacote reproduzível com `project.json` e
@@ -87,8 +107,25 @@ O MVP permite:
 - escolher o número de execuções Monte Carlo;
 - gerar e abrir mapa, relatório HTML e gráficos técnicos.
 
-O pacote é uma pasta portátil, não um instalador. Todos os arquivos extraídos
-devem permanecer juntos e em uma pasta gravável pelo usuário.
+### Criar um mapa de cobertura
+
+1. Na abertura, escolha **Mapa de cobertura**.
+2. Informe a estação transmissora por coordenadas ou clique em
+   **Escolher no mapa**.
+3. Configure frequência, polarização, altura, ganho, perdas, potência e o
+   receptor de referência.
+4. Escolha o raio. A resolução é definida automaticamente: 50 m para 50 km;
+   100 m para 100–200 km; 200 m para 300–500 km.
+5. Clique em **Calcular cobertura** e abra o mapa interativo ao concluir.
+
+A cobertura usa a ITU-R P.1812-8 em um percentual de tempo entre 1 e 50%. O
+raster visual é interpolado entre cálculos radiais adaptativos: o relatório
+registra separadamente a quantidade de perfis, os pontos avaliados fisicamente
+e as células do raster. Portanto, uma célula de 200 m não é apresentada como
+se necessariamente correspondesse a uma execução independente do modelo.
+
+No pacote portátil, todos os arquivos extraídos devem permanecer juntos. Para
+uso normal, prefira o instalador.
 
 ### Criar o primeiro enlace próprio
 
@@ -99,7 +136,7 @@ devem permanecer juntos e em uma pasta gravável pelo usuário.
 4. Clique em **Obter terreno e analisar**.
 5. Use **Mapa e relatório** para ver o percurso, o perfil e o parecer completo.
 
-A interface 0.2 é deliberadamente limitada a 30–3000 MHz e percursos de
+A interface 0.3 é deliberadamente limitada a 30–3000 MHz e percursos de
 3–1000 km. Esses limites correspondem ao foco VHF/UHF desta etapa; o motor
 científico mantém faixas mais amplas para evolução futura.
 
@@ -122,6 +159,16 @@ Arquivos gerados:
 - `profile.png`: relevo, raio direto, curvatura e Fresnel;
 - `monte_carlo.png`: comparação probabilística dos modelos.
 
+Para a cobertura:
+
+- `coverage_project.json`: parâmetros usados no cálculo;
+- `coverage_radials.npz`: relevo e margem dos perfis calculados;
+- `coverage_margin_db.npy`: raster final de margem;
+- `coverage_overlay.png`: camada transparente para o mapa;
+- `coverage_contours.geojson`: linhas de 0, +3, +6 e +12 dB;
+- `coverage_heatmap.png`: mapa técnico com escala;
+- `coverage_report.html`: mapa interativo e rastreabilidade.
+
 ## Demonstração reproduzível
 
 O diretório [`demo-output`](demo-output) contém a saída completa gerada pelo
@@ -142,7 +189,7 @@ Os testes geométricos e de orçamento não exigem internet. Os ensaios completo
 dos três modelos são executados quando os componentes opcionais foram
 instalados.
 
-## Estado científico da 0.2
+## Estado científico da 0.3
 
 O programa separa três perguntas que calculadoras simples costumam misturar:
 

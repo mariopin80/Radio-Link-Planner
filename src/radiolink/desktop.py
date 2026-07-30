@@ -12,6 +12,12 @@ import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+from .coverage import (
+    COVERAGE_RESOLUTION_M,
+    CoverageOutcome,
+    CoverageRequest,
+    run_coverage_analysis,
+)
 from .desktop_core import (
     APP_NAME,
     AnalysisOutcome,
@@ -22,6 +28,7 @@ from .desktop_core import (
     run_form_analysis,
 )
 from .domain import Project, ReceiverSpec
+from .map_picker import open_coordinate_picker
 from .modes import MODE_PROFILES, threshold_dbm
 from .project_editor import (
     ProjectEditorValues,
@@ -39,9 +46,11 @@ class RadioLinkPlannerApp:
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
         self.worker: threading.Thread | None = None
         self.last_outcome: AnalysisOutcome | None = None
+        self.last_coverage: CoverageOutcome | None = None
         self.loaded_project: Project | None = None
         self.loaded_terrain_path: Path | None = None
         self.form_widgets: list[tk.Widget] = []
+        self.current_mode: str | None = None
 
         self.name_var = tk.StringVar()
         self.frequency_var = tk.StringVar()
@@ -58,12 +67,43 @@ class RadioLinkPlannerApp:
         self.distance_var = tk.StringVar(value="Distância: —")
         self.terrain_status_var = tk.StringVar()
         self.status_var = tk.StringVar(value="Carregando o caso de referência…")
+        self.coverage_vars = {
+            "name": tk.StringVar(value="Minha cobertura"),
+            "latitude": tk.StringVar(),
+            "longitude": tk.StringVar(),
+            "frequency": tk.StringVar(value="146.000"),
+            "polarization": tk.StringVar(value="Vertical"),
+            "mode": tk.StringVar(value="FM"),
+            "radius": tk.StringVar(value="50"),
+            "time_percentage": tk.StringVar(value="50"),
+            "tx_height": tk.StringVar(value="30"),
+            "tx_gain": tk.StringVar(value="6"),
+            "tx_line_loss": tk.StringVar(value="1"),
+            "tx_power": tk.StringVar(value="50"),
+            "rx_height": tk.StringVar(value="2"),
+            "rx_gain": tk.StringVar(value="2"),
+            "rx_line_loss": tk.StringVar(value="1"),
+            "rx_sensitivity": tk.StringVar(value="-120"),
+            "output": tk.StringVar(
+                value=str(
+                    Path.home()
+                    / APP_NAME
+                    / "Resultados"
+                    / "Minha-cobertura"
+                )
+            ),
+        }
+        self.coverage_resolution_var = tk.StringVar()
 
         self._configure_window()
         self._configure_styles()
-        self._build_layout()
         self._install_coordinate_traces()
-        self._load_project_file(bundled_example_path(), announce=False)
+        self.coverage_vars["radius"].trace_add(
+            "write",
+            self._coverage_radius_changed,
+        )
+        self._coverage_radius_changed()
+        self._show_start_screen()
         self.root.after(100, self._poll_events)
 
     @staticmethod
@@ -112,6 +152,24 @@ class RadioLinkPlannerApp:
             font=("Segoe UI Semibold", 22),
         )
         style.configure(
+            "StartTitle.TLabel",
+            background="#11151a",
+            foreground="#f2f4f6",
+            font=("Segoe UI Semibold", 30),
+        )
+        style.configure(
+            "ModeTitle.TLabel",
+            background="#1a2027",
+            foreground="#f2f4f6",
+            font=("Segoe UI Semibold", 17),
+        )
+        style.configure(
+            "ModeText.TLabel",
+            background="#1a2027",
+            foreground="#aeb8c2",
+            font=("Segoe UI", 10),
+        )
+        style.configure(
             "Subtitle.TLabel",
             background="#11151a",
             foreground="#aeb8c2",
@@ -150,6 +208,17 @@ class RadioLinkPlannerApp:
             padding=(18, 9),
             font=("Segoe UI Semibold", 10),
         )
+        style.configure(
+            "Mode.TButton",
+            background="#252d36",
+            foreground="#ffffff",
+            padding=(24, 13),
+            font=("Segoe UI Semibold", 11),
+        )
+        style.map(
+            "Mode.TButton",
+            background=[("active", "#d84a4a")],
+        )
         style.map(
             "Accent.TButton",
             background=[("active", "#ec5a5a"), ("disabled", "#663737")],
@@ -187,6 +256,124 @@ class RadioLinkPlannerApp:
             troughcolor="#252d36",
         )
 
+    def _show_start_screen(self) -> None:
+        if self.worker is not None and self.worker.is_alive():
+            return
+        self.current_mode = None
+        self.form_widgets.clear()
+        for child in self.root.winfo_children():
+            child.destroy()
+        self.root.geometry("1040x700")
+        self.root.minsize(820, 600)
+
+        outer = ttk.Frame(self.root, style="App.TFrame", padding=(54, 44))
+        outer.grid(row=0, column=0, sticky="nsew")
+        self.root.rowconfigure(0, weight=1)
+        self.root.columnconfigure(0, weight=1)
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(2, weight=1)
+        ttk.Label(
+            outer,
+            text=APP_NAME,
+            style="StartTitle.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            outer,
+            text=(
+                "Planejamento científico local de enlaces e cobertura VHF/UHF"
+            ),
+            style="Subtitle.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(5, 28))
+
+        choices = ttk.Frame(outer, style="App.TFrame")
+        choices.grid(row=2, column=0, sticky="nsew")
+        choices.columnconfigure(0, weight=1)
+        choices.columnconfigure(1, weight=1)
+        choices.rowconfigure(0, weight=1)
+        self._build_mode_card(
+            choices,
+            column=0,
+            title="Enlace ponto a ponto",
+            description=(
+                "Compare ITM, P.1812 e P.2001, visualize o perfil do terreno "
+                "e estime a confiabilidade por Monte Carlo."
+            ),
+            button_text="Planejar enlace",
+            command=lambda: self._open_mode("link"),
+            padding=(0, 10),
+        )
+        self._build_mode_card(
+            choices,
+            column=1,
+            title="Mapa de cobertura",
+            description=(
+                "Calcule cobertura P.1812 com radiais adaptativos, mapa de "
+                "calor interpolado e contornos de margem."
+            ),
+            button_text="Calcular cobertura",
+            command=lambda: self._open_mode("coverage"),
+            padding=(10, 0),
+        )
+        ttk.Label(
+            outer,
+            text=(
+                f"v{__version__} • processamento local • terreno Copernicus GLO-30"
+            ),
+            style="Subtitle.TLabel",
+        ).grid(row=3, column=0, sticky="w", pady=(24, 0))
+
+    def _build_mode_card(
+        self,
+        parent: ttk.Frame,
+        *,
+        column: int,
+        title: str,
+        description: str,
+        button_text: str,
+        command,
+        padding: tuple[int, int],
+    ) -> None:
+        card = ttk.Frame(parent, style="Panel.TFrame", padding=(28, 30))
+        card.grid(row=0, column=column, sticky="nsew", padx=padding)
+        card.columnconfigure(0, weight=1)
+        card.rowconfigure(1, weight=1)
+        ttk.Label(card, text=title, style="ModeTitle.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(
+            card,
+            text=description,
+            style="ModeText.TLabel",
+            wraplength=350,
+            justify="left",
+        ).grid(row=1, column=0, sticky="nw", pady=(14, 22))
+        ttk.Button(
+            card,
+            text=button_text,
+            command=command,
+            style="Mode.TButton",
+        ).grid(row=2, column=0, sticky="ew")
+
+    def _open_mode(self, mode: str) -> None:
+        for child in self.root.winfo_children():
+            child.destroy()
+        self.form_widgets.clear()
+        self.current_mode = mode
+        self.root.geometry("1160x800")
+        self.root.minsize(940, 680)
+        if mode == "link":
+            self.status_var.set("Configure o enlace ou abra um projeto salvo.")
+            self._build_layout()
+            if self.loaded_project is None:
+                self._load_project_file(bundled_example_path(), announce=False)
+        elif mode == "coverage":
+            self.status_var.set(
+                "Configure o transmissor, o receptor de referência e o raio."
+            )
+            self._build_coverage_layout()
+        else:
+            raise ValueError(f"unknown application mode: {mode}")
+
     def _build_layout(self) -> None:
         outer = ttk.Frame(self.root, style="App.TFrame", padding=(24, 20))
         outer.grid(row=0, column=0, sticky="nsew")
@@ -212,7 +399,14 @@ class RadioLinkPlannerApp:
             header,
             text=f"v{__version__}",
             style="Subtitle.TLabel",
-        ).grid(row=0, column=1, rowspan=2, sticky="e")
+        ).grid(row=0, column=2, rowspan=2, sticky="e")
+        home_button = ttk.Button(
+            header,
+            text="Início",
+            command=self._show_start_screen,
+        )
+        home_button.grid(row=0, column=1, rowspan=2, sticky="e", padx=(12, 14))
+        self._register(home_button)
         header.columnconfigure(0, weight=1)
 
         self.notebook = ttk.Notebook(outer)
@@ -385,11 +579,388 @@ class RadioLinkPlannerApp:
             entry = ttk.Entry(panel, textvariable=variables[key])
             entry.grid(row=row, column=1, sticky="ew", pady=4)
             self._register(entry)
+        map_button = ttk.Button(
+            panel,
+            text="Escolher coordenadas no mapa…",
+            command=lambda: self._pick_coordinates(
+                variables["latitude"],
+                variables["longitude"],
+                title,
+            ),
+        )
+        map_button.grid(
+            row=len(fields),
+            column=0,
+            columnspan=2,
+            sticky="ew",
+            pady=(9, 2),
+        )
+        self._register(map_button)
         ttk.Label(
             panel,
             text="Altura sobre o solo; ganhos em dBi e perdas positivas.",
             style="Hint.TLabel",
-        ).grid(row=len(fields), column=0, columnspan=2, sticky="w", pady=(8, 0))
+        ).grid(row=len(fields) + 1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
+    def _build_coverage_layout(self) -> None:
+        outer = ttk.Frame(self.root, style="App.TFrame", padding=(24, 20))
+        outer.grid(row=0, column=0, sticky="nsew")
+        self.root.rowconfigure(0, weight=1)
+        self.root.columnconfigure(0, weight=1)
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(1, weight=1)
+
+        header = ttk.Frame(outer, style="App.TFrame")
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 14))
+        header.columnconfigure(0, weight=1)
+        ttk.Label(header, text=APP_NAME, style="Title.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(
+            header,
+            text=(
+                "Cobertura VHF/UHF • P.1812 • radiais adaptativos • "
+                "mapa de calor e contornos"
+            ),
+            style="Subtitle.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
+        home_button = ttk.Button(
+            header,
+            text="Início",
+            command=self._show_start_screen,
+        )
+        home_button.grid(row=0, column=1, rowspan=2, padx=(12, 14))
+        self._register(home_button)
+        ttk.Label(
+            header,
+            text=f"v{__version__}",
+            style="Subtitle.TLabel",
+        ).grid(row=0, column=2, rowspan=2, sticky="e")
+
+        self.notebook = ttk.Notebook(outer)
+        self.notebook.grid(row=1, column=0, sticky="nsew")
+        self.editor_tab = ttk.Frame(
+            self.notebook,
+            style="Panel.TFrame",
+            padding=18,
+        )
+        self.results_tab = ttk.Frame(
+            self.notebook,
+            style="Panel.TFrame",
+            padding=18,
+        )
+        self.notebook.add(self.editor_tab, text="Configurar cobertura")
+        self.notebook.add(self.results_tab, text="Mapa e resultados")
+        self._build_coverage_editor_tab()
+        self._build_coverage_results_tab()
+
+        footer = ttk.Frame(outer, style="App.TFrame")
+        footer.grid(row=2, column=0, sticky="ew", pady=(14, 0))
+        footer.columnconfigure(0, weight=1)
+        ttk.Label(
+            footer,
+            textvariable=self.status_var,
+            style="Status.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+        self.analyze_button = ttk.Button(
+            footer,
+            text="Calcular cobertura",
+            command=self._start_coverage_analysis,
+            style="Accent.TButton",
+        )
+        self.analyze_button.grid(row=0, column=1, sticky="e")
+
+    def _build_coverage_editor_tab(self) -> None:
+        tab = self.editor_tab
+        tab.columnconfigure(0, weight=1)
+        tab.rowconfigure(2, weight=1)
+        variables = self.coverage_vars
+
+        general = ttk.Frame(tab, style="Panel.TFrame")
+        general.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        for column in (1, 3, 5):
+            general.columnconfigure(column, weight=1)
+        self._coverage_field(
+            general,
+            row=0,
+            label="Nome da cobertura",
+            variable=variables["name"],
+            label_column=0,
+            entry_column=1,
+            columnspan=3,
+        )
+        self._coverage_field(
+            general,
+            row=0,
+            label="Frequência (MHz)",
+            variable=variables["frequency"],
+            label_column=4,
+            entry_column=5,
+            left_padding=20,
+        )
+        ttk.Label(general, text="Modo", style="Panel.TLabel").grid(
+            row=1, column=0, sticky="w", padx=(0, 8), pady=5
+        )
+        mode_combo = ttk.Combobox(
+            general,
+            textvariable=variables["mode"],
+            values=tuple(MODE_PROFILES),
+            state="readonly",
+        )
+        mode_combo.grid(row=1, column=1, sticky="ew", pady=5)
+        mode_combo.bind("<<ComboboxSelected>>", self._coverage_mode_changed)
+        self._register(mode_combo)
+        ttk.Label(general, text="Polarização", style="Panel.TLabel").grid(
+            row=1, column=2, sticky="w", padx=(20, 8), pady=5
+        )
+        polarization_combo = ttk.Combobox(
+            general,
+            textvariable=variables["polarization"],
+            values=("Vertical", "Horizontal"),
+            state="readonly",
+        )
+        polarization_combo.grid(row=1, column=3, sticky="ew", pady=5)
+        self._register(polarization_combo)
+        ttk.Label(general, text="Tempo P.1812 (%)", style="Panel.TLabel").grid(
+            row=1, column=4, sticky="w", padx=(20, 8), pady=5
+        )
+        time_combo = ttk.Combobox(
+            general,
+            textvariable=variables["time_percentage"],
+            values=("1", "10", "20", "50"),
+            state="readonly",
+        )
+        time_combo.grid(row=1, column=5, sticky="ew", pady=5)
+        self._register(time_combo)
+
+        location = ttk.LabelFrame(
+            tab,
+            text="Local e extensão",
+            style="Panel.TLabelframe",
+            padding=12,
+        )
+        location.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+        for column in (1, 3, 5):
+            location.columnconfigure(column, weight=1)
+        self._coverage_field(
+            location,
+            row=0,
+            label="Latitude (°)",
+            variable=variables["latitude"],
+            label_column=0,
+            entry_column=1,
+        )
+        self._coverage_field(
+            location,
+            row=0,
+            label="Longitude (°)",
+            variable=variables["longitude"],
+            label_column=2,
+            entry_column=3,
+            left_padding=16,
+        )
+        map_button = ttk.Button(
+            location,
+            text="Escolher no mapa…",
+            command=lambda: self._pick_coordinates(
+                variables["latitude"],
+                variables["longitude"],
+                "Transmissor da cobertura",
+            ),
+        )
+        map_button.grid(row=0, column=4, padx=(16, 8), pady=5)
+        self._register(map_button)
+        radius_combo = ttk.Combobox(
+            location,
+            textvariable=variables["radius"],
+            values=tuple(str(value) for value in COVERAGE_RESOLUTION_M),
+            state="readonly",
+            width=8,
+        )
+        radius_combo.grid(row=0, column=5, sticky="ew", pady=5)
+        self._register(radius_combo)
+        ttk.Label(
+            location,
+            text="Raio (km)",
+            style="Hint.TLabel",
+        ).grid(row=1, column=5, sticky="w")
+        ttk.Label(
+            location,
+            textvariable=self.coverage_resolution_var,
+            style="Hint.TLabel",
+        ).grid(row=1, column=0, columnspan=5, sticky="w")
+
+        equipment = ttk.Frame(tab, style="Panel.TFrame")
+        equipment.grid(row=2, column=0, sticky="nsew")
+        equipment.columnconfigure(0, weight=1)
+        equipment.columnconfigure(1, weight=1)
+        equipment.rowconfigure(0, weight=1)
+        transmitter = ttk.LabelFrame(
+            equipment,
+            text="Transmissor",
+            style="Panel.TLabelframe",
+            padding=14,
+        )
+        transmitter.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        receiver = ttk.LabelFrame(
+            equipment,
+            text="Receptor de referência",
+            style="Panel.TLabelframe",
+            padding=14,
+        )
+        receiver.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        for panel in (transmitter, receiver):
+            panel.columnconfigure(1, weight=1)
+        for row, (label, key) in enumerate(
+            (
+                ("Altura da antena (m)", "tx_height"),
+                ("Ganho da antena (dBi)", "tx_gain"),
+                ("Perda no cabo (dB)", "tx_line_loss"),
+                ("Potência TX (W)", "tx_power"),
+            )
+        ):
+            self._coverage_panel_field(
+                transmitter, row, label, variables[key]
+            )
+        for row, (label, key) in enumerate(
+            (
+                ("Altura da antena (m)", "rx_height"),
+                ("Ganho da antena (dBi)", "rx_gain"),
+                ("Perda no cabo (dB)", "rx_line_loss"),
+                ("Sensibilidade RX (dBm)", "rx_sensitivity"),
+            )
+        ):
+            self._coverage_panel_field(receiver, row, label, variables[key])
+        ttk.Label(
+            receiver,
+            text=(
+                "Os mesmos parâmetros receptores são aplicados a todas as "
+                "células do mapa."
+            ),
+            style="Hint.TLabel",
+            wraplength=420,
+        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        output = ttk.Frame(tab, style="Panel.TFrame")
+        output.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        output.columnconfigure(1, weight=1)
+        ttk.Label(output, text="Pasta de saída", style="Panel.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, 10)
+        )
+        output_entry = ttk.Entry(output, textvariable=variables["output"])
+        output_entry.grid(row=0, column=1, sticky="ew")
+        self._register(output_entry)
+        output_button = ttk.Button(
+            output,
+            text="Selecionar…",
+            command=self._select_coverage_output,
+        )
+        output_button.grid(row=0, column=2, padx=(8, 0))
+        self._register(output_button)
+
+    def _coverage_field(
+        self,
+        parent: ttk.Frame,
+        *,
+        row: int,
+        label: str,
+        variable: tk.StringVar,
+        label_column: int,
+        entry_column: int,
+        columnspan: int = 1,
+        left_padding: int = 0,
+    ) -> None:
+        ttk.Label(parent, text=label, style="Panel.TLabel").grid(
+            row=row,
+            column=label_column,
+            sticky="w",
+            padx=(left_padding, 8),
+            pady=5,
+        )
+        entry = ttk.Entry(parent, textvariable=variable)
+        entry.grid(
+            row=row,
+            column=entry_column,
+            columnspan=columnspan,
+            sticky="ew",
+            pady=5,
+        )
+        self._register(entry)
+
+    def _coverage_panel_field(
+        self,
+        parent: ttk.LabelFrame,
+        row: int,
+        label: str,
+        variable: tk.StringVar,
+    ) -> None:
+        ttk.Label(parent, text=label, style="Panel.TLabel").grid(
+            row=row, column=0, sticky="w", padx=(0, 10), pady=5
+        )
+        entry = ttk.Entry(parent, textvariable=variable)
+        entry.grid(row=row, column=1, sticky="ew", pady=5)
+        self._register(entry)
+
+    def _build_coverage_results_tab(self) -> None:
+        tab = self.results_tab
+        tab.columnconfigure(0, weight=1)
+        tab.rowconfigure(1, weight=1)
+        header = ttk.Frame(tab, style="Panel.TFrame")
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(0, weight=1)
+        ttk.Label(header, text="Resultado", style="PanelTitle.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        actions = ttk.Frame(header, style="Panel.TFrame")
+        actions.grid(row=0, column=1, sticky="e")
+        self.report_button = ttk.Button(
+            actions,
+            text="Abrir mapa interativo",
+            command=self._open_report,
+            state="disabled",
+        )
+        self.report_button.grid(row=0, column=0, padx=(0, 6))
+        self.profile_button = ttk.Button(
+            actions,
+            text="Abrir mapa técnico",
+            command=self._open_heatmap,
+            state="disabled",
+        )
+        self.profile_button.grid(row=0, column=1, padx=6)
+        self.folder_button = ttk.Button(
+            actions,
+            text="Abrir pasta",
+            command=self._open_output_directory,
+            state="disabled",
+        )
+        self.folder_button.grid(row=0, column=2, padx=(6, 0))
+
+        body = ttk.Frame(tab, style="Panel.TFrame")
+        body.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(1, weight=1)
+        self.progress = ttk.Progressbar(body, mode="indeterminate")
+        self.progress.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        self.result_text = tk.Text(
+            body,
+            wrap="word",
+            relief="flat",
+            borderwidth=0,
+            background="#12171d",
+            foreground="#dce2e8",
+            insertbackground="#f2f4f6",
+            selectbackground="#485564",
+            font=("Cascadia Mono", 10),
+            padx=14,
+            pady=12,
+        )
+        self.result_text.grid(row=1, column=0, sticky="nsew")
+        self._set_result_text(
+            "Configure a estação transmissora e o receptor de referência.\n\n"
+            "A cobertura usa P.1812 e terreno Copernicus GLO-30. O programa "
+            "começa com radiais de 10° e refina as regiões em que relevo, "
+            "margem ou limite de cobertura mudam rapidamente."
+        )
 
     def _build_results_tab(self) -> None:
         tab = self.results_tab
@@ -518,6 +1089,72 @@ class RadioLinkPlannerApp:
                 "Terreno: Copernicus GLO-30 automático; internet só para blocos "
                 "ainda ausentes do cache."
             )
+
+    def _pick_coordinates(
+        self,
+        latitude_var: tk.StringVar,
+        longitude_var: tk.StringVar,
+        title: str,
+    ) -> None:
+        try:
+            initial_latitude = self._parse_float(
+                latitude_var.get(),
+                "Latitude",
+            )
+            initial_longitude = self._parse_float(
+                longitude_var.get(),
+                "Longitude",
+            )
+        except ValueError:
+            initial_latitude = None
+            initial_longitude = None
+
+        def selected(latitude: float, longitude: float) -> None:
+            def apply_selection() -> None:
+                latitude_var.set(f"{latitude:.8f}")
+                longitude_var.set(f"{longitude:.8f}")
+                self.status_var.set(
+                    f"Coordenadas escolhidas no mapa: "
+                    f"{latitude:.6f}, {longitude:.6f}."
+                )
+
+            self.root.after(0, apply_selection)
+
+        try:
+            open_coordinate_picker(
+                title=f"Escolher local — {title}",
+                initial_latitude=initial_latitude,
+                initial_longitude=initial_longitude,
+                on_selected=selected,
+            )
+            self.status_var.set(
+                "O mapa foi aberto no navegador. Clique no local e confirme."
+            )
+        except Exception as exc:  # noqa: BLE001 - browser integration boundary
+            messagebox.showerror(
+                APP_NAME,
+                f"Não foi possível abrir o seletor de mapa.\n\n{exc}",
+            )
+
+    def _coverage_radius_changed(self, *_: object) -> None:
+        try:
+            radius = int(self.coverage_vars["radius"].get())
+            resolution = COVERAGE_RESOLUTION_M[radius]
+        except (KeyError, ValueError):
+            self.coverage_resolution_var.set("Escolha um raio válido.")
+            return
+        dimension = 2 * round(radius * 1000 / resolution) + 1
+        self.coverage_resolution_var.set(
+            f"Resolução final: {resolution} m • raster {dimension} × "
+            f"{dimension} células • radiais refinados conforme o terreno."
+        )
+
+    def _coverage_mode_changed(self, _: tk.Event[tk.Misc]) -> None:
+        mode = self.coverage_vars["mode"].get()
+        if mode not in MODE_PROFILES:
+            return
+        default, _ = threshold_dbm(ReceiverSpec(), mode)
+        self.coverage_vars["rx_sensitivity"].set(f"{default:.2f}")
 
     def _coordinate_tuple(self) -> tuple[float, float, float, float]:
         terminal_a = self.terminal_vars["a"]
@@ -654,6 +1291,13 @@ class RadioLinkPlannerApp:
         if selected:
             self.output_var.set(selected)
 
+    def _select_coverage_output(self) -> None:
+        selected = filedialog.askdirectory(
+            title="Selecionar pasta da cobertura"
+        )
+        if selected:
+            self.coverage_vars["output"].set(selected)
+
     def _collect_editor_values(self) -> ProjectEditorValues:
         def terminal(terminal_id: str, label: str) -> TerminalEditorValues:
             variables = self.terminal_vars[terminal_id]
@@ -745,6 +1389,112 @@ class RadioLinkPlannerApp:
         )
         self.worker.start()
 
+    def _collect_coverage_request(self) -> CoverageRequest:
+        values = self.coverage_vars
+        output_text = values["output"].get().strip()
+        if not output_text:
+            raise ValueError("Selecione uma pasta de saída.")
+        request = CoverageRequest(
+            name=values["name"].get().strip(),
+            latitude_deg=self._parse_float(
+                values["latitude"].get(),
+                "Latitude",
+            ),
+            longitude_deg=self._parse_float(
+                values["longitude"].get(),
+                "Longitude",
+            ),
+            frequency_mhz=self._parse_float(
+                values["frequency"].get(),
+                "Frequência",
+            ),
+            polarization=values["polarization"].get().lower(),
+            mode=values["mode"].get(),
+            radius_km=int(values["radius"].get()),
+            transmitter_height_m=self._parse_float(
+                values["tx_height"].get(),
+                "Altura da antena transmissora",
+            ),
+            transmitter_gain_dbi=self._parse_float(
+                values["tx_gain"].get(),
+                "Ganho da antena transmissora",
+            ),
+            transmitter_line_loss_db=self._parse_float(
+                values["tx_line_loss"].get(),
+                "Perda no cabo transmissor",
+            ),
+            transmitter_power_w=self._parse_float(
+                values["tx_power"].get(),
+                "Potência transmissora",
+            ),
+            receiver_height_m=self._parse_float(
+                values["rx_height"].get(),
+                "Altura da antena receptora",
+            ),
+            receiver_gain_dbi=self._parse_float(
+                values["rx_gain"].get(),
+                "Ganho da antena receptora",
+            ),
+            receiver_line_loss_db=self._parse_float(
+                values["rx_line_loss"].get(),
+                "Perda no cabo receptor",
+            ),
+            receiver_threshold_dbm=self._parse_float(
+                values["rx_sensitivity"].get(),
+                "Sensibilidade receptora",
+            ),
+            output_directory=Path(output_text),
+            time_percentage=self._parse_float(
+                values["time_percentage"].get(),
+                "Percentual de tempo P.1812",
+            ),
+        )
+        request.validate()
+        return request
+
+    def _start_coverage_analysis(self) -> None:
+        try:
+            request = self._collect_coverage_request()
+        except Exception as exc:  # noqa: BLE001 - GUI boundary reports form errors
+            messagebox.showerror(APP_NAME, str(exc))
+            self.notebook.select(self.editor_tab)
+            return
+        self._set_running(True)
+        self.notebook.select(self.results_tab)
+        self.status_var.set("Preparando terreno e P.1812…")
+        self._set_result_text(
+            "Cálculo de cobertura em andamento.\n\n"
+            "O mapa começa com 36 radiais e é refinado onde houver mudanças "
+            "relevantes de relevo, margem ou borda de cobertura. Raios maiores "
+            "podem exigir downloads e processamento prolongados."
+        )
+        self.worker = threading.Thread(
+            target=self._coverage_worker,
+            args=(request,),
+            daemon=True,
+        )
+        self.worker.start()
+
+    def _coverage_worker(self, request: CoverageRequest) -> None:
+        try:
+            outcome = run_coverage_analysis(
+                request,
+                progress=lambda message: self.events.put(
+                    ("progress", message)
+                ),
+            )
+            self.events.put(("coverage_success", outcome))
+        except Exception as exc:  # noqa: BLE001 - worker must return every failure
+            self.events.put(
+                (
+                    "error",
+                    {
+                        "message": f"{type(exc).__name__}: {exc}",
+                        "traceback": traceback.format_exc(),
+                    },
+                )
+            )
+
     def _analysis_worker(self, request: FormAnalysisRequest) -> None:
         try:
             outcome = run_form_analysis(
@@ -780,6 +1530,7 @@ class RadioLinkPlannerApp:
 
     def _finish_analysis(self, event: str, payload: object) -> None:
         self._set_running(False)
+        self.worker = None
         if event == "success":
             if not isinstance(payload, AnalysisOutcome):
                 raise TypeError("unexpected analysis result")
@@ -798,6 +1549,18 @@ class RadioLinkPlannerApp:
                     else "disabled"
                 )
             )
+            return
+        if event == "coverage_success":
+            if not isinstance(payload, CoverageOutcome):
+                raise TypeError("unexpected coverage result")
+            self.last_coverage = payload
+            self._set_result_text(self._build_coverage_summary(payload))
+            self.status_var.set(
+                "Cobertura concluída: mapa de calor e contornos gerados."
+            )
+            self.report_button.configure(state="normal")
+            self.profile_button.configure(state="normal")
+            self.folder_button.configure(state="normal")
             return
 
         error = payload
@@ -839,16 +1602,77 @@ class RadioLinkPlannerApp:
         self.result_text.insert("1.0", value)
         self.result_text.configure(state="disabled")
 
+    @staticmethod
+    def _build_coverage_summary(outcome: CoverageOutcome) -> str:
+        request = outcome.request
+        statistics = outcome.statistics
+        return "\n".join(
+            [
+                request.name,
+                (
+                    f"{request.frequency_mhz:.3f} MHz • "
+                    f"P.1812 a {request.time_percentage:.0f}% do tempo"
+                ),
+                "",
+                (
+                    f"Raio: {request.radius_km} km • "
+                    f"resolução final: {request.resolution_m} m"
+                ),
+                f"Perfis radiais calculados: {statistics['radial_count']}",
+                (
+                    "Pontos avaliados fisicamente: "
+                    f"{statistics['physically_evaluated_points']:,}"
+                ),
+                (
+                    "Células do raster interpolado: "
+                    f"{statistics['visual_grid_cells']:,}"
+                ),
+                "",
+                (
+                    "Área com margem ≥ 0 dB: "
+                    f"{statistics['covered_percent']:.1f}%"
+                ),
+                (
+                    "Área com margem ≥ +3 dB: "
+                    f"{statistics['margin_3_db_percent']:.1f}%"
+                ),
+                (
+                    "Área com margem ≥ +6 dB: "
+                    f"{statistics['margin_6_db_percent']:.1f}%"
+                ),
+                (
+                    "Área com margem ≥ +12 dB: "
+                    f"{statistics['margin_12_db_percent']:.1f}%"
+                ),
+                "",
+                "Contornos: 0, +3, +6 e +12 dB.",
+                (
+                    "O relatório identifica explicitamente células "
+                    "interpoladas e limitações de vegetação/edificações."
+                ),
+                "",
+                f"Mapa: {outcome.paths['report_html']}",
+            ]
+        )
+
     def _open_report(self) -> None:
-        if self.last_outcome:
+        if self.current_mode == "coverage" and self.last_coverage:
+            _open_path(self.last_coverage.paths["report_html"])
+        elif self.last_outcome:
             _open_path(self.last_outcome.paths["report_html"])
 
     def _open_profile(self) -> None:
         if self.last_outcome and "profile_plot" in self.last_outcome.paths:
             _open_path(self.last_outcome.paths["profile_plot"])
 
+    def _open_heatmap(self) -> None:
+        if self.last_coverage:
+            _open_path(self.last_coverage.paths["heatmap"])
+
     def _open_output_directory(self) -> None:
-        if self.last_outcome:
+        if self.current_mode == "coverage" and self.last_coverage:
+            _open_path(self.last_coverage.paths["report_html"].parent)
+        elif self.last_outcome:
             _open_path(self.last_outcome.paths["report_html"].parent)
 
 

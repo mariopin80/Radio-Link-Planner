@@ -6,6 +6,7 @@ __pycache__/
 htmlcov/
 dist/
 build/
+installer-output/
 *.egg-info/
 results/
 .local/

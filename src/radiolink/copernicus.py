@@ -63,7 +63,7 @@ def download_tile(
     temporary.unlink(missing_ok=True)
     request = urllib.request.Request(
         tile_url(code),
-        headers={"User-Agent": "RadioLinkPlanner/0.2 (+https://github.com/mariopin80)"},
+        headers={"User-Agent": "RadioLinkPlanner/0.3 (+https://github.com/mariopin80)"},
     )
     _notify(progress, f"Terreno: baixando bloco Copernicus {code}…")
     try:
@@ -170,6 +170,56 @@ def extract_profile(
     )
     _notify(progress, f"Terreno: perfil salvo com {count} pontos.")
     return TerrainProfile.from_csv(destination)
+
+
+def sample_elevations(
+    latitudes_deg: np.ndarray,
+    longitudes_deg: np.ndarray,
+    *,
+    cache_dir: str | Path | None = None,
+    progress: ProgressCallback | None = None,
+) -> np.ndarray:
+    """Sample Copernicus GLO-30 elevations for arbitrary coordinate arrays."""
+    try:
+        import rasterio
+    except ImportError as exc:
+        raise RuntimeError(
+            "O componente geográfico não está disponível nesta instalação."
+        ) from exc
+
+    latitudes = np.asarray(latitudes_deg, dtype=float)
+    longitudes = np.asarray(longitudes_deg, dtype=float)
+    if latitudes.shape != longitudes.shape or latitudes.ndim != 1:
+        raise ValueError("latitude and longitude arrays must be one-dimensional")
+    if len(latitudes) == 0:
+        raise ValueError("at least one coordinate is required")
+    if not np.all(np.isfinite(latitudes)) or not np.all(np.isfinite(longitudes)):
+        raise ValueError("coordinates must be finite")
+
+    point_codes = np.asarray(
+        [
+            tile_code(float(latitude), float(longitude))
+            for latitude, longitude in zip(latitudes, longitudes)
+        ],
+        dtype=object,
+    )
+    codes = sorted(set(point_codes.tolist()))
+    elevations = np.empty(len(latitudes), dtype=float)
+    for code in codes:
+        source = download_tile(code, cache_dir=cache_dir, progress=progress)
+        indices = np.flatnonzero(point_codes == code)
+        coordinates = [
+            (float(longitudes[index]), float(latitudes[index])) for index in indices
+        ]
+        with rasterio.open(source) as dataset:
+            samples = np.asarray(
+                [float(value[0]) for value in dataset.sample(coordinates)],
+                dtype=float,
+            )
+            if dataset.nodata is not None:
+                samples[np.isclose(samples, float(dataset.nodata))] = np.nan
+        elevations[indices] = samples
+    return repair_elevation_samples(elevations)
 
 
 def repair_elevation_samples(elevation: np.ndarray) -> np.ndarray:

@@ -122,7 +122,7 @@ def project_from_editor_values(
             terrain_resolution_m=30.0,
             clutter_included=False,
             metadata={
-                "created_with": "Radio Link Planner desktop 0.2",
+                "created_with": "Radio Link Planner desktop 0.3",
                 "terrain_zone_assumption": "all_inland_land",
             },
         )
