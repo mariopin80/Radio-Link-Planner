@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import hashlib
 import importlib.metadata
 import json
@@ -732,6 +733,10 @@ def run_direct_grid_coverage(
     _close_memmap(grid)
     _close_memmap(completed)
     _close_memmap(block_statistics)
+    # Windows does not allow replacing an open memory-mapped file. Dropping
+    # the arrays releases NumPy's final references before moving the checkpoint.
+    del grid, completed, block_statistics
+    gc.collect()
     final_grid_path = destination / "coverage_margin_db.npy"
     os.replace(checkpoint.grid, final_grid_path)
     _remove_completed_checkpoint(checkpoint)
