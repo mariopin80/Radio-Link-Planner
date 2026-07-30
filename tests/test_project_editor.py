@@ -10,6 +10,10 @@ from radiolink.project_editor import (
     project_from_editor_values,
     project_slug,
 )
+from radiolink.project_files import (
+    read_coverage_project,
+    write_coverage_project,
+)
 
 
 def test_editor_round_trip_preserves_exposed_link_parameters(
@@ -51,3 +55,31 @@ def test_editor_rejects_link_outside_desktop_distance_scope(
 
 def test_project_slug_is_portable() -> None:
     assert project_slug("Morro do Jacu – Palmira") == "morro-do-jacu-palmira"
+
+
+def test_coverage_project_round_trip_preserves_form_values(tmp_path) -> None:
+    values = {
+        "name": "Cobertura Boituva",
+        "latitude": "-23.283",
+        "longitude": "-47.672",
+        "frequency": "146.000",
+        "polarization": "Vertical",
+        "mode": "FM",
+        "radius": "100",
+        "resolution_preset": "Recomendada",
+        "custom_resolution": "500",
+        "time_percentage": "50",
+        "tx_height": "30",
+        "tx_gain": "6",
+        "tx_line_loss": "1",
+        "tx_power": "50",
+        "rx_height": "2",
+        "rx_gain": "2",
+        "rx_line_loss": "1",
+        "rx_sensitivity": "-120",
+        "output": str(tmp_path / "output"),
+    }
+
+    project_path = write_coverage_project(values, tmp_path / "boituva.rlp")
+
+    assert read_coverage_project(project_path) == values

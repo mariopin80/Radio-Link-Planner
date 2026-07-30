@@ -79,6 +79,15 @@ def write_outputs(
         encoding="utf-8",
     )
     paths["interactive_map"] = report_path
+    from .pdf_reports import write_link_pdf
+
+    pdf_path = destination / "relatorio_enlace.pdf"
+    paths["report_pdf"] = write_link_pdf(
+        project=project,
+        result=result,
+        paths=paths,
+        output_path=pdf_path,
+    )
     return paths
 
 

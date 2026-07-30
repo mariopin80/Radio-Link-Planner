@@ -9,16 +9,19 @@ e gerar relatórios rastreáveis.
 Esta versão reúne o **motor científico de linha de comando** e um MVP desktop
 com dois módulos: **Enlace ponto a ponto** e **Mapa de cobertura**. Ela não
 depende de servidor e não exige Python no computador do usuário. O seletor
-cartográfico abre temporariamente uma página somente em `127.0.0.1`; ela é
-encerrada assim que as coordenadas são confirmadas e não recebe conexões da
-rede externa.
+cartográfico abre em uma janela nativa do aplicativo e usa temporariamente uma
+página local somente em `127.0.0.1`; ela é encerrada assim que as coordenadas
+são confirmadas e não recebe conexões da rede externa. Se o componente nativo
+não estiver disponível, o navegador continua funcionando como alternativa.
 
 ## O que já funciona
 
 - perfil de terreno Copernicus GLO-30 ou CSV importado;
 - obtenção automática e cache local dos blocos Copernicus necessários;
 - editor visual dos dois terminais e dos parâmetros principais do enlace;
+- formulários responsivos, com tamanho inicial ampliado e rolagem vertical;
 - seleção de localidades por coordenadas ou clique no mapa;
+- projetos de enlace e cobertura com Novo, Abrir e Salvar;
 - mapa interativo MapLibre com o percurso entre os terminais;
 - cobertura P.1812 com raios de 50, 100, 200, 300, 400 ou 500 km;
 - resolução rápida, recomendada, detalhada ou personalizada;
@@ -40,13 +43,13 @@ rede externa.
 - Monte Carlo reproduzível sem duplicar a variabilidade atmosférica;
 - limiares editáveis para FM, SSB, CW, APRS e LoRa;
 - classificação, confiança e recomendações;
-- JSON, Markdown, HTML e gráficos técnicos.
+- JSON, Markdown, HTML, PDF e gráficos técnicos.
 
 ## Instalação para desenvolvimento
 
 ```bash
 python -m venv .venv
-.venv/bin/python -m pip install -e ".[dev,plots,geo,models]"
+.venv/bin/python -m pip install -e ".[dev,plots,geo,models,desktop]"
 .venv/bin/python scripts/build_itm.py
 .venv/bin/python scripts/bootstrap_itu_data.py
 ```
@@ -77,8 +80,8 @@ PYTHONPATH=src python -m radiolink analyze \
 
 O workflow **Windows MVP** produz dois formatos:
 
-- `RadioLinkPlanner-0.4.0-Windows-x64-Setup.exe`: instalador recomendado;
-- `RadioLinkPlanner-0.4.0-Windows-x64.zip`: pacote portátil para testes.
+- `RadioLinkPlanner-0.4.1-Windows-x64-Setup.exe`: instalador recomendado;
+- `RadioLinkPlanner-0.4.1-Windows-x64.zip`: pacote portátil para testes.
 
 O instalador cria a pasta `Program Files\Radio Link Planner`, atalhos no menu
 Iniciar, um atalho opcional na área de trabalho e o desinstalador. Não é
@@ -109,15 +112,16 @@ O MVP permite:
 
 - executar por duplo clique, sem terminal;
 - escolher entre enlace ponto a ponto e mapa de cobertura na abertura;
+- identificar os dois módulos por ilustrações próprias na tela inicial;
 - analisar o caso real Morro do Jacu–Palmira já incluído;
 - criar um enlace por coordenadas, frequência, modo, polarização e meta;
 - escolher os locais digitando as coordenadas ou clicando no mapa;
 - configurar altura, ganho, cabo, potência e sensibilidade de cada terminal;
-- abrir e editar outro projeto JSON;
+- criar, salvar e abrir projetos de enlace ou cobertura;
 - gerar automaticamente um pacote reproduzível com `project.json` e
   `terrain_profile.csv`;
 - escolher o número de execuções Monte Carlo;
-- gerar e abrir mapa, relatório HTML e gráficos técnicos.
+- gerar e abrir mapa, relatório HTML, relatório PDF e gráficos técnicos.
 
 ### Criar um mapa de cobertura
 
@@ -165,7 +169,8 @@ uso normal, prefira o instalador.
 
 ### Criar o primeiro enlace próprio
 
-1. Abra `RadioLinkPlanner.exe` e clique em **Novo enlace**.
+1. Abra `RadioLinkPlanner.exe`, escolha **Enlace ponto a ponto** e clique em
+   **Novo projeto**.
 2. Preencha as coordenadas e os dados de rádio dos terminais A e B.
 3. Na aba **Análise e resultados**, escolha a pasta de saída e o número de
    execuções Monte Carlo.
@@ -192,6 +197,7 @@ Arquivos gerados:
 - `result.json`: resultados completos e rastreáveis;
 - `summary.md`: parecer técnico;
 - `report.html`: relatório visual local;
+- `relatorio_enlace.pdf`: relatório técnico portátil e imprimível;
 - `profile.png`: relevo, raio direto, curvatura e Fresnel;
 - `monte_carlo.png`: comparação probabilística dos modelos.
 
@@ -204,7 +210,8 @@ Para a cobertura:
 - `coverage_overlay.png`: camada transparente para o mapa;
 - `coverage_contours.geojson`: linhas de 0, +3, +6 e +12 dB;
 - `coverage_heatmap.png`: mapa técnico com escala;
-- `coverage_report.html`: mapa interativo e rastreabilidade.
+- `coverage_report.html`: mapa interativo e rastreabilidade;
+- `relatorio_cobertura.pdf`: síntese técnica portátil e imprimível.
 
 ## Demonstração reproduzível
 

@@ -22,6 +22,7 @@ from typing import Any
 import numpy as np
 
 from .copernicus import (
+    CopernicusSeaTileError,
     default_cache_directory,
     download_tile,
     sample_elevations,
@@ -476,6 +477,13 @@ def run_direct_grid_coverage(
                 completed_cells,
                 estimate.valid_circle_cells,
                 checkpoint,
+            )
+        except CopernicusSeaTileError:
+            tracker.emit(
+                base_percent,
+                "terrain",
+                f"{base_percent:.0f}% — Terreno: bloco {code} é marítimo; "
+                "usando nível do mar.",
             )
         tile_percent = 2.0 + 6.0 * index / max(len(terrain_codes), 1)
         tracker.emit(
