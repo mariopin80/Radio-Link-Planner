@@ -31,6 +31,7 @@ from .desktop_core import (
     AnalysisOutcome,
     FormAnalysisRequest,
     build_desktop_summary,
+    bundle_root,
     bundled_example_path,
     default_output_directory,
     run_form_analysis,
@@ -44,7 +45,9 @@ from .project_editor import (
     editor_values_from_project,
     project_from_editor_values,
     project_slug,
+    write_project_json,
 )
+from .project_files import read_coverage_project, write_coverage_project
 from .report_server import open_report_in_browser
 from .version import __version__
 
@@ -65,9 +68,12 @@ class RadioLinkPlannerApp:
         self.last_coverage: CoverageOutcome | None = None
         self.loaded_project: Project | None = None
         self.loaded_terrain_path: Path | None = None
+        self.link_project_path: Path | None = None
+        self.coverage_project_path: Path | None = None
         self.form_widgets: list[tk.Widget] = []
         self.current_mode: str | None = None
         self.coverage_cancel_event: threading.Event | None = None
+        self.home_images: list[tk.PhotoImage] = []
 
         self.name_var = tk.StringVar()
         self.frequency_var = tk.StringVar()
@@ -141,9 +147,27 @@ class RadioLinkPlannerApp:
 
     def _configure_window(self) -> None:
         self.root.title(f"{APP_NAME} — {__version__}")
-        self.root.geometry("1160x800")
-        self.root.minsize(940, 680)
+        self._set_window_size(1280, 900, min_width=860, min_height=600)
         self.root.configure(background="#11151a")
+
+    def _set_window_size(
+        self,
+        preferred_width: int,
+        preferred_height: int,
+        *,
+        min_width: int,
+        min_height: int,
+    ) -> None:
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        available_width = max(640, screen_width - 80)
+        available_height = max(480, screen_height - 100)
+        width = min(preferred_width, available_width)
+        height = min(preferred_height, available_height)
+        x = max(0, (screen_width - width) // 2)
+        y = max(0, (screen_height - height) // 2)
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+        self.root.minsize(min(min_width, width), min(min_height, height))
 
     def _configure_styles(self) -> None:
         style = ttk.Style(self.root)
@@ -281,10 +305,13 @@ class RadioLinkPlannerApp:
             return
         self.current_mode = None
         self.form_widgets.clear()
+        self.home_images.clear()
+        self.root.unbind_all("<MouseWheel>")
+        self.root.unbind_all("<Button-4>")
+        self.root.unbind_all("<Button-5>")
         for child in self.root.winfo_children():
             child.destroy()
-        self.root.geometry("1040x700")
-        self.root.minsize(820, 600)
+        self._set_window_size(1180, 760, min_width=900, min_height=600)
 
         outer = ttk.Frame(self.root, style="App.TFrame", padding=(54, 44))
         outer.grid(row=0, column=0, sticky="nsew")
@@ -321,6 +348,7 @@ class RadioLinkPlannerApp:
             button_text="Planejar enlace",
             command=lambda: self._open_mode("link"),
             padding=(0, 10),
+            image_asset="assets/home-link.png",
         )
         self._build_mode_card(
             choices,
@@ -333,6 +361,7 @@ class RadioLinkPlannerApp:
             button_text="Calcular cobertura",
             command=lambda: self._open_mode("coverage"),
             padding=(10, 0),
+            image_asset="assets/home-coverage.png",
         )
         ttk.Label(
             outer,
@@ -352,13 +381,36 @@ class RadioLinkPlannerApp:
         button_text: str,
         command,
         padding: tuple[int, int],
+        image_asset: str,
     ) -> None:
-        card = ttk.Frame(parent, style="Panel.TFrame", padding=(28, 30))
+        card = ttk.Frame(parent, style="Panel.TFrame", padding=(24, 24))
         card.grid(row=0, column=column, sticky="nsew", padx=padding)
         card.columnconfigure(0, weight=1)
-        card.rowconfigure(1, weight=1)
+        card.rowconfigure(2, weight=1)
+        image_path = bundle_root() / image_asset
+        encoded_image_path = image_path.with_suffix(
+            f"{image_path.suffix}.b64"
+        )
+        if image_path.is_file() or encoded_image_path.is_file():
+            if image_path.is_file():
+                source = tk.PhotoImage(file=str(image_path))
+            else:
+                source = tk.PhotoImage(
+                    data=encoded_image_path.read_text(encoding="ascii")
+                )
+            photo = source.subsample(2, 2)
+            self.home_images.append(photo)
+            image_label = tk.Label(
+                card,
+                image=photo,
+                background="#f4f5f6",
+                borderwidth=0,
+                cursor="hand2",
+            )
+            image_label.grid(row=0, column=0, sticky="n", pady=(0, 18))
+            image_label.bind("<Button-1>", lambda _event: command())
         ttk.Label(card, text=title, style="ModeTitle.TLabel").grid(
-            row=0, column=0, sticky="w"
+            row=1, column=0, sticky="w"
         )
         ttk.Label(
             card,
@@ -366,21 +418,23 @@ class RadioLinkPlannerApp:
             style="ModeText.TLabel",
             wraplength=350,
             justify="left",
-        ).grid(row=1, column=0, sticky="nw", pady=(14, 22))
+        ).grid(row=2, column=0, sticky="nw", pady=(10, 18))
         ttk.Button(
             card,
             text=button_text,
             command=command,
             style="Mode.TButton",
-        ).grid(row=2, column=0, sticky="ew")
+        ).grid(row=3, column=0, sticky="ew")
 
     def _open_mode(self, mode: str) -> None:
+        self.root.unbind_all("<MouseWheel>")
+        self.root.unbind_all("<Button-4>")
+        self.root.unbind_all("<Button-5>")
         for child in self.root.winfo_children():
             child.destroy()
         self.form_widgets.clear()
         self.current_mode = mode
-        self.root.geometry("1160x800")
-        self.root.minsize(940, 680)
+        self._set_window_size(1280, 900, min_width=860, min_height=600)
         if mode == "link":
             self.status_var.set("Configure o enlace ou abra um projeto salvo.")
             self._build_layout()
@@ -393,6 +447,60 @@ class RadioLinkPlannerApp:
             self._build_coverage_layout()
         else:
             raise ValueError(f"unknown application mode: {mode}")
+
+    def _build_scrollable_content(self, parent: ttk.Frame) -> ttk.Frame:
+        """Create a vertically scrollable form that still expands when space permits."""
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(0, weight=1)
+        canvas = tk.Canvas(
+            parent,
+            background="#1a2027",
+            borderwidth=0,
+            highlightthickness=0,
+        )
+        scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        content = ttk.Frame(
+            canvas,
+            style="Panel.TFrame",
+            padding=18,
+        )
+        window_id = canvas.create_window((0, 0), window=content, anchor="nw")
+
+        def update_scroll_region(_event: tk.Event[tk.Misc] | None = None) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def resize_content(event: tk.Event[tk.Misc]) -> None:
+            canvas.itemconfigure(window_id, width=event.width)
+
+        def on_mousewheel(event: tk.Event[tk.Misc]) -> str:
+            widget: tk.Misc | None = event.widget
+            while widget is not None and widget not in (content, canvas):
+                parent_name = widget.winfo_parent()
+                widget = (
+                    widget.nametowidget(parent_name)
+                    if parent_name
+                    else None
+                )
+            if widget is None:
+                return ""
+            delta = int(getattr(event, "delta", 0))
+            if delta:
+                canvas.yview_scroll(-1 * int(delta / 120), "units")
+            elif getattr(event, "num", None) == 4:
+                canvas.yview_scroll(-3, "units")
+            elif getattr(event, "num", None) == 5:
+                canvas.yview_scroll(3, "units")
+            return "break"
+
+        content.bind("<Configure>", update_scroll_region)
+        canvas.bind("<Configure>", resize_content)
+        canvas.bind_all("<MouseWheel>", on_mousewheel)
+        canvas.bind_all("<Button-4>", on_mousewheel)
+        canvas.bind_all("<Button-5>", on_mousewheel)
+        return content
 
     def _build_layout(self) -> None:
         outer = ttk.Frame(self.root, style="App.TFrame", padding=(24, 20))
@@ -431,7 +539,7 @@ class RadioLinkPlannerApp:
 
         self.notebook = ttk.Notebook(outer)
         self.notebook.grid(row=1, column=0, sticky="nsew")
-        self.editor_tab = ttk.Frame(self.notebook, style="Panel.TFrame", padding=18)
+        self.editor_tab = ttk.Frame(self.notebook, style="Panel.TFrame")
         self.results_tab = ttk.Frame(self.notebook, style="Panel.TFrame", padding=18)
         self.notebook.add(self.editor_tab, text="Configurar enlace")
         self.notebook.add(self.results_tab, text="Análise e resultados")
@@ -453,7 +561,7 @@ class RadioLinkPlannerApp:
         self.analyze_button.grid(row=0, column=1, sticky="e")
 
     def _build_editor_tab(self) -> None:
-        tab = self.editor_tab
+        tab = self._build_scrollable_content(self.editor_tab)
         tab.columnconfigure(0, weight=1)
         tab.rowconfigure(1, weight=1)
 
@@ -540,15 +648,22 @@ class RadioLinkPlannerApp:
 
         actions = ttk.Frame(tab, style="Panel.TFrame")
         actions.grid(row=3, column=0, sticky="ew", pady=(12, 0))
-        actions.columnconfigure(3, weight=1)
-        new_button = ttk.Button(actions, text="Novo enlace", command=self._new_link)
+        actions.columnconfigure(4, weight=1)
+        new_button = ttk.Button(actions, text="Novo projeto", command=self._new_link)
         new_button.grid(row=0, column=0, padx=(0, 6))
         self._register(new_button)
         open_button = ttk.Button(
-            actions, text="Abrir projeto JSON…", command=self._select_project
+            actions, text="Abrir projeto…", command=self._select_project
         )
         open_button.grid(row=0, column=1, padx=6)
         self._register(open_button)
+        save_button = ttk.Button(
+            actions,
+            text="Salvar projeto…",
+            command=self._save_link_project,
+        )
+        save_button.grid(row=0, column=2, padx=6)
+        self._register(save_button)
         restore_button = ttk.Button(
             actions,
             text="Restaurar caso de referência",
@@ -556,7 +671,7 @@ class RadioLinkPlannerApp:
                 bundled_example_path(), announce=True
             ),
         )
-        restore_button.grid(row=0, column=2, padx=6)
+        restore_button.grid(row=0, column=3, padx=6)
         self._register(restore_button)
 
     def _build_terminal_panel(
@@ -659,11 +774,7 @@ class RadioLinkPlannerApp:
 
         self.notebook = ttk.Notebook(outer)
         self.notebook.grid(row=1, column=0, sticky="nsew")
-        self.editor_tab = ttk.Frame(
-            self.notebook,
-            style="Panel.TFrame",
-            padding=18,
-        )
+        self.editor_tab = ttk.Frame(self.notebook, style="Panel.TFrame")
         self.results_tab = ttk.Frame(
             self.notebook,
             style="Panel.TFrame",
@@ -698,7 +809,7 @@ class RadioLinkPlannerApp:
         self.analyze_button.grid(row=0, column=2, sticky="e")
 
     def _build_coverage_editor_tab(self) -> None:
-        tab = self.editor_tab
+        tab = self._build_scrollable_content(self.editor_tab)
         tab.columnconfigure(0, weight=1)
         tab.rowconfigure(2, weight=1)
         variables = self.coverage_vars
@@ -932,6 +1043,31 @@ class RadioLinkPlannerApp:
         )
         output_button.grid(row=0, column=2, padx=(8, 0))
         self._register(output_button)
+
+        project_actions = ttk.Frame(tab, style="Panel.TFrame")
+        project_actions.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+        project_actions.columnconfigure(3, weight=1)
+        new_button = ttk.Button(
+            project_actions,
+            text="Novo projeto",
+            command=self._new_coverage,
+        )
+        new_button.grid(row=0, column=0, padx=(0, 6))
+        self._register(new_button)
+        open_button = ttk.Button(
+            project_actions,
+            text="Abrir projeto…",
+            command=self._select_coverage_project,
+        )
+        open_button.grid(row=0, column=1, padx=6)
+        self._register(open_button)
+        save_button = ttk.Button(
+            project_actions,
+            text="Salvar projeto…",
+            command=self._save_coverage_project,
+        )
+        save_button.grid(row=0, column=2, padx=6)
+        self._register(save_button)
         self._coverage_radius_changed()
 
     def _coverage_field(
@@ -996,20 +1132,27 @@ class RadioLinkPlannerApp:
             state="disabled",
         )
         self.report_button.grid(row=0, column=0, padx=(0, 6))
+        self.pdf_button = ttk.Button(
+            actions,
+            text="Abrir relatório PDF",
+            command=self._open_pdf_report,
+            state="disabled",
+        )
+        self.pdf_button.grid(row=0, column=1, padx=6)
         self.profile_button = ttk.Button(
             actions,
             text="Abrir mapa técnico",
             command=self._open_heatmap,
             state="disabled",
         )
-        self.profile_button.grid(row=0, column=1, padx=6)
+        self.profile_button.grid(row=0, column=2, padx=6)
         self.folder_button = ttk.Button(
             actions,
             text="Abrir pasta",
             command=self._open_output_directory,
             state="disabled",
         )
-        self.folder_button.grid(row=0, column=2, padx=(6, 0))
+        self.folder_button.grid(row=0, column=3, padx=(6, 0))
 
         body = ttk.Frame(tab, style="Panel.TFrame")
         body.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
@@ -1108,20 +1251,27 @@ class RadioLinkPlannerApp:
             state="disabled",
         )
         self.report_button.grid(row=0, column=0, padx=(0, 6))
+        self.pdf_button = ttk.Button(
+            actions,
+            text="Abrir relatório PDF",
+            command=self._open_pdf_report,
+            state="disabled",
+        )
+        self.pdf_button.grid(row=0, column=1, padx=6)
         self.profile_button = ttk.Button(
             actions,
             text="Abrir perfil",
             command=self._open_profile,
             state="disabled",
         )
-        self.profile_button.grid(row=0, column=1, padx=6)
+        self.profile_button.grid(row=0, column=2, padx=6)
         self.folder_button = ttk.Button(
             actions,
             text="Abrir pasta",
             command=self._open_output_directory,
             state="disabled",
         )
-        self.folder_button.grid(row=0, column=2, padx=(6, 0))
+        self.folder_button.grid(row=0, column=3, padx=(6, 0))
 
         body = ttk.Frame(tab, style="Panel.TFrame")
         body.grid(row=2, column=0, sticky="nsew", pady=(10, 0))
@@ -1208,15 +1358,22 @@ class RadioLinkPlannerApp:
             self.root.after(0, apply_selection)
 
         try:
-            open_coordinate_picker(
+            picker = open_coordinate_picker(
                 title=f"Escolher local — {title}",
                 initial_latitude=initial_latitude,
                 initial_longitude=initial_longitude,
                 on_selected=selected,
             )
-            self.status_var.set(
-                "O mapa foi aberto no navegador. Clique no local e confirme."
-            )
+            if getattr(picker, "display_mode", "browser") == "embedded":
+                self.status_var.set(
+                    "O mapa foi aberto em uma janela do programa. "
+                    "Clique no local e confirme."
+                )
+            else:
+                self.status_var.set(
+                    "O mapa foi aberto no navegador porque o componente interno "
+                    "não está disponível. Clique no local e confirme."
+                )
         except Exception as exc:  # noqa: BLE001 - browser integration boundary
             messagebox.showerror(
                 APP_NAME,
@@ -1299,6 +1456,7 @@ class RadioLinkPlannerApp:
     def _new_link(self) -> None:
         self.loaded_project = None
         self.loaded_terrain_path = None
+        self.link_project_path = None
         self.name_var.set("Meu enlace")
         self.frequency_var.set("146.000")
         self.mode_var.set("FM")
@@ -1324,10 +1482,51 @@ class RadioLinkPlannerApp:
         self.status_var.set("Novo enlace. Informe as coordenadas dos terminais.")
         self.notebook.select(self.editor_tab)
 
+    def _save_link_project(self) -> None:
+        try:
+            values = self._collect_editor_values()
+            project = project_from_editor_values(
+                values,
+                template=self.loaded_project,
+            )
+        except Exception as exc:  # noqa: BLE001 - form validation boundary
+            messagebox.showerror(
+                APP_NAME,
+                f"Não foi possível salvar o projeto.\n\n{exc}",
+            )
+            return
+        selected = filedialog.asksaveasfilename(
+            title="Salvar projeto de enlace",
+            defaultextension=".rlp",
+            initialfile=f"{project_slug(project.name)}.rlp",
+            filetypes=(
+                ("Projeto Radio Link Planner", "*.rlp"),
+                ("Projeto JSON", "*.json"),
+                ("Todos os arquivos", "*.*"),
+            ),
+        )
+        if not selected:
+            return
+        try:
+            destination = write_project_json(project, selected)
+        except Exception as exc:  # noqa: BLE001 - filesystem boundary
+            messagebox.showerror(
+                APP_NAME,
+                f"Não foi possível salvar o projeto.\n\n{type(exc).__name__}: {exc}",
+            )
+            return
+        self.loaded_project = project
+        self.link_project_path = destination
+        self.status_var.set(f"Projeto salvo: {destination.name}.")
+
     def _select_project(self) -> None:
         selected = filedialog.askopenfilename(
             title="Abrir projeto de enlace",
-            filetypes=(("Projeto JSON", "*.json"), ("Todos os arquivos", "*.*")),
+            filetypes=(
+                ("Projeto Radio Link Planner", "*.rlp"),
+                ("Projeto JSON", "*.json"),
+                ("Todos os arquivos", "*.*"),
+            ),
         )
         if selected:
             self._load_project_file(Path(selected), announce=True)
@@ -1344,6 +1543,7 @@ class RadioLinkPlannerApp:
             )
             return
         self.loaded_project = project
+        self.link_project_path = path.resolve()
         self.loaded_terrain_path = terrain_path if terrain_path.is_file() else None
         self._apply_editor_values(values)
         output_name = project_slug(project.name)
@@ -1360,6 +1560,108 @@ class RadioLinkPlannerApp:
                 "Projeto carregado. Todos os campos podem ser editados antes "
                 "da análise.",
             )
+
+    def _new_coverage(self) -> None:
+        defaults = {
+            "name": "Minha cobertura",
+            "latitude": "",
+            "longitude": "",
+            "frequency": "146.000",
+            "polarization": "Vertical",
+            "mode": "FM",
+            "radius": "50",
+            "resolution_preset": "Recomendada",
+            "custom_resolution": "500",
+            "time_percentage": "50",
+            "tx_height": "30",
+            "tx_gain": "6",
+            "tx_line_loss": "1",
+            "tx_power": "50",
+            "rx_height": "2",
+            "rx_gain": "2",
+            "rx_line_loss": "1",
+            "rx_sensitivity": "-120",
+            "output": str(
+                Path.home()
+                / APP_NAME
+                / "Resultados"
+                / "Minha-cobertura"
+            ),
+        }
+        for key, value in defaults.items():
+            self.coverage_vars[key].set(value)
+        self.coverage_project_path = None
+        self.last_coverage = None
+        self._disable_result_actions()
+        self.progress.configure(value=0.0)
+        self.coverage_progress_var.set("Aguardando o início do cálculo.")
+        self.status_var.set(
+            "Novo projeto de cobertura. Informe o local do transmissor."
+        )
+        self.notebook.select(self.editor_tab)
+
+    def _save_coverage_project(self) -> None:
+        name = self.coverage_vars["name"].get().strip()
+        if not name:
+            messagebox.showerror(
+                APP_NAME,
+                "Informe um nome para a cobertura antes de salvar.",
+            )
+            return
+        selected = filedialog.asksaveasfilename(
+            title="Salvar projeto de cobertura",
+            defaultextension=".rlp",
+            initialfile=f"{project_slug(name)}.rlp",
+            filetypes=(
+                ("Projeto Radio Link Planner", "*.rlp"),
+                ("Todos os arquivos", "*.*"),
+            ),
+        )
+        if not selected:
+            return
+        values = {
+            key: variable.get()
+            for key, variable in self.coverage_vars.items()
+        }
+        try:
+            destination = write_coverage_project(values, selected)
+        except Exception as exc:  # noqa: BLE001 - filesystem boundary
+            messagebox.showerror(
+                APP_NAME,
+                f"Não foi possível salvar o projeto.\n\n{type(exc).__name__}: {exc}",
+            )
+            return
+        self.coverage_project_path = destination
+        self.status_var.set(f"Projeto salvo: {destination.name}.")
+
+    def _select_coverage_project(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Abrir projeto de cobertura",
+            filetypes=(
+                ("Projeto Radio Link Planner", "*.rlp"),
+                ("Todos os arquivos", "*.*"),
+            ),
+        )
+        if not selected:
+            return
+        try:
+            values = read_coverage_project(selected)
+        except Exception as exc:  # noqa: BLE001 - invalid project boundary
+            messagebox.showerror(
+                APP_NAME,
+                f"Não foi possível abrir o projeto.\n\n{type(exc).__name__}: {exc}",
+            )
+            return
+        for key, value in values.items():
+            self.coverage_vars[key].set(value)
+        self.coverage_project_path = Path(selected).resolve()
+        self.last_coverage = None
+        self._disable_result_actions()
+        self.status_var.set(
+            f"Projeto de cobertura carregado: "
+            f"{self.coverage_vars['name'].get()}."
+        )
+        self.notebook.select(self.editor_tab)
 
     def _apply_editor_values(self, values: ProjectEditorValues) -> None:
         self.name_var.set(values.name)
@@ -1763,6 +2065,13 @@ class RadioLinkPlannerApp:
             self._set_result_text(build_desktop_summary(payload))
             self.status_var.set("Análise concluída: mapa, perfil e relatório gerados.")
             self.report_button.configure(state="normal")
+            self.pdf_button.configure(
+                state=(
+                    "normal"
+                    if payload.paths.get("report_pdf", Path()).is_file()
+                    else "disabled"
+                )
+            )
             self.folder_button.configure(state="normal")
             self.profile_button.configure(
                 state=(
@@ -1781,6 +2090,13 @@ class RadioLinkPlannerApp:
                 "Cobertura concluída: mapa de calor e contornos gerados."
             )
             self.report_button.configure(state="normal")
+            self.pdf_button.configure(
+                state=(
+                    "normal"
+                    if payload.paths.get("report_pdf", Path()).is_file()
+                    else "disabled"
+                )
+            )
             self.profile_button.configure(state="normal")
             self.folder_button.configure(state="normal")
             return
@@ -1851,6 +2167,7 @@ class RadioLinkPlannerApp:
 
     def _disable_result_actions(self) -> None:
         self.report_button.configure(state="disabled")
+        self.pdf_button.configure(state="disabled")
         self.profile_button.configure(state="disabled")
         self.folder_button.configure(state="disabled")
 
@@ -1939,6 +2256,16 @@ class RadioLinkPlannerApp:
     def _open_profile(self) -> None:
         if self.last_outcome and "profile_plot" in self.last_outcome.paths:
             _open_path(self.last_outcome.paths["profile_plot"])
+
+    def _open_pdf_report(self) -> None:
+        if self.current_mode == "coverage" and self.last_coverage:
+            report = self.last_coverage.paths.get("report_pdf")
+            if report:
+                _open_path(report)
+        elif self.last_outcome:
+            report = self.last_outcome.paths.get("report_pdf")
+            if report:
+                _open_path(report)
 
     def _open_heatmap(self) -> None:
         if self.last_coverage:
