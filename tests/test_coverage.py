@@ -578,6 +578,24 @@ def test_failed_direct_cell_does_not_complete_its_block(
     assert estimate_coverage(request, worker_count=1).resumable_cells == 0
 
 
+def test_completed_grid_is_copied_from_checkpoint_not_replaced(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = tmp_path / "checkpoint-grid.npy"
+    destination = tmp_path / "coverage_margin_db.npy"
+    source.write_bytes(b"direct-grid-result")
+
+    def replacement_must_not_be_used(*_args, **_kwargs) -> None:
+        raise AssertionError("A grade final não deve mover o checkpoint")
+
+    monkeypatch.setattr(coverage_grid.os, "replace", replacement_must_not_be_used)
+    coverage_grid._copy_completed_grid(source, destination)
+
+    assert destination.read_bytes() == b"direct-grid-result"
+    assert source.is_file()
+
+
 @pytest.mark.reference
 def test_direct_grid_cell_matches_point_to_point_p1812(
     tmp_path: Path,
