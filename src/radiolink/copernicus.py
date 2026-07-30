@@ -4,6 +4,7 @@ import csv
 import math
 import os
 import threading
+import urllib.error
 import urllib.request
 from collections import OrderedDict
 from collections.abc import Callable
@@ -26,6 +27,14 @@ _RASTER_BLOCK_CACHE: OrderedDict[tuple[Path, int, int], np.ndarray] = (
     OrderedDict()
 )
 _RASTER_BLOCK_CACHE_BYTES = 0
+
+
+class CopernicusSeaTileError(FileNotFoundError):
+    """A GLO-30 tile omitted by the provider because it contains only sea."""
+
+
+def _sea_marker(cache: Path, code: str) -> Path:
+    return cache / f"{code}.sea"
 
 
 def default_cache_directory() -> Path:
@@ -90,6 +99,9 @@ def download_tile(
     cache = Path(cache_dir or default_cache_directory())
     cache.mkdir(parents=True, exist_ok=True)
     destination = cache / f"{code}.tif"
+    sea_marker = _sea_marker(cache, code)
+    if sea_marker.exists():
+        raise CopernicusSeaTileError(code)
     if destination.exists() and destination.stat().st_size > 10_000:
         _notify(progress, f"Terreno: usando bloco {code} do cache.")
         return destination
@@ -127,6 +139,16 @@ def download_tile(
         if temporary.stat().st_size <= 10_000:
             raise OSError(f"downloaded Copernicus tile is unexpectedly small: {code}")
         temporary.replace(destination)
+    except urllib.error.HTTPError as exc:
+        temporary.unlink(missing_ok=True)
+        # The public GLO-30 bucket intentionally omits some all-water tiles.
+        # A coverage circle can legitimately include one, especially at large
+        # radii near a coast.  Cache that fact so every worker uses sea level
+        # without repeatedly requesting the missing object.
+        if exc.code == 404:
+            sea_marker.touch()
+            raise CopernicusSeaTileError(code) from exc
+        raise
     except Exception:
         temporary.unlink(missing_ok=True)
         raise
@@ -176,7 +198,12 @@ def extract_profile(
 
     elevations = np.empty(count, dtype=float)
     for code, indices in tile_groups:
-        source = download_tile(code, cache_dir=cache_dir, progress=progress)
+        try:
+            source = download_tile(code, cache_dir=cache_dir, progress=progress)
+        except CopernicusSeaTileError:
+            _notify(progress, f"Terreno: bloco {code} é marítimo; usando 0 m.")
+            elevations[indices] = 0.0
+            continue
         samples, nodata = _sample_raster(
             source,
             longitudes[indices],
@@ -227,7 +254,12 @@ def sample_elevations(
 
     elevations = np.empty(len(latitudes), dtype=float)
     for code, indices in _tile_groups(latitudes, longitudes):
-        source = download_tile(code, cache_dir=cache_dir, progress=progress)
+        try:
+            source = download_tile(code, cache_dir=cache_dir, progress=progress)
+        except CopernicusSeaTileError:
+            _notify(progress, f"Terreno: bloco {code} é marítimo; usando 0 m.")
+            elevations[indices] = 0.0
+            continue
         samples, nodata = _sample_raster(
             source,
             longitudes[indices],
