@@ -289,6 +289,7 @@ def smoke_test(output_directory: str | Path) -> AnalysisOutcome:
         for filename in ("maplibre-gl.js", "maplibre-gl.css"):
             if not (report_assets / filename).is_file():
                 raise FileNotFoundError(f"packaged map asset not found: {filename}")
+    _smoke_test_local_report_server(outcome.paths["report_html"])
     return outcome
 
 
@@ -313,3 +314,22 @@ def _smoke_test_geographic_component() -> None:
             sample = next(dataset.sample([(-45.995, -23.005)]))[0]
     if not np.isfinite(sample):
         raise RuntimeError("packaged rasterio component returned an invalid sample")
+
+
+def _smoke_test_local_report_server(report_path: Path) -> None:
+    import urllib.request
+
+    from .report_server import start_report_server
+
+    server, report_url = start_report_server(report_path, timeout_seconds=30.0)
+    try:
+        with urllib.request.urlopen(report_url, timeout=10.0) as response:
+            body = response.read()
+            referrer_policy = response.headers.get("Referrer-Policy")
+        if b"maplibregl.Map" not in body:
+            raise RuntimeError("local report server returned an invalid report")
+        if referrer_policy != "strict-origin-when-cross-origin":
+            raise RuntimeError("local report server omitted its referrer policy")
+    finally:
+        server.shutdown()
+        server.server_close()
