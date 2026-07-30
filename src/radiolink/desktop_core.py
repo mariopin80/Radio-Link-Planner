@@ -284,7 +284,7 @@ def smoke_test(output_directory: str | Path) -> AnalysisOutcome:
     from .coverage_grid import smoke_test_direct_grid_worker
 
     smoke_test_direct_grid_worker()
-    for key in ("result_json", "summary_markdown", "report_html"):
+    for key in ("result_json", "summary_markdown", "report_html", "report_pdf"):
         if not outcome.paths[key].is_file():
             raise FileNotFoundError(f"expected output not found: {key}")
     if getattr(sys, "frozen", False):
@@ -292,6 +292,12 @@ def smoke_test(output_directory: str | Path) -> AnalysisOutcome:
         for filename in ("maplibre-gl.js", "maplibre-gl.css"):
             if not (report_assets / filename).is_file():
                 raise FileNotFoundError(f"packaged map asset not found: {filename}")
+        for filename in ("home-link.png", "home-coverage.png"):
+            image_path = bundle_root() / "assets" / filename
+            encoded_path = image_path.with_suffix(f"{image_path.suffix}.b64")
+            if not image_path.is_file() and not encoded_path.is_file():
+                raise FileNotFoundError(f"packaged home asset not found: {filename}")
+        import webview  # noqa: F401 - packaged component smoke test
     _smoke_test_local_report_server(outcome.paths["report_html"])
     return outcome
 
