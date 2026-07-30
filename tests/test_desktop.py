@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -15,7 +16,12 @@ from radiolink.desktop_core import (
     run_form_analysis,
 )
 from radiolink.domain import Project
-from radiolink.itu_data import P1812_PRODUCT, install_digital_product
+from radiolink.itu_data import (
+    P1812_PRODUCT,
+    DigitalProduct,
+    install_digital_product,
+    load_digital_product_module,
+)
 from radiolink.report import describe_geometry_clearance
 
 
@@ -108,6 +114,82 @@ def test_itu_product_is_built_from_user_download_and_sources_are_cleaned(
         assert product["N050"].tolist() == [[5.0, 6.0], [7.0, 8.0]]
     assert not (package_dir / "maps" / "DN50.TXT").exists()
     assert not (package_dir / "maps" / "N050.TXT").exists()
+
+
+def test_itu_product_defaults_to_local_app_data(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    archive = tmp_path / "p1812.zip"
+    with ZipFile(archive, "w") as bundle:
+        bundle.writestr("DN50.TXT", "1 2\n3 4\n")
+        bundle.writestr("N050.TXT", "5 6\n7 8\n")
+    local_app_data = tmp_path / "LocalAppData"
+    monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
+
+    output = install_digital_product(
+        P1812_PRODUCT,
+        archive_path=archive,
+        cleanup_source_maps=True,
+        progress=None,
+    )
+
+    assert output == (
+        local_app_data
+        / "RadioLinkPlanner"
+        / "ITU-R"
+        / "Py1812"
+        / "P1812.npz"
+    )
+    assert output.is_file()
+
+
+def test_reference_module_reads_product_from_user_data(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    package_name = "FakeITUModel"
+    install_root = tmp_path / "Program Files"
+    package = install_root / package_name
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "Reference.py").write_text(
+        "\n".join(
+            (
+                "from importlib.resources import files",
+                "import numpy as np",
+                (
+                    f'with np.load(files("{package_name}").joinpath("Fake.npz")) '
+                    "as product:"
+                ),
+                '    VALUE = int(product["value"][0])',
+            )
+        ),
+        encoding="utf-8",
+    )
+    user_data = tmp_path / "LocalAppData" / package_name
+    user_data.mkdir(parents=True)
+    np.savez(user_data / "Fake.npz", value=np.asarray([42]))
+    product = DigitalProduct(
+        recommendation="P.test",
+        distribution_name=package_name,
+        package_name=package_name,
+        output_filename="Fake.npz",
+        components_url="https://example.invalid/fake.zip",
+        expected_files=frozenset(),
+    )
+    monkeypatch.syspath_prepend(str(install_root))
+
+    try:
+        module = load_digital_product_module(
+            product,
+            "Reference",
+            data_dir=user_data,
+        )
+        assert module.VALUE == 42
+    finally:
+        sys.modules.pop(f"{package_name}.Reference", None)
+        sys.modules.pop(package_name, None)
 
 
 def test_form_analysis_bundles_loaded_terrain_and_project(
