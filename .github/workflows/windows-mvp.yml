@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - ".github/workflows/windows-mvp.yml"
+      - "assets/**"
       - "examples/**"
       - "installer/**"
       - "pyproject.toml"
@@ -68,6 +69,7 @@ jobs:
             --name RadioLinkPlanner `
             --version-file "scripts/windows_version_info.txt" `
             --paths src `
+            --add-data "assets;assets" `
             --add-data "examples/morro_jacu_palmira.json;examples" `
             --add-data "tests/reference/morro_jacu_palmira/terrain_profile.csv;tests/reference/morro_jacu_palmira" `
             --add-data ".map-deps/node_modules/maplibre-gl/dist/maplibre-gl.js;map-assets" `
@@ -76,6 +78,7 @@ jobs:
             --add-binary "vendor/ntia-itm/build/itm.dll;vendor/ntia-itm/build" `
             --collect-submodules Py1812 `
             --collect-submodules Py2001 `
+            --collect-all webview `
             --collect-all rasterio `
             --copy-metadata Py1812 `
             --copy-metadata Py2001 `
@@ -139,7 +142,7 @@ jobs:
         run: |
           Compress-Archive `
             -Path "dist\RadioLinkPlanner\*" `
-            -DestinationPath "RadioLinkPlanner-0.4.0-Windows-x64.zip"
+            -DestinationPath "RadioLinkPlanner-0.4.1-Windows-x64.zip"
 
       - name: Install Inno Setup 6
         shell: pwsh
@@ -180,7 +183,7 @@ jobs:
         shell: pwsh
         run: |
           $installer = Resolve-Path `
-            "installer-output\RadioLinkPlanner-0.4.0-Windows-x64-Setup.exe"
+            "installer-output\RadioLinkPlanner-0.4.1-Windows-x64-Setup.exe"
           $installDirectory = Join-Path $env:RUNNER_TEMP "RadioLinkPlanner"
           $smokeOutput = Join-Path $env:RUNNER_TEMP "rlp-installer-smoke"
           $setup = Start-Process `
@@ -249,8 +252,8 @@ jobs:
         shell: pwsh
         run: |
           $files = @(
-            "RadioLinkPlanner-0.4.0-Windows-x64.zip",
-            "installer-output\RadioLinkPlanner-0.4.0-Windows-x64-Setup.exe"
+            "RadioLinkPlanner-0.4.1-Windows-x64.zip",
+            "installer-output\RadioLinkPlanner-0.4.1-Windows-x64-Setup.exe"
           )
           $lines = foreach ($file in $files) {
             $hash = Get-FileHash -Algorithm SHA256 $file
@@ -263,37 +266,37 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v0.4.0-mvp.1"
+          $tag = "v0.4.1-mvp.1"
           gh release view `
             $tag `
             --repo "$env:GITHUB_REPOSITORY" *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload `
               $tag `
-              "RadioLinkPlanner-0.4.0-Windows-x64.zip" `
-              "installer-output\RadioLinkPlanner-0.4.0-Windows-x64-Setup.exe" `
+              "RadioLinkPlanner-0.4.1-Windows-x64.zip" `
+              "installer-output\RadioLinkPlanner-0.4.1-Windows-x64-Setup.exe" `
               "SHA256SUMS.txt" `
               --clobber `
               --repo "$env:GITHUB_REPOSITORY"
           } else {
             gh release create `
               $tag `
-              "RadioLinkPlanner-0.4.0-Windows-x64.zip" `
-              "installer-output\RadioLinkPlanner-0.4.0-Windows-x64-Setup.exe" `
+              "RadioLinkPlanner-0.4.1-Windows-x64.zip" `
+              "installer-output\RadioLinkPlanner-0.4.1-Windows-x64-Setup.exe" `
               "SHA256SUMS.txt" `
               --target "$env:GITHUB_SHA" `
-              --title "Radio Link Planner 0.4.0 MVP" `
-              --notes "Nova geração do motor de cobertura para Windows x64. Substitui a interpolação radial por uma grade métrica direta: cada célula elegível recebe seu próprio perfil Copernicus GLO-30 e cálculo P.1812. Inclui resoluções rápida, recomendada, detalhada e personalizada, previsão de tempo/memória, alertas, progresso percentual com ETA, multiprocessamento, cancelamento e retomada por checkpoint. O relatório registra zero células interpoladas e separa o tratamento em espaço livre abaixo de 250 m. Esta compilação ainda não possui assinatura digital de código." `
+              --title "Radio Link Planner 0.4.1 MVP" `
+              --notes "Atualização de interface para Windows x64. Inclui nova tela inicial ilustrada, formulários responsivos com rolagem, projetos Novo/Abrir/Salvar no formato .rlp, seleção de coordenadas em mapa embutido com fallback para o navegador e relatórios PDF de enlace e cobertura. Corrige também a interrupção de coberturas costeiras extensas quando o Copernicus omite mosaicos inteiramente marítimos. O motor científico e os modelos de propagação permanecem inalterados. Esta compilação ainda não possui assinatura digital de código." `
               --prerelease `
               --repo "$env:GITHUB_REPOSITORY"
           }
 
       - uses: actions/upload-artifact@v4
         with:
-          name: RadioLinkPlanner-0.4.0-Windows-x64
+          name: RadioLinkPlanner-0.4.1-Windows-x64
           path: |
-            RadioLinkPlanner-0.4.0-Windows-x64.zip
-            installer-output/RadioLinkPlanner-0.4.0-Windows-x64-Setup.exe
+            RadioLinkPlanner-0.4.1-Windows-x64.zip
+            installer-output/RadioLinkPlanner-0.4.1-Windows-x64-Setup.exe
             SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
