@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from radiolink.copernicus import (
+    _tile_groups,
     extract_profile,
     repair_elevation_samples,
     tile_code,
@@ -25,6 +26,18 @@ def test_copernicus_tile_naming_and_url() -> None:
         "Copernicus_DSM_COG_10_S24_00_W046_00_DEM/"
         "Copernicus_DSM_COG_10_S24_00_W046_00_DEM.tif"
     )
+
+
+def test_tile_grouping_is_vectorized_and_wraps_the_antimeridian() -> None:
+    groups = _tile_groups(
+        np.asarray([-23.1, -23.9, -24.1, -23.5, -23.5]),
+        np.asarray([-46.1, -46.9, -46.1, 180.0, -180.0]),
+    )
+    grouped = {code: indices.tolist() for code, indices in groups}
+
+    assert grouped["S24_00_W047_00"] == [0, 1]
+    assert grouped["S25_00_W047_00"] == [2]
+    assert grouped["S24_00_W180_00"] == [3, 4]
 
 
 def test_repair_elevation_samples_interpolates_nodata_and_isolated_zero() -> None:

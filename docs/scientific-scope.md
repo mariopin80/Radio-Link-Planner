@@ -1,9 +1,9 @@
-# Escopo científico da versão 0.3
+# Escopo científico da versão 0.4
 
 ## Aplicação declarada
 
 Enlaces terrestres fixos, predominantemente entre 3 e 1.000 km, nas faixas de
-VHF e UHF. A versão 0.3 não deve ser usada como modelo validado para enlaces
+VHF e UHF. A versão 0.4 não deve ser usada como modelo validado para enlaces
 móveis urbanos, aeronáuticos, via satélite ou HF ionosférico.
 
 ## Modelos
@@ -18,7 +18,7 @@ oficial.
 ### ITU-R P.1812-8
 
 Usada como previsão dependente do percurso para 30 MHz a 6 GHz. Como a
-recomendação calcula percentuais de tempo de 1% a 50%, a versão 0.1 não
+recomendação calcula percentuais de tempo de 1% a 50%, a versão 0.4 não
 extrapola a P.1812 para disponibilidades superiores a 50%.
 
 ### ITU-R P.2001-6
@@ -48,7 +48,7 @@ Erros do DEM e alturas ainda não são perturbados no Monte Carlo atual. Eles
 aparecem como limitações do parecer. Uma versão futura deverá usar erros
 espacialmente correlacionados e reexecutar o modelo ou um metamodelo validado.
 
-## Terreno automático da versão 0.3
+## Terreno automático da versão 0.4
 
 O editor obtém elevações do Copernicus GLO-30 e mantém os blocos em cache
 local. O perfil automático ainda atribui a classe de zona terrestre interior
@@ -56,25 +56,54 @@ ao percurso inteiro e não inclui vegetação ou edificações. Enlaces costeiro
 sobre mar ou sobre grandes corpos d'água exigem revisão manual da coluna
 `zone_code` do perfil antes de um parecer definitivo.
 
-## Cobertura adaptativa da versão 0.3
+## Cobertura por grade direta da versão 0.4
 
-O módulo ponto-área usa a ITU-R P.1812-8 como modelo único. Uma primeira
-passagem calcula perfis com separação de 10°. Pares de perfis são subdivididos
-quando apresentam descontinuidade relevante de relevo, margem ou alcance com
-margem positiva. Ao longo de cada radial, pontos intermediários também são
-adicionados quando a margem não é linear, o terreno se afasta fortemente da
-tendência local ou um contorno operacional é atravessado.
+O módulo ponto-área usa a ITU-R P.1812-8 como modelo principal. A área é
+representada em uma grade métrica de projeção azimutal equidistante, centrada
+no transmissor. Para cada centro de célula situado a partir de 0,25 km:
 
-O raster final tem 50 m para raio de 50 km, 100 m para 100–200 km e 200 m para
-300–500 km. Esses valores descrevem a grade interpolada, não a distância entre
-todas as execuções independentes da P.1812. A saída registra ambos os números
-para impedir que a resolução visual seja confundida com densidade física.
+1. é determinada a coordenada geográfica do receptor;
+2. é extraído um perfil geodésico próprio do Copernicus GLO-30;
+3. o terreno é amostrado nominalmente a 30 m, sem depender do tamanho da
+   célula;
+4. a P.1812 é executada para aquele percurso;
+5. a margem é gravada diretamente na célula correspondente.
+
+Não há interpolação de perda ao longo de radiais ou entre ângulos. O
+heatmap pode sofrer reamostragem gráfica para caber no navegador, sem alterar
+a grade científica salva em `coverage_margin_db.npy`.
+
+A P.1812-8 declara aplicação para distâncias de aproximadamente 0,25 a
+3.000 km. As células mais próximas que 0,25 km usam perda em espaço livre,
+registrada separadamente em `short_range_free_space_cells`. Isso evita
+apresentar como P.1812 um resultado fora do escopo declarado.
+
+As resoluções de referência são:
+
+| Raio | Rápida | Recomendada | Detalhada |
+|---:|---:|---:|---:|
+| 50 km | 200 m | 100 m | 50 m |
+| 100 km | 400 m | 200 m | 100 m |
+| 200 km | 800 m | 400 m | 200 m |
+| 300 km | 1.200 m | 600 m | 300 m |
+| 400 km | 1.600 m | 800 m | 400 m |
+| 500 km | 2.000 m | 1.000 m | 500 m |
+
+A resolução recomendada produz cerca de 785 mil células dentro do círculo.
+Isso não implica tempo constante: um perfil de 500 km contém muito mais
+amostras e custa mais que um perfil de 50 km. A interface estima duração e
+memória, alerta acima de 10 minutos, usa processos paralelos e recalibra o
+tempo restante conforme os blocos terminam.
+
+Cada bloco concluído é salvo antes de ser marcado como pronto. Cancelamentos
+e falhas preservam a grade parcial e o estado dos blocos; uma execução com os
+mesmos parâmetros, motor e pasta retoma somente o trabalho restante.
 
 Os contornos operacionais são 0, +3, +6 e +12 dB. A cobertura ainda assume
 zona terrestre interior, receptor uniforme e ausência de vegetação e
-edificações. O método adaptativo precisa ser validado contra uma grade
-cartesiana densa e medições de campo antes de qualquer afirmação geral de
-superioridade.
+edificações. A eliminação da interpolação radial resolve uma fonte de
+suavização, mas não torna P.1812 e ITM equivalentes e não substitui validação
+contra valores ponto a ponto, Radio Mobile e medições de campo.
 
 ## Critérios de classificação
 

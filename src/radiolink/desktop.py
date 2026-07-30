@@ -14,9 +14,17 @@ from tkinter import filedialog, messagebox, ttk
 
 from .coverage import (
     COVERAGE_RESOLUTION_M,
+    CoverageCancelled,
     CoverageOutcome,
+    CoverageProgress,
     CoverageRequest,
     run_coverage_analysis,
+)
+from .coverage_grid import (
+    CoverageEstimate,
+    available_memory_bytes,
+    estimate_coverage,
+    format_duration,
 )
 from .desktop_core import (
     APP_NAME,
@@ -40,6 +48,13 @@ from .project_editor import (
 from .report_server import open_report_in_browser
 from .version import __version__
 
+RESOLUTION_LABEL_TO_PRESET = {
+    "Rápida": "quick",
+    "Recomendada": "recommended",
+    "Detalhada": "detailed",
+    "Personalizada": "custom",
+}
+
 
 class RadioLinkPlannerApp:
     def __init__(self, root: tk.Tk) -> None:
@@ -52,6 +67,7 @@ class RadioLinkPlannerApp:
         self.loaded_terrain_path: Path | None = None
         self.form_widgets: list[tk.Widget] = []
         self.current_mode: str | None = None
+        self.coverage_cancel_event: threading.Event | None = None
 
         self.name_var = tk.StringVar()
         self.frequency_var = tk.StringVar()
@@ -76,6 +92,8 @@ class RadioLinkPlannerApp:
             "polarization": tk.StringVar(value="Vertical"),
             "mode": tk.StringVar(value="FM"),
             "radius": tk.StringVar(value="50"),
+            "resolution_preset": tk.StringVar(value="Recomendada"),
+            "custom_resolution": tk.StringVar(value="500"),
             "time_percentage": tk.StringVar(value="50"),
             "tx_height": tk.StringVar(value="30"),
             "tx_gain": tk.StringVar(value="6"),
@@ -95,14 +113,15 @@ class RadioLinkPlannerApp:
             ),
         }
         self.coverage_resolution_var = tk.StringVar()
+        self.coverage_progress_var = tk.StringVar(
+            value="Aguardando o início do cálculo."
+        )
 
         self._configure_window()
         self._configure_styles()
         self._install_coordinate_traces()
-        self.coverage_vars["radius"].trace_add(
-            "write",
-            self._coverage_radius_changed,
-        )
+        for variable in self.coverage_vars.values():
+            variable.trace_add("write", self._coverage_radius_changed)
         self._coverage_radius_changed()
         self._show_start_screen()
         self.root.after(100, self._poll_events)
@@ -308,8 +327,8 @@ class RadioLinkPlannerApp:
             column=1,
             title="Mapa de cobertura",
             description=(
-                "Calcule cobertura P.1812 com radiais adaptativos, mapa de "
-                "calor interpolado e contornos de margem."
+                "Calcule cada célula da cobertura P.1812 em grade métrica, "
+                "com progresso real, retomada e contornos de margem."
             ),
             button_text="Calcular cobertura",
             command=lambda: self._open_mode("coverage"),
@@ -620,7 +639,7 @@ class RadioLinkPlannerApp:
         ttk.Label(
             header,
             text=(
-                "Cobertura VHF/UHF • P.1812 • radiais adaptativos • "
+                "Cobertura VHF/UHF • P.1812 • grade métrica direta • "
                 "mapa de calor e contornos"
             ),
             style="Subtitle.TLabel",
@@ -669,7 +688,14 @@ class RadioLinkPlannerApp:
             command=self._start_coverage_analysis,
             style="Accent.TButton",
         )
-        self.analyze_button.grid(row=0, column=1, sticky="e")
+        self.cancel_button = ttk.Button(
+            footer,
+            text="Cancelar",
+            command=self._cancel_coverage,
+            state="disabled",
+        )
+        self.cancel_button.grid(row=0, column=1, sticky="e", padx=(0, 8))
+        self.analyze_button.grid(row=0, column=2, sticky="e")
 
     def _build_coverage_editor_tab(self) -> None:
         tab = self.editor_tab
@@ -787,9 +813,57 @@ class RadioLinkPlannerApp:
         ).grid(row=1, column=5, sticky="w")
         ttk.Label(
             location,
+            text="Resolução",
+            style="Panel.TLabel",
+        ).grid(row=1, column=0, sticky="w", padx=(0, 8), pady=(8, 5))
+        resolution_combo = ttk.Combobox(
+            location,
+            textvariable=variables["resolution_preset"],
+            values=tuple(RESOLUTION_LABEL_TO_PRESET),
+            state="readonly",
+            width=16,
+        )
+        resolution_combo.grid(
+            row=1,
+            column=1,
+            sticky="ew",
+            pady=(8, 5),
+        )
+        self._register(resolution_combo)
+        ttk.Label(
+            location,
+            text="Personalizada (m)",
+            style="Panel.TLabel",
+        ).grid(
+            row=1,
+            column=2,
+            sticky="w",
+            padx=(16, 8),
+            pady=(8, 5),
+        )
+        self.custom_resolution_entry = ttk.Entry(
+            location,
+            textvariable=variables["custom_resolution"],
+        )
+        self.custom_resolution_entry.grid(
+            row=1,
+            column=3,
+            sticky="ew",
+            pady=(8, 5),
+        )
+        self._register(self.custom_resolution_entry)
+        ttk.Label(
+            location,
             textvariable=self.coverage_resolution_var,
             style="Hint.TLabel",
-        ).grid(row=1, column=0, columnspan=5, sticky="w")
+            wraplength=900,
+        ).grid(
+            row=2,
+            column=0,
+            columnspan=6,
+            sticky="w",
+            pady=(4, 0),
+        )
 
         equipment = ttk.Frame(tab, style="Panel.TFrame")
         equipment.grid(row=2, column=0, sticky="nsew")
@@ -858,6 +932,7 @@ class RadioLinkPlannerApp:
         )
         output_button.grid(row=0, column=2, padx=(8, 0))
         self._register(output_button)
+        self._coverage_radius_changed()
 
     def _coverage_field(
         self,
@@ -939,9 +1014,20 @@ class RadioLinkPlannerApp:
         body = ttk.Frame(tab, style="Panel.TFrame")
         body.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
         body.columnconfigure(0, weight=1)
-        body.rowconfigure(1, weight=1)
-        self.progress = ttk.Progressbar(body, mode="indeterminate")
-        self.progress.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        body.rowconfigure(2, weight=1)
+        ttk.Label(
+            body,
+            textvariable=self.coverage_progress_var,
+            style="Panel.TLabel",
+            wraplength=980,
+        ).grid(row=0, column=0, sticky="w", pady=(0, 6))
+        self.progress = ttk.Progressbar(
+            body,
+            mode="determinate",
+            maximum=100.0,
+            value=0.0,
+        )
+        self.progress.grid(row=1, column=0, sticky="ew", pady=(0, 10))
         self.result_text = tk.Text(
             body,
             wrap="word",
@@ -955,12 +1041,12 @@ class RadioLinkPlannerApp:
             padx=14,
             pady=12,
         )
-        self.result_text.grid(row=1, column=0, sticky="nsew")
+        self.result_text.grid(row=2, column=0, sticky="nsew")
         self._set_result_text(
             "Configure a estação transmissora e o receptor de referência.\n\n"
-            "A cobertura usa P.1812 e terreno Copernicus GLO-30. O programa "
-            "começa com radiais de 10° e refina as regiões em que relevo, "
-            "margem ou limite de cobertura mudam rapidamente."
+            "A cobertura usa P.1812 e terreno Copernicus GLO-30. Cada célula "
+            "da grade recebe seu próprio perfil e cálculo; não há "
+            "interpolação de propagação entre radiais."
         )
 
     def _build_results_tab(self) -> None:
@@ -1138,16 +1224,40 @@ class RadioLinkPlannerApp:
             )
 
     def _coverage_radius_changed(self, *_: object) -> None:
+        preset_label = self.coverage_vars["resolution_preset"].get()
+        preset = RESOLUTION_LABEL_TO_PRESET.get(preset_label)
+        if (
+            hasattr(self, "custom_resolution_entry")
+            and self.custom_resolution_entry.winfo_exists()
+        ):
+            self.custom_resolution_entry.configure(
+                state="normal" if preset == "custom" else "disabled"
+            )
         try:
-            radius = int(self.coverage_vars["radius"].get())
-            resolution = COVERAGE_RESOLUTION_M[radius]
-        except (KeyError, ValueError):
-            self.coverage_resolution_var.set("Escolha um raio válido.")
+            request = self._collect_coverage_request(for_estimate=True)
+            estimate = estimate_coverage(request)
+        except Exception as exc:  # noqa: BLE001 - live form estimate
+            self.coverage_resolution_var.set(str(exc))
             return
-        dimension = 2 * round(radius * 1000 / resolution) + 1
+        resume = (
+            f" • retomada disponível: {estimate.resumable_cells:,} células"
+            if estimate.resumable_cells
+            else ""
+        )
+        terrain = (
+            f" • {estimate.uncached_terrain_tile_count} bloco(s) de terreno "
+            "a baixar"
+            if estimate.uncached_terrain_tile_count
+            else " • terreno já disponível em cache"
+        )
         self.coverage_resolution_var.set(
-            f"Resolução final: {resolution} m • raster {dimension} × "
-            f"{dimension} células • radiais refinados conforme o terreno."
+            f"Célula: {estimate.resolution_m} m • grade "
+            f"{estimate.grid_width:,} × {estimate.grid_height:,} • "
+            f"{estimate.valid_circle_cells:,} cálculos • previsão inicial "
+            f"{format_duration(estimate.estimated_seconds_low)}–"
+            f"{format_duration(estimate.estimated_seconds_high)} • "
+            f"memória ~{estimate.estimated_memory_mb:,.0f} MB"
+            f"{terrain}{resume}."
         )
 
     def _coverage_mode_changed(self, _: tk.Event[tk.Misc]) -> None:
@@ -1390,19 +1500,36 @@ class RadioLinkPlannerApp:
         )
         self.worker.start()
 
-    def _collect_coverage_request(self) -> CoverageRequest:
+    def _collect_coverage_request(
+        self,
+        *,
+        for_estimate: bool = False,
+    ) -> CoverageRequest:
         values = self.coverage_vars
         output_text = values["output"].get().strip()
         if not output_text:
             raise ValueError("Selecione uma pasta de saída.")
+        latitude_text = values["latitude"].get().strip()
+        longitude_text = values["longitude"].get().strip()
+        if for_estimate:
+            latitude_text = latitude_text or "0"
+            longitude_text = longitude_text or "0"
+        preset = RESOLUTION_LABEL_TO_PRESET.get(
+            values["resolution_preset"].get()
+        )
+        if preset is None:
+            raise ValueError("Escolha uma resolução de cobertura válida.")
+        custom_resolution = None
+        if preset == "custom":
+            custom_resolution = int(values["custom_resolution"].get())
         request = CoverageRequest(
             name=values["name"].get().strip(),
             latitude_deg=self._parse_float(
-                values["latitude"].get(),
+                latitude_text,
                 "Latitude",
             ),
             longitude_deg=self._parse_float(
-                values["longitude"].get(),
+                longitude_text,
                 "Longitude",
             ),
             frequency_mhz=self._parse_float(
@@ -1449,6 +1576,8 @@ class RadioLinkPlannerApp:
                 values["time_percentage"].get(),
                 "Percentual de tempo P.1812",
             ),
+            resolution_preset=preset,
+            custom_resolution_m=custom_resolution,
         )
         request.validate()
         return request
@@ -1456,18 +1585,26 @@ class RadioLinkPlannerApp:
     def _start_coverage_analysis(self) -> None:
         try:
             request = self._collect_coverage_request()
+            estimate = estimate_coverage(request)
         except Exception as exc:  # noqa: BLE001 - GUI boundary reports form errors
             messagebox.showerror(APP_NAME, str(exc))
             self.notebook.select(self.editor_tab)
             return
+        if not self._confirm_coverage_estimate(estimate):
+            return
+        self.coverage_cancel_event = threading.Event()
         self._set_running(True)
         self.notebook.select(self.results_tab)
         self.status_var.set("Preparando terreno e P.1812…")
+        self.coverage_progress_var.set(
+            "0% — Preparando dados científicos e terreno."
+        )
         self._set_result_text(
             "Cálculo de cobertura em andamento.\n\n"
-            "O mapa começa com 36 radiais e é refinado onde houver mudanças "
-            "relevantes de relevo, margem ou borda de cobertura. Raios maiores "
-            "podem exigir downloads e processamento prolongados."
+            f"A grade possui {estimate.valid_circle_cells:,} células de "
+            f"{estimate.resolution_m} m. Cada célula terá cálculo próprio; "
+            "os blocos concluídos são salvos para permitir cancelamento e "
+            "retomada."
         )
         self.worker = threading.Thread(
             target=self._coverage_worker,
@@ -1480,11 +1617,14 @@ class RadioLinkPlannerApp:
         try:
             outcome = run_coverage_analysis(
                 request,
-                progress=lambda message: self.events.put(
-                    ("progress", message)
+                progress=lambda state: self.events.put(
+                    ("coverage_progress", state)
                 ),
+                cancel_event=self.coverage_cancel_event,
             )
             self.events.put(("coverage_success", outcome))
+        except CoverageCancelled as exc:
+            self.events.put(("coverage_cancelled", exc))
         except Exception as exc:  # noqa: BLE001 - worker must return every failure
             self.events.put(
                 (
@@ -1495,6 +1635,72 @@ class RadioLinkPlannerApp:
                     },
                 )
             )
+
+    def _confirm_coverage_estimate(
+        self,
+        estimate: CoverageEstimate,
+    ) -> bool:
+        available = available_memory_bytes()
+        required_bytes = estimate.estimated_memory_mb * 1024.0**2
+        if available is not None and required_bytes > available * 0.95:
+            messagebox.showerror(
+                APP_NAME,
+                "A configuração estimada excede a memória disponível.\n\n"
+                f"Necessária: ~{estimate.estimated_memory_mb:,.0f} MB\n"
+                f"Disponível: ~{available / 1024.0**2:,.0f} MB\n\n"
+                "Escolha uma resolução mais espaçada.",
+            )
+            return False
+
+        needs_confirmation = (
+            estimate.warning_level != "normal"
+            or (
+                available is not None
+                and required_bytes > available * 0.60
+            )
+        )
+        if not needs_confirmation:
+            return True
+        severity = (
+            "Esta combinação pode levar várias horas."
+            if estimate.warning_level == "red"
+            else "Esta combinação pode levar mais de 10 minutos."
+        )
+        resume_text = (
+            "\n\nSerá retomada uma execução anterior com "
+            f"{estimate.resumable_cells:,} células prontas."
+            if estimate.resumable_cells
+            else ""
+        )
+        return bool(
+            messagebox.askyesno(
+                APP_NAME,
+                f"{severity}\n\n"
+                f"Grade: {estimate.grid_width:,} × "
+                f"{estimate.grid_height:,}\n"
+                f"Células: {estimate.valid_circle_cells:,}\n"
+                f"Tempo previsto: "
+                f"{format_duration(estimate.estimated_seconds_low)}–"
+                f"{format_duration(estimate.estimated_seconds_high)}\n"
+                f"Memória prevista: "
+                f"~{estimate.estimated_memory_mb:,.0f} MB\n"
+                f"Processos de cálculo: {estimate.worker_count}"
+                f"{resume_text}\n\nDeseja iniciar?",
+                icon="warning",
+            )
+        )
+
+    def _cancel_coverage(self) -> None:
+        if self.coverage_cancel_event is None:
+            return
+        self.coverage_cancel_event.set()
+        self.cancel_button.configure(state="disabled")
+        self.status_var.set(
+            "Cancelamento solicitado; concluindo a célula atual e salvando…"
+        )
+        self.coverage_progress_var.set(
+            "Cancelamento solicitado — preservando os blocos concluídos."
+        )
 
     def _analysis_worker(self, request: FormAnalysisRequest) -> None:
         try:
@@ -1523,6 +1729,21 @@ class RadioLinkPlannerApp:
                 break
             if event == "progress":
                 self.status_var.set(str(payload))
+            elif event == "coverage_progress":
+                if not isinstance(payload, CoverageProgress):
+                    continue
+                self.progress.configure(value=payload.overall_percent)
+                detail = (
+                    f"{payload.message} • decorrido "
+                    f"{format_duration(payload.elapsed_seconds)}"
+                )
+                if payload.remaining_seconds is not None:
+                    detail += (
+                        " • restante "
+                        f"{format_duration(payload.remaining_seconds)}"
+                    )
+                self.coverage_progress_var.set(detail)
+                self.status_var.set(payload.message)
             else:
                 terminal_event = (event, payload)
         if terminal_event is not None:
@@ -1563,6 +1784,23 @@ class RadioLinkPlannerApp:
             self.profile_button.configure(state="normal")
             self.folder_button.configure(state="normal")
             return
+        if event == "coverage_cancelled":
+            if not isinstance(payload, CoverageCancelled):
+                raise TypeError("unexpected coverage cancellation")
+            self.coverage_progress_var.set(
+                "Cálculo cancelado; os blocos concluídos foram preservados."
+            )
+            self._set_result_text(
+                "COBERTURA CANCELADA\n\n"
+                f"{payload.completed_cells:,} de "
+                f"{payload.total_cells:,} células concluídas.\n\n"
+                "Execute novamente com os mesmos parâmetros e a mesma pasta "
+                "de saída para retomar automaticamente."
+            )
+            self.status_var.set(
+                "Cobertura cancelada com checkpoint disponível para retomada."
+            )
+            return
 
         error = payload
         if not isinstance(error, dict):
@@ -1588,9 +1826,28 @@ class RadioLinkPlannerApp:
                 widget.configure(state="disabled" if running else "normal")
         if running:
             self._disable_result_actions()
-            self.progress.start(12)
+            if self.current_mode == "coverage":
+                self.progress.stop()
+                self.progress.configure(
+                    mode="determinate",
+                    maximum=100.0,
+                    value=0.0,
+                )
+                if hasattr(self, "cancel_button"):
+                    self.cancel_button.configure(state="normal")
+            else:
+                self.progress.configure(mode="indeterminate")
+                self.progress.start(12)
         else:
             self.progress.stop()
+            if (
+                self.current_mode == "coverage"
+                and hasattr(self, "cancel_button")
+            ):
+                self.cancel_button.configure(state="disabled")
+            if self.current_mode == "coverage":
+                self._coverage_radius_changed()
+            self.coverage_cancel_event = None
 
     def _disable_result_actions(self) -> None:
         self.report_button.configure(state="disabled")
@@ -1617,16 +1874,33 @@ class RadioLinkPlannerApp:
                 "",
                 (
                     f"Raio: {request.radius_km} km • "
-                    f"resolução final: {request.resolution_m} m"
-                ),
-                f"Perfis radiais calculados: {statistics['radial_count']}",
-                (
-                    "Pontos avaliados fisicamente: "
-                    f"{statistics['physically_evaluated_points']:,}"
+                    f"célula: {request.resolution_m} m • "
+                    f"perfil de terreno: {request.terrain_step_m:g} m"
                 ),
                 (
-                    "Células do raster interpolado: "
-                    f"{statistics['visual_grid_cells']:,}"
+                    "Células calculadas diretamente: "
+                    f"{statistics['calculated_cells']:,}"
+                ),
+                (
+                    "Células P.1812: "
+                    f"{statistics['p1812_cells']:,}"
+                ),
+                (
+                    "Células < 250 m em espaço livre: "
+                    f"{statistics['short_range_free_space_cells']:,}"
+                ),
+                (
+                    "Pontos de terreno processados: "
+                    f"{statistics['terrain_profile_points']:,}"
+                ),
+                (
+                    f"Processos usados: {statistics['worker_count']} • "
+                    "células interpoladas: 0"
+                ),
+                (
+                    "Tempo acumulado da grade: "
+                    f"{format_duration(statistics['compute_seconds'])} • "
+                    f"retomadas: {statistics['resume_count']}"
                 ),
                 "",
                 (
@@ -1648,8 +1922,8 @@ class RadioLinkPlannerApp:
                 "",
                 "Contornos: 0, +3, +6 e +12 dB.",
                 (
-                    "O relatório identifica explicitamente células "
-                    "interpoladas e limitações de vegetação/edificações."
+                    "Cada célula possui cálculo próprio. Vegetação e "
+                    "edificações ainda não estão representadas."
                 ),
                 "",
                 f"Mapa: {outcome.paths['report_html']}",

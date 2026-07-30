@@ -5,7 +5,6 @@ import importlib.metadata
 import importlib.resources
 import importlib.util
 import os
-import shutil
 import sys
 import tempfile
 import threading
@@ -20,6 +19,7 @@ from types import ModuleType
 import numpy as np
 
 ProgressCallback = Callable[[str], None]
+CancelCheck = Callable[[], bool]
 _DIGITAL_PRODUCT_IMPORT_LOCK = threading.RLock()
 
 
@@ -190,6 +190,7 @@ def ensure_itu_data(
     p2001_archive: Path | None = None,
     cleanup_source_maps: bool = False,
     progress: ProgressCallback | None = print,
+    cancel_check: CancelCheck | None = None,
 ) -> dict[str, Path]:
     requested = []
     if include_p1812:
@@ -203,6 +204,7 @@ def ensure_itu_data(
             archive_path=archive,
             cleanup_source_maps=cleanup_source_maps,
             progress=progress,
+            cancel_check=cancel_check,
         )
         outputs[product.recommendation] = output
     return outputs
@@ -215,6 +217,7 @@ def install_digital_product(
     archive_path: Path | None = None,
     cleanup_source_maps: bool = False,
     progress: ProgressCallback | None = print,
+    cancel_check: CancelCheck | None = None,
 ) -> Path:
     package_dir = (
         package_dir.expanduser().resolve()
@@ -223,6 +226,7 @@ def install_digital_product(
     )
     output = package_dir / product.output_filename
     if output.exists():
+        _check_cancelled(cancel_check)
         _notify(progress, str(output))
         return output
 
@@ -239,11 +243,28 @@ def install_digital_product(
                     f"Downloading official ITU-R "
                     f"{product.recommendation} components...",
                 )
-                urllib.request.urlretrieve(product.components_url, archive)
+                _download_archive(
+                    product,
+                    archive,
+                    progress,
+                    cancel_check,
+                )
+            _check_cancelled(cancel_check)
             maps_dir = package_dir / "maps"
             maps_dir.mkdir(parents=True, exist_ok=True)
-            _extract_expected_files(product, archive, maps_dir)
-            _build_numpy_product(product, maps_dir, output, progress)
+            _extract_expected_files(
+                product,
+                archive,
+                maps_dir,
+                cancel_check=cancel_check,
+            )
+            _build_numpy_product(
+                product,
+                maps_dir,
+                output,
+                progress,
+                cancel_check=cancel_check,
+            )
             if cleanup_source_maps:
                 for filename in product.expected_files:
                     (maps_dir / filename).unlink(missing_ok=True)
@@ -264,7 +285,11 @@ def install_digital_product(
 
 
 def _extract_expected_files(
-    product: DigitalProduct, archive: Path, maps_dir: Path
+    product: DigitalProduct,
+    archive: Path,
+    maps_dir: Path,
+    *,
+    cancel_check: CancelCheck | None = None,
 ) -> None:
     with zipfile.ZipFile(archive) as bundle:
         members = {
@@ -277,11 +302,14 @@ def _extract_expected_files(
                 f"expected files: {sorted(missing)}"
             )
         for basename in product.expected_files:
+            _check_cancelled(cancel_check)
             with (
                 bundle.open(members[basename]) as source,
                 (maps_dir / basename).open("wb") as destination,
             ):
-                shutil.copyfileobj(source, destination)
+                while chunk := source.read(1024 * 1024):
+                    _check_cancelled(cancel_check)
+                    destination.write(chunk)
 
 
 def _build_numpy_product(
@@ -289,16 +317,63 @@ def _build_numpy_product(
     maps_dir: Path,
     output: Path,
     progress: ProgressCallback | None,
+    *,
+    cancel_check: CancelCheck | None = None,
 ) -> None:
     arrays = {}
     for filename in sorted(product.expected_files):
+        _check_cancelled(cancel_check)
         _notify(progress, f"Processing file {filename}")
         dtype = int if filename in product.integer_files else float
         arrays[product.key_for(filename)] = np.loadtxt(maps_dir / filename, dtype=dtype)
+    _check_cancelled(cancel_check)
     if product.compressed:
         np.savez_compressed(output, **arrays)
     else:
         np.savez(output, **arrays)
+
+
+def _download_archive(
+    product: DigitalProduct,
+    destination: Path,
+    progress: ProgressCallback | None,
+    cancel_check: CancelCheck | None,
+) -> None:
+    _check_cancelled(cancel_check)
+    request = urllib.request.Request(
+        product.components_url,
+        headers={
+            "User-Agent": (
+                "RadioLinkPlanner/0.4 "
+                "(+https://github.com/mariopin80/radio-link-planner)"
+            )
+        },
+    )
+    with (
+        urllib.request.urlopen(request, timeout=90) as response,
+        destination.open("wb") as handle,
+    ):
+        total = int(response.headers.get("Content-Length", "0") or 0)
+        downloaded = 0
+        next_report = 10
+        while chunk := response.read(1024 * 1024):
+            _check_cancelled(cancel_check)
+            handle.write(chunk)
+            downloaded += len(chunk)
+            if total > 0:
+                percentage = int(100 * downloaded / total)
+                if percentage >= next_report:
+                    _notify(
+                        progress,
+                        f"Downloading {product.recommendation}: "
+                        f"{min(percentage, 100)}%...",
+                    )
+                    next_report += 10
+
+
+def _check_cancelled(cancel_check: CancelCheck | None) -> None:
+    if cancel_check is not None and cancel_check():
+        raise InterruptedError("ITU-R data installation cancelled")
 
 
 def _notify(progress: ProgressCallback | None, message: str) -> None:

@@ -3,9 +3,12 @@ from __future__ import annotations
 import csv
 import math
 import os
+import threading
 import urllib.request
+from collections import OrderedDict
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -15,6 +18,14 @@ from .terrain import TerrainProfile
 COPERNICUS_ROOT = "https://copernicus-dem-30m.s3.amazonaws.com"
 DEFAULT_STEP_M = 30.0
 ProgressCallback = Callable[[str], None]
+_DATASET_CACHE_LIMIT = 12
+_DATASET_CACHE: OrderedDict[Path, Any] = OrderedDict()
+_DATASET_CACHE_LOCK = threading.RLock()
+_RASTER_BLOCK_CACHE_MAX_BYTES = 64 * 1024 * 1024
+_RASTER_BLOCK_CACHE: OrderedDict[tuple[Path, int, int], np.ndarray] = (
+    OrderedDict()
+)
+_RASTER_BLOCK_CACHE_BYTES = 0
 
 
 def default_cache_directory() -> Path:
@@ -47,10 +58,34 @@ def tile_url(code: str) -> str:
     return f"{COPERNICUS_ROOT}/{directory}/{directory}.tif"
 
 
+def _tile_groups(
+    latitudes: np.ndarray,
+    longitudes: np.ndarray,
+) -> list[tuple[str, np.ndarray]]:
+    """Group coordinate indices by one-degree tile without Python per point."""
+    latitude_floors = np.floor(latitudes).astype(np.int64)
+    longitude_floors = np.floor(longitudes).astype(np.int64)
+    longitude_floors = (longitude_floors + 180) % 360 - 180
+    packed = (latitude_floors + 90) * 360 + longitude_floors + 180
+    unique, inverse = np.unique(packed, return_inverse=True)
+    groups: list[tuple[str, np.ndarray]] = []
+    for group_index, value in enumerate(unique):
+        latitude_floor = int(value // 360 - 90)
+        longitude_floor = int(value % 360 - 180)
+        groups.append(
+            (
+                tile_code(latitude_floor + 0.5, longitude_floor + 0.5),
+                np.flatnonzero(inverse == group_index),
+            )
+        )
+    return groups
+
+
 def download_tile(
     code: str,
     cache_dir: str | Path | None = None,
     progress: ProgressCallback | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> Path:
     cache = Path(cache_dir or default_cache_directory())
     cache.mkdir(parents=True, exist_ok=True)
@@ -63,10 +98,12 @@ def download_tile(
     temporary.unlink(missing_ok=True)
     request = urllib.request.Request(
         tile_url(code),
-        headers={"User-Agent": "RadioLinkPlanner/0.3 (+https://github.com/mariopin80)"},
+        headers={"User-Agent": "RadioLinkPlanner/0.4 (+https://github.com/mariopin80)"},
     )
     _notify(progress, f"Terreno: baixando bloco Copernicus {code}…")
     try:
+        if cancel_check is not None and cancel_check():
+            raise InterruptedError("terrain download cancelled")
         with (
             urllib.request.urlopen(request, timeout=90) as response,
             temporary.open("wb") as handle,
@@ -75,6 +112,8 @@ def download_tile(
             downloaded = 0
             next_report = 10
             while chunk := response.read(1024 * 1024):
+                if cancel_check is not None and cancel_check():
+                    raise InterruptedError("terrain download cancelled")
                 handle.write(chunk)
                 downloaded += len(chunk)
                 if total > 0:
@@ -128,34 +167,24 @@ def extract_profile(
         longitude_b_deg,
         count,
     )
-    point_codes = np.asarray(
-        [
-            tile_code(float(latitude), float(longitude))
-            for latitude, longitude in zip(latitudes, longitudes)
-        ],
-        dtype=object,
-    )
-    codes = sorted(set(point_codes.tolist()))
+    tile_groups = _tile_groups(latitudes, longitudes)
     _notify(
         progress,
         f"Terreno: {distance_m / 1000.0:.2f} km, "
-        f"{count} amostras e {len(codes)} bloco(s).",
+        f"{count} amostras e {len(tile_groups)} bloco(s).",
     )
 
     elevations = np.empty(count, dtype=float)
-    for code in codes:
+    for code, indices in tile_groups:
         source = download_tile(code, cache_dir=cache_dir, progress=progress)
-        indices = np.flatnonzero(point_codes == code)
-        coordinates = [
-            (float(longitudes[index]), float(latitudes[index])) for index in indices
-        ]
-        with rasterio.open(source) as dataset:
-            samples = np.asarray(
-                [float(value[0]) for value in dataset.sample(coordinates)],
-                dtype=float,
-            )
-            if dataset.nodata is not None:
-                samples[np.isclose(samples, float(dataset.nodata))] = np.nan
+        samples, nodata = _sample_raster(
+            source,
+            longitudes[indices],
+            latitudes[indices],
+            rasterio,
+        )
+        if nodata is not None:
+            samples[np.isclose(samples, nodata)] = np.nan
         elevations[indices] = samples
 
     elevations = repair_elevation_samples(elevations)
@@ -196,30 +225,135 @@ def sample_elevations(
     if not np.all(np.isfinite(latitudes)) or not np.all(np.isfinite(longitudes)):
         raise ValueError("coordinates must be finite")
 
-    point_codes = np.asarray(
-        [
-            tile_code(float(latitude), float(longitude))
-            for latitude, longitude in zip(latitudes, longitudes)
-        ],
-        dtype=object,
-    )
-    codes = sorted(set(point_codes.tolist()))
     elevations = np.empty(len(latitudes), dtype=float)
-    for code in codes:
+    for code, indices in _tile_groups(latitudes, longitudes):
         source = download_tile(code, cache_dir=cache_dir, progress=progress)
-        indices = np.flatnonzero(point_codes == code)
-        coordinates = [
-            (float(longitudes[index]), float(latitudes[index])) for index in indices
-        ]
-        with rasterio.open(source) as dataset:
-            samples = np.asarray(
-                [float(value[0]) for value in dataset.sample(coordinates)],
-                dtype=float,
-            )
-            if dataset.nodata is not None:
-                samples[np.isclose(samples, float(dataset.nodata))] = np.nan
+        samples, nodata = _sample_raster(
+            source,
+            longitudes[indices],
+            latitudes[indices],
+            rasterio,
+        )
+        if nodata is not None:
+            samples[np.isclose(samples, nodata)] = np.nan
         elevations[indices] = samples
     return repair_elevation_samples(elevations)
+
+
+def _sample_raster(
+    source: Path,
+    longitudes: np.ndarray,
+    latitudes: np.ndarray,
+    rasterio_module: Any,
+) -> tuple[np.ndarray, float | None]:
+    """Sample a cached tile while reusing its dataset inside a worker process."""
+    source = source.resolve()
+    cache_root = default_cache_directory().expanduser().resolve()
+    try:
+        source.relative_to(cache_root)
+        persistent = True
+    except ValueError:
+        persistent = False
+
+    if not persistent:
+        with rasterio_module.open(source) as dataset:
+            values = _sample_dataset_blocks(
+                dataset,
+                source,
+                longitudes,
+                latitudes,
+                persistent=False,
+            )
+            nodata = (
+                float(dataset.nodata)
+                if dataset.nodata is not None
+                else None
+            )
+        return values, nodata
+
+    with _DATASET_CACHE_LOCK:
+        dataset = _DATASET_CACHE.pop(source, None)
+        if dataset is None or getattr(dataset, "closed", False):
+            dataset = rasterio_module.open(source)
+        _DATASET_CACHE[source] = dataset
+        while len(_DATASET_CACHE) > _DATASET_CACHE_LIMIT:
+            _, oldest = _DATASET_CACHE.popitem(last=False)
+            oldest.close()
+        values = _sample_dataset_blocks(
+            dataset,
+            source,
+            longitudes,
+            latitudes,
+            persistent=True,
+        )
+        nodata = float(dataset.nodata) if dataset.nodata is not None else None
+    return values, nodata
+
+
+def _sample_dataset_blocks(
+    dataset: Any,
+    source: Path,
+    longitudes: np.ndarray,
+    latitudes: np.ndarray,
+    *,
+    persistent: bool,
+) -> np.ndarray:
+    """Read each internal GeoTIFF block once for all requested profile pixels."""
+    global _RASTER_BLOCK_CACHE_BYTES
+
+    longitudes = np.asarray(longitudes, dtype=float)
+    latitudes = np.asarray(latitudes, dtype=float)
+    rows_raw, columns_raw = dataset.index(longitudes, latitudes)
+    rows = np.clip(np.asarray(rows_raw, dtype=int), 0, dataset.height - 1)
+    columns = np.clip(
+        np.asarray(columns_raw, dtype=int),
+        0,
+        dataset.width - 1,
+    )
+    block_height, block_width = dataset.block_shapes[0]
+    block_rows = rows // block_height
+    block_columns = columns // block_width
+    block_pairs = np.column_stack((block_rows, block_columns))
+    unique_pairs = np.unique(block_pairs, axis=0)
+    result = np.empty(len(longitudes), dtype=float)
+
+    from rasterio.windows import Window
+
+    for block_row, block_column in unique_pairs:
+        selected = (
+            (block_rows == block_row)
+            & (block_columns == block_column)
+        )
+        row_start = int(block_row * block_height)
+        column_start = int(block_column * block_width)
+        height = min(block_height, dataset.height - row_start)
+        width = min(block_width, dataset.width - column_start)
+        key = (source, int(block_row), int(block_column))
+        block = _RASTER_BLOCK_CACHE.pop(key, None) if persistent else None
+        if block is None:
+            block = np.asarray(
+                dataset.read(
+                    1,
+                    window=Window(column_start, row_start, width, height),
+                )
+            )
+            if persistent and block.nbytes <= _RASTER_BLOCK_CACHE_MAX_BYTES:
+                _RASTER_BLOCK_CACHE[key] = block
+                _RASTER_BLOCK_CACHE_BYTES += block.nbytes
+                while (
+                    _RASTER_BLOCK_CACHE
+                    and _RASTER_BLOCK_CACHE_BYTES
+                    > _RASTER_BLOCK_CACHE_MAX_BYTES
+                ):
+                    _, oldest = _RASTER_BLOCK_CACHE.popitem(last=False)
+                    _RASTER_BLOCK_CACHE_BYTES -= oldest.nbytes
+        elif persistent:
+            _RASTER_BLOCK_CACHE[key] = block
+        result[selected] = block[
+            rows[selected] - row_start,
+            columns[selected] - column_start,
+        ]
+    return result
 
 
 def repair_elevation_samples(elevation: np.ndarray) -> np.ndarray:
