@@ -465,6 +465,7 @@ def build_html_report(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>{html.escape(project.name)} — Radio Link Planner</title>
   <link rel="stylesheet" href="{html.escape(map_css, quote=True)}">
   <style>

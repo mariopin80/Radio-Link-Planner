@@ -139,7 +139,7 @@ jobs:
         run: |
           Compress-Archive `
             -Path "dist\RadioLinkPlanner\*" `
-            -DestinationPath "RadioLinkPlanner-0.3.1-Windows-x64.zip"
+            -DestinationPath "RadioLinkPlanner-0.3.2-Windows-x64.zip"
 
       - name: Install Inno Setup 6
         shell: pwsh
@@ -180,7 +180,7 @@ jobs:
         shell: pwsh
         run: |
           $installer = Resolve-Path `
-            "installer-output\RadioLinkPlanner-0.3.1-Windows-x64-Setup.exe"
+            "installer-output\RadioLinkPlanner-0.3.2-Windows-x64-Setup.exe"
           $installDirectory = Join-Path $env:RUNNER_TEMP "RadioLinkPlanner"
           $smokeOutput = Join-Path $env:RUNNER_TEMP "rlp-installer-smoke"
           $setup = Start-Process `
@@ -249,8 +249,8 @@ jobs:
         shell: pwsh
         run: |
           $files = @(
-            "RadioLinkPlanner-0.3.1-Windows-x64.zip",
-            "installer-output\RadioLinkPlanner-0.3.1-Windows-x64-Setup.exe"
+            "RadioLinkPlanner-0.3.2-Windows-x64.zip",
+            "installer-output\RadioLinkPlanner-0.3.2-Windows-x64-Setup.exe"
           )
           $lines = foreach ($file in $files) {
             $hash = Get-FileHash -Algorithm SHA256 $file
@@ -263,37 +263,37 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v0.3.1-mvp.1"
+          $tag = "v0.3.2-mvp.1"
           gh release view `
             $tag `
             --repo "$env:GITHUB_REPOSITORY" *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload `
               $tag `
-              "RadioLinkPlanner-0.3.1-Windows-x64.zip" `
-              "installer-output\RadioLinkPlanner-0.3.1-Windows-x64-Setup.exe" `
+              "RadioLinkPlanner-0.3.2-Windows-x64.zip" `
+              "installer-output\RadioLinkPlanner-0.3.2-Windows-x64-Setup.exe" `
               "SHA256SUMS.txt" `
               --clobber `
               --repo "$env:GITHUB_REPOSITORY"
           } else {
             gh release create `
               $tag `
-              "RadioLinkPlanner-0.3.1-Windows-x64.zip" `
-              "installer-output\RadioLinkPlanner-0.3.1-Windows-x64-Setup.exe" `
+              "RadioLinkPlanner-0.3.2-Windows-x64.zip" `
+              "installer-output\RadioLinkPlanner-0.3.2-Windows-x64-Setup.exe" `
               "SHA256SUMS.txt" `
               --target "$env:GITHUB_SHA" `
-              --title "Radio Link Planner 0.3.1 MVP" `
-              --notes "Revisão corretiva do MVP 0.3 para Windows x64. Os produtos digitais da ITU-R P.1812/P.2001 agora são armazenados e carregados em uma pasta gravável do usuário, corrigindo a falha da instalação em Program Files. Inclui instalador Inno Setup, enlace ponto a ponto, cobertura P.1812 por radiais adaptativos, mapas MapLibre, terreno Copernicus GLO-30, ITM, P.1812, P.2001 e Monte Carlo. Esta compilação ainda não possui assinatura digital de código." `
+              --title "Radio Link Planner 0.3.2 MVP" `
+              --notes "Revisão corretiva do MVP 0.3 para Windows x64. Os relatórios cartográficos agora são servidos temporariamente em 127.0.0.1, corrigindo o bloqueio 403 do OpenStreetMap e permitindo ao MapLibre carregar o heatmap e seus contornos. O enquadramento da cobertura também é aplicado antes das camadas. Mantém a correção da v0.3.1 para armazenar os dados ITU-R no perfil do usuário. Esta compilação ainda não possui assinatura digital de código." `
               --prerelease `
               --repo "$env:GITHUB_REPOSITORY"
           }
 
       - uses: actions/upload-artifact@v4
         with:
-          name: RadioLinkPlanner-0.3.1-Windows-x64
+          name: RadioLinkPlanner-0.3.2-Windows-x64
           path: |
-            RadioLinkPlanner-0.3.1-Windows-x64.zip
-            installer-output/RadioLinkPlanner-0.3.1-Windows-x64-Setup.exe
+            RadioLinkPlanner-0.3.2-Windows-x64.zip
+            installer-output/RadioLinkPlanner-0.3.2-Windows-x64-Setup.exe
             SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30

@@ -337,6 +337,7 @@ def _build_coverage_report(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>{html.escape(request.name)} — Radio Link Planner</title>
   <link rel="stylesheet" href="{html.escape(map_css, quote=True)}">
   <style>
@@ -452,6 +453,7 @@ def _build_coverage_report(
         layers: [{{ id:"osm", type:"raster", source:"osm" }}]
       }}
     }});
+    map.fitBounds(coverageBounds, {{padding:45,duration:0}});
     map.addControl(new maplibregl.NavigationControl(), "top-right");
     map.on("load", () => {{
       overlayTiles.forEach((tile,index) => {{
@@ -494,7 +496,6 @@ def _build_coverage_report(
         .setLngLat([{request.longitude_deg},{request.latitude_deg}])
         .setPopup(new maplibregl.Popup().setText("Transmissor"))
         .addTo(map);
-      map.fitBounds(coverageBounds, {{padding:45,duration:0}});
     }});
   </script>
 </body>
