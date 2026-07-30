@@ -1,5 +1,5 @@
 #define MyAppName "Radio Link Planner"
-#define MyAppVersion "0.3.0"
+#define MyAppVersion "0.3.1"
 #define MyAppPublisher "Mario Pin - PU2PTU"
 #define MyAppExeName "RadioLinkPlanner.exe"
 #define MyAppId "{{5F814E4D-B379-5608-A6DF-5FDCCDB9BBC7}"
@@ -10,7 +10,7 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-VersionInfoVersion=0.3.0.0
+VersionInfoVersion=0.3.1.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=Instalador do {#MyAppName}
 VersionInfoProductName={#MyAppName}
@@ -22,7 +22,7 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\installer-output
-OutputBaseFilename=RadioLinkPlanner-0.3.0-Windows-x64-Setup
+OutputBaseFilename=RadioLinkPlanner-0.3.1-Windows-x64-Setup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern

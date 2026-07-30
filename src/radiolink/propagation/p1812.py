@@ -5,6 +5,7 @@ from importlib.metadata import PackageNotFoundError, version
 import numpy as np
 
 from ..domain import Polarization
+from ..itu_data import P1812_PRODUCT, load_digital_product_module
 from .base import (
     ModelContext,
     ModelEvaluation,
@@ -40,7 +41,7 @@ class P1812Model:
                 "P.1812-8 supports 30 MHz to 6 GHz",
             )
         try:
-            from Py1812 import P1812
+            P1812 = load_digital_product_module(P1812_PRODUCT, "P1812")
 
             profile = context.directional_profile
             transmitter, receiver = context.transmitter_receiver

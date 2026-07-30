@@ -1,20 +1,26 @@
 from __future__ import annotations
 
+import importlib
 import importlib.metadata
+import importlib.resources
 import importlib.util
+import os
 import shutil
 import sys
 import tempfile
+import threading
 import urllib.error
 import urllib.request
 import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 
 import numpy as np
 
 ProgressCallback = Callable[[str], None]
+_DIGITAL_PRODUCT_IMPORT_LOCK = threading.RLock()
 
 
 @dataclass(frozen=True)
@@ -79,7 +85,32 @@ P2001_PRODUCT = DigitalProduct(
 )
 
 
+def default_data_directory() -> Path:
+    """Return a persistent user-writable directory for ITU-R digital products."""
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        root = Path(local_app_data)
+    else:
+        xdg_data_home = os.environ.get("XDG_DATA_HOME")
+        root = (
+            Path(xdg_data_home)
+            if xdg_data_home
+            else Path.home() / ".local" / "share"
+        )
+    return root / "RadioLinkPlanner" / "ITU-R"
+
+
+def product_data_directory(
+    product: DigitalProduct,
+    *,
+    root: Path | None = None,
+) -> Path:
+    base = Path(root) if root is not None else default_data_directory()
+    return base.expanduser().resolve() / product.package_name
+
+
 def package_directory(product: DigitalProduct) -> Path:
+    """Locate the installed implementation package, not its writable data."""
     frozen_root = getattr(sys, "_MEIPASS", None)
     if frozen_root:
         return Path(frozen_root).resolve() / product.package_name
@@ -96,6 +127,59 @@ def package_directory(product: DigitalProduct) -> Path:
     raise FileNotFoundError(
         f"could not locate package directory for {product.distribution_name}"
     )
+
+
+def load_digital_product_module(
+    product: DigitalProduct,
+    module_name: str,
+    *,
+    data_dir: Path | None = None,
+) -> ModuleType:
+    """Import an ITU implementation while resolving its maps from user data.
+
+    Py1812 and Py2001 load their ``*.npz`` product through
+    :func:`importlib.resources.files` at module import time. Their normal
+    package location is read-only in an installed PyInstaller application, so
+    resource resolution is redirected narrowly for that package during the
+    first import.
+    """
+    directory = (
+        Path(data_dir).expanduser().resolve()
+        if data_dir is not None
+        else product_data_directory(product)
+    )
+    product_path = directory / product.output_filename
+    if not product_path.is_file():
+        raise FileNotFoundError(
+            f"dados {product.recommendation} não encontrados em {product_path}"
+        )
+
+    qualified_name = f"{product.package_name}.{module_name}"
+    with _DIGITAL_PRODUCT_IMPORT_LOCK:
+        loaded = sys.modules.get(qualified_name)
+        if loaded is not None:
+            return loaded
+
+        importlib.import_module(product.package_name)
+        original_files = importlib.resources.files
+
+        def redirected_files(anchor=None):
+            package_name = (
+                anchor
+                if isinstance(anchor, str)
+                else getattr(anchor, "__name__", None)
+            )
+            if package_name == product.package_name:
+                return directory
+            if anchor is None:
+                return original_files()
+            return original_files(anchor)
+
+        importlib.resources.files = redirected_files
+        try:
+            return importlib.import_module(qualified_name)
+        finally:
+            importlib.resources.files = original_files
 
 
 def ensure_itu_data(
@@ -132,7 +216,11 @@ def install_digital_product(
     cleanup_source_maps: bool = False,
     progress: ProgressCallback | None = print,
 ) -> Path:
-    package_dir = package_dir.resolve() if package_dir else package_directory(product)
+    package_dir = (
+        package_dir.expanduser().resolve()
+        if package_dir is not None
+        else product_data_directory(product)
+    )
     output = package_dir / product.output_filename
     if output.exists():
         _notify(progress, str(output))
@@ -166,8 +254,8 @@ def install_digital_product(
         ) from exc
     except PermissionError as exc:
         raise RuntimeError(
-            "o aplicativo não consegue gravar os dados ITU ao lado do "
-            "executável; extraia o pacote para uma pasta gravável do usuário"
+            f"o aplicativo não consegue gravar os dados ITU-R em "
+            f"{package_dir}; verifique as permissões da pasta do usuário"
         ) from exc
     if not output.exists():
         raise RuntimeError(f"{product.output_filename} was not generated")
