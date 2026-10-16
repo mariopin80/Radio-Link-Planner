@@ -98,6 +98,50 @@ def check_localized_reports(output: Path) -> dict:
     return matrix
 
 
+def check_home_layout(root, output: Path) -> None:
+    """Verify the home screen at its normal and minimum supported sizes."""
+    import os
+    from tkinter import font, ttk
+
+    from PIL import ImageGrab
+
+    output.mkdir(parents=True, exist_ok=True)
+    original_geometry = root.geometry()
+    withdrawn = root.state() == "withdrawn"
+
+    def descendants(widget):
+        for child in widget.winfo_children():
+            yield child
+            yield from descendants(child)
+
+    try:
+        root.deiconify()
+        for width, height in ((1180, 760), (900, 600)):
+            root.geometry(f"{width}x{height}")
+            root.update()
+            descriptions = [widget for widget in descendants(root)
+                            if isinstance(widget, ttk.Label) and widget.cget("style") == "ModeText.TLabel"]
+            assert len(descriptions) == 2
+            line_height = font.Font(root, font=ttk.Style(root).lookup("ModeText.TLabel", "font")).metrics("linespace")
+            for description in descriptions:
+                card = description.master
+                assert description.winfo_reqheight() <= line_height + 4, "home description wraps"
+                for widget in card.winfo_children():
+                    assert widget.winfo_width() >= widget.winfo_reqwidth(), "home content clipped horizontally"
+                    assert widget.winfo_height() >= widget.winfo_reqheight(), "home content clipped vertically"
+                    assert widget.winfo_x() + widget.winfo_width() <= card.winfo_width()
+                    assert widget.winfo_y() + widget.winfo_height() <= card.winfo_height()
+                action = next(widget for widget in card.winfo_children() if isinstance(widget, ttk.Button))
+                assert description.winfo_y() + description.winfo_height() < action.winfo_y()
+            left, top = root.winfo_rootx(), root.winfo_rooty()
+            ImageGrab.grab(bbox=(left, top, left + root.winfo_width(), top + root.winfo_height()),
+                           xdisplay=os.environ.get("DISPLAY")).save(output / f"home-{get_language()}-{width}x{height}.png")
+    finally:
+        root.geometry(original_geometry)
+        if withdrawn:
+            root.withdraw()
+
+
 def check_interface(root, output: Path) -> None:
     from .coverage import CoverageProgress
     from .desktop import RadioLinkPlannerApp
@@ -109,7 +153,8 @@ def check_interface(root, output: Path) -> None:
         for language in LANGUAGES:
             app._change_language(language, persist=False)
             root.update_idletasks()
-            assert len(app.language_buttons) == 5
+            assert len(app.language_flags) == 5
+            check_home_layout(root, output / "interface")
             app._open_mode("link")
             assert app._collect_editor_values().polarization == "vertical"
             assert app.notebook.tab(app.about_tab, "text") == tr("Sobre")

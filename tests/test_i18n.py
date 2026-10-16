@@ -107,6 +107,7 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
     from radiolink.coverage import CoverageProgress
     from radiolink.desktop import RadioLinkPlannerApp
     from radiolink.project_files import read_coverage_project
+    from radiolink.release_checks import check_home_layout
     from radiolink.version import __version__, CONTACT_EMAIL, CALLSIGN, DEVELOPER
 
     root = tk.Tk()
@@ -119,7 +120,8 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
         for language in LANGUAGES:
             app._change_language(language, persist=False)
             root.update_idletasks()
-            assert len(app.language_buttons) == 5
+            assert len(app.language_flags) == 5
+            check_home_layout(root, tmp_path / "interface")
             app._open_mode("link")
             assert app._collect_editor_values().polarization == "vertical"
             assert app.notebook.tab(app.about_tab, "text") == tr("Sobre")
@@ -129,6 +131,8 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
                     result.append(str(widget.cget("text")))
                 return result + [text for child in widget.winfo_children() for text in all_text(child)]
             about = "\n".join(all_text(app.about_tab))
+            assert f"{tr('Autor')}: {DEVELOPER} - {CALLSIGN}" in about
+            assert tr("Indicativo de chamada") not in about
             for value in (__version__, DEVELOPER, CALLSIGN, CONTACT_EMAIL):
                 assert value in about
             app._show_start_screen()

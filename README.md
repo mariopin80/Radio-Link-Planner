@@ -1,4 +1,4 @@
-# Radio Link Planner 0.5
+# Radio Link Planner 0.5.1
 
 Protótipo científico local para análise de enlaces terrestres de
 radioamadorismo em VHF e UHF. O programa analisa enlaces ponto a ponto e
@@ -87,12 +87,12 @@ PYTHONPATH=src python -m radiolink analyze \
 
 O workflow **Windows release** produz dois formatos:
 
-- `RadioLinkPlanner-0.5-Windows-x64-Setup.exe`: instalador recomendado;
-- `RadioLinkPlanner-0.5-Windows-x64.zip`: pacote portátil para testes.
+- `RadioLinkPlanner-0.5.1-Windows-x64-Setup.exe`: instalador recomendado;
+- `RadioLinkPlanner-0.5.1-Windows-x64.zip`: pacote portátil para testes.
 
-A versão 0.5 é uma pré-versão para validação antes da 1.0. A tela inicial
-oferece português, inglês, espanhol, francês e alemão, com bandeiras e nomes
-nativos. O idioma escolhido é lembrado para as próximas aberturas e se aplica
+A versão 0.5.1 é uma pré-versão para validação antes da 1.0. A tela inicial
+oferece português, inglês, espanhol, francês e alemão pelas bandeiras no topo,
+ao lado de **Sobre**. O idioma escolhido é lembrado nas próximas aberturas e se aplica
 aos formulários, mensagens, mapas, gráficos, resumos e PDFs. O instalador
 oferece os mesmos cinco idiomas.
 
@@ -100,7 +100,7 @@ A aba **Sobre**, disponível nos módulos e pela tela inicial, mostra a versão,
 mês/ano de lançamento, Mario Pin, PU2PTU e `mariopin@gmail.com`.
 
 O tempo restante aparece uma única vez junto à barra de progresso. Os ícones
-próprios dos atalhos e a atualização sobre a versão 0.4.3 são verificados na
+próprios dos atalhos e a atualização sobre a versão 0.5 são verificados na
 construção do instalador. Projetos de cobertura novos armazenam opções
 independentes do idioma (formato 1.1); a leitura dos projetos 1.0 permanece
 compatível.

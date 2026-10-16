@@ -326,13 +326,33 @@ class RadioLinkPlannerApp:
         self.root.columnconfigure(0, weight=1)
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(2, weight=1)
+        header = ttk.Frame(outer, style="App.TFrame")
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(0, weight=1)
         ttk.Label(
-            outer,
+            header,
             text=APP_NAME,
             style="StartTitle.TLabel",
         ).grid(row=0, column=0, sticky="w")
-        ttk.Button(outer, text=tr("Sobre"), command=self._show_about).grid(
-            row=0, column=0, sticky="e"
+
+        controls = ttk.Frame(header, style="App.TFrame")
+        controls.grid(row=0, column=1, sticky="e")
+        self.language_flags = {}
+        for column, (code, (_name, flag)) in enumerate(LANGUAGES.items()):
+            photo = tk.PhotoImage(file=str(bundle_root() / "assets" / "flags" / f"{flag}.png"))
+            self.home_images.append(photo)
+            selector = tk.Label(
+                controls, image=photo, background="#11151a", borderwidth=0,
+                highlightthickness=2, highlightbackground="#11151a",
+                highlightcolor="#d84a4a", padx=4, pady=4,
+                cursor="hand2", takefocus=True,
+            )
+            selector.grid(row=0, column=column, padx=(0, 6))
+            for event in ("<Button-1>", "<Return>", "<space>"):
+                selector.bind(event, lambda _event, value=code: self._change_language(value))
+            self.language_flags[code] = selector
+        ttk.Button(controls, text=tr("Sobre"), command=self._show_about).grid(
+            row=0, column=len(LANGUAGES), padx=(10, 0)
         )
         ttk.Label(
             outer,
@@ -344,15 +364,15 @@ class RadioLinkPlannerApp:
 
         choices = ttk.Frame(outer, style="App.TFrame")
         choices.grid(row=2, column=0, sticky="nsew")
-        choices.columnconfigure(0, weight=1)
-        choices.columnconfigure(1, weight=1)
+        choices.columnconfigure(0, weight=1, uniform="mode")
+        choices.columnconfigure(1, weight=1, uniform="mode")
         choices.rowconfigure(0, weight=1)
         self._build_mode_card(
             choices,
             column=0,
             title=tr('Enlace ponto a ponto'),
             description=(
-                tr('Compare ITM, P.1812 e P.2001, visualize o perfil do terreno e estime a confiabilidade por Monte Carlo.')
+                tr('Avalie o enlace entre duas estações.')
             ),
             button_text=tr('Planejar enlace'),
             command=lambda: self._open_mode("link"),
@@ -364,7 +384,7 @@ class RadioLinkPlannerApp:
             column=1,
             title=tr('Mapa de cobertura'),
             description=(
-                tr('Calcule cada célula da cobertura P.1812 em grade métrica, com progresso real, retomada e contornos de margem.')
+                tr('Visualize o alcance da sua estação.')
             ),
             button_text=tr('Calcular cobertura'),
             command=lambda: self._open_mode("coverage"),
@@ -377,23 +397,7 @@ class RadioLinkPlannerApp:
                 tr('v{x0} • processamento local • terreno Copernicus GLO-30', x0=__version__)
             ),
             style="Subtitle.TLabel",
-        ).grid(row=4, column=0, sticky="w", pady=(16, 0))
-        languages = ttk.Frame(outer, style="App.TFrame")
-        languages.grid(row=3, column=0, sticky="w", pady=(18, 0))
-        ttk.Label(languages, text=tr("Idioma"), style="Subtitle.TLabel").grid(
-            row=0, column=0, padx=(0, 12)
-        )
-        self.language_buttons = {}
-        for column, (code, (name, flag)) in enumerate(LANGUAGES.items(), 1):
-            photo = tk.PhotoImage(file=str(bundle_root() / "assets" / "flags" / f"{flag}.png"))
-            self.home_images.append(photo)
-            button = ttk.Button(
-                languages, text=name, image=photo, compound="left",
-                command=lambda value=code: self._change_language(value),
-                style="Accent.TButton" if code == get_language() else "TButton",
-            )
-            button.grid(row=0, column=column, padx=(0, 8))
-            self.language_buttons[code] = button
+        ).grid(row=3, column=0, sticky="w", pady=(16, 0))
 
     def _change_language(self, language: str, *, persist: bool = True) -> None:
         if self.worker is not None and self.worker.is_alive():
@@ -415,7 +419,7 @@ class RadioLinkPlannerApp:
         content.pack(fill="both", expand=True)
         ttk.Label(content, text=APP_NAME, style="ModeTitle.TLabel").pack(anchor="w", pady=(0, 18))
         rows = ((tr("Versão"), __version__), (tr("Lançamento"), tr(RELEASE_MONTH)),
-                (tr("Desenvolvedor"), DEVELOPER), (tr("Indicativo de chamada"), CALLSIGN))
+                (tr("Autor"), f"{DEVELOPER} - {CALLSIGN}"))
         for label, value in rows:
             ttk.Label(content, text=f"{label}: {value}", style="Panel.TLabel").pack(anchor="w", pady=5)
         ttk.Label(content, text=tr("Contato"), style="Panel.TLabel").pack(anchor="w", pady=(18, 5))
@@ -448,7 +452,8 @@ class RadioLinkPlannerApp:
         card = ttk.Frame(parent, style="Panel.TFrame", padding=(24, 24))
         card.grid(row=0, column=column, sticky="nsew", padx=padding)
         card.columnconfigure(0, weight=1)
-        card.rowconfigure(2, weight=1)
+        card.rowconfigure(3, weight=1)
+        image_label = None
         image_path = bundle_root() / image_asset
         encoded_image_path = image_path.with_suffix(
             f"{image_path.suffix}.b64"
@@ -471,22 +476,37 @@ class RadioLinkPlannerApp:
             )
             image_label.grid(row=0, column=0, sticky="n", pady=(0, 18))
             image_label.bind("<Button-1>", lambda _event: command())
-        ttk.Label(card, text=title, style="ModeTitle.TLabel").grid(
-            row=1, column=0, sticky="w"
-        )
-        ttk.Label(
+        title_label = ttk.Label(card, text=title, style="ModeTitle.TLabel")
+        title_label.grid(row=1, column=0, sticky="w")
+        description_label = ttk.Label(
             card,
             text=description,
             style="ModeText.TLabel",
             wraplength=350,
             justify="left",
-        ).grid(row=2, column=0, sticky="nw", pady=(10, 18))
-        ttk.Button(
+        )
+        description_label.grid(row=2, column=0, sticky="nw", pady=(10, 18))
+        action = ttk.Button(
             card,
             text=button_text,
             command=command,
             style="Mode.TButton",
-        ).grid(row=3, column=0, sticky="ew")
+        )
+        action.grid(row=4, column=0, sticky="ew")
+
+        if image_label is not None:
+            def fit_illustration(event):
+                # Reserve the text and action before sizing the illustration.
+                available_height = max(1, event.height - 94 - title_label.winfo_reqheight()
+                                       - description_label.winfo_reqheight() - action.winfo_reqheight())
+                available_width = max(1, event.width - 48)
+                factor = max(2, (source.width() + available_width - 1) // available_width,
+                             (source.height() + available_height - 1) // available_height)
+                if factor != getattr(image_label, "subsample_factor", 2):
+                    image_label.photo = source.subsample(factor, factor)
+                    image_label.configure(image=image_label.photo)
+                    image_label.subsample_factor = factor
+            card.bind("<Configure>", fit_illustration)
 
     def _open_mode(self, mode: str) -> None:
         self.root.unbind_all("<MouseWheel>")

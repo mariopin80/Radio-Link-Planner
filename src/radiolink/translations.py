@@ -1,6 +1,9 @@
 """English, Spanish, French and German translations of Portuguese source messages."""
 
 MESSAGES: dict[str, tuple[str, str, str, str]] = {
+    'Autor': ('Author', 'Autor', 'Auteur', 'Autor'),
+    'Avalie o enlace entre duas estações.': ('Assess a link between two stations.', 'Evalúe el enlace entre dos estaciones.', 'Évaluez la liaison entre deux stations.', 'Prüfen Sie die Verbindung zweier Stationen.'),
+    'Visualize o alcance da sua estação.': ('View your station’s coverage area.', 'Visualice el alcance de su estación.', 'Visualisez la portée de votre station.', 'Zeigen Sie die Reichweite Ihrer Station.'),
     '\n\nSerá retomada uma execução anterior com {x0:,} células prontas.': ('\n\nA previous run will be resumed with {x0:,} cells already completed.', '\n\nSe reanudará una ejecución anterior con {x0:,} celdas completadas.', '\n\nUn calcul précédent sera repris avec {x0:,} cellules déjà terminées.', '\n\nEin früherer Lauf wird mit {x0:,} bereits berechneten Zellen fortgesetzt.'),
     '\nDownload adicional: {x0} bloco(s) de terreno; o tempo depende da conexão.': ('\nAdditional download: {x0} terrain tile(s); download time depends on the connection.', '\nDescarga adicional: {x0} bloque(s) de terreno; el tiempo depende de la conexión.', '\nTéléchargement supplémentaire : {x0} tuile(s) de terrain ; la durée dépend de la connexion.', '\nZusätzlicher Download: {x0} Geländekachel(n); die Dauer hängt von der Verbindung ab.'),
     '  {x0}: {x1} (consulte o relatório)': ('  {x0}: {x1} (see report)', '  {x0}: {x1} (consulte el informe)', '  {x0} : {x1} (voir le rapport)', '  {x0}: {x1} (siehe Bericht)'),
