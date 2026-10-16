@@ -1,5 +1,5 @@
 #define MyAppName "Radio Link Planner"
-#define MyAppVersion "0.4.3"
+#define MyAppVersion "0.5"
 #define MyAppPublisher "Mario Pin - PU2PTU"
 #define MyAppExeName "RadioLinkPlanner.exe"
 #define MyAppIconName "RadioLinkPlanner-" + MyAppVersion + ".ico"
@@ -11,7 +11,7 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-VersionInfoVersion=0.4.3.0
+VersionInfoVersion=0.5.0.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=Instalador do {#MyAppName}
 VersionInfoProductName={#MyAppName}
@@ -23,7 +23,7 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\installer-output
-OutputBaseFilename=RadioLinkPlanner-0.4.3-Windows-x64-Setup
+OutputBaseFilename=RadioLinkPlanner-0.5-Windows-x64-Setup
 Compression=lzma2/max
 SolidCompression=yes
 SetupIconFile=..\assets\app-icon.ico
@@ -37,6 +37,9 @@ UninstallDisplayName={#MyAppName} {#MyAppVersion}
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
+Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
+Name: "french"; MessagesFile: "compiler:Languages\French.isl"
+Name: "german"; MessagesFile: "compiler:Languages\German.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked

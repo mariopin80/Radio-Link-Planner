@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .i18n import tr
+
 import json
 import math
 import threading
@@ -79,9 +81,7 @@ class CoverageCancelled(RuntimeError):
         self.total_cells = total_cells
         self.checkpoint_directory = checkpoint_directory
         super().__init__(
-            "Cálculo cancelado após "
-            f"{completed_cells:,} de {total_cells:,} células. "
-            "O progresso foi preservado para retomada."
+            tr('Cálculo cancelado após {x0:,} de {x1:,} células. O progresso foi preservado para retomada.', x0=completed_cells, x1=total_cells)
         )
 
 
@@ -118,58 +118,57 @@ class CoverageRequest:
 
     def validate(self) -> None:
         if not self.name.strip():
-            raise ValueError("Informe um nome para a cobertura.")
+            raise ValueError(tr('Informe um nome para a cobertura.'))
         if not -80.0 <= self.latitude_deg <= 80.0:
             raise ValueError(
-                "A latitude deve estar entre -80 e 80° para a P.1812."
+                tr('A latitude deve estar entre -80 e 80° para a P.1812.')
             )
         if not -180.0 <= self.longitude_deg <= 180.0:
-            raise ValueError("A longitude deve estar entre -180 e 180°.")
+            raise ValueError(tr('A longitude deve estar entre -180 e 180°.'))
         if not 30.0 <= self.frequency_mhz <= 3000.0:
             raise ValueError(
-                "A frequência deve estar entre 30 e 3000 MHz nesta versão VHF/UHF."
+                tr('A frequência deve estar entre 30 e 3000 MHz nesta versão VHF/UHF.')
             )
-        if self.polarization.lower() not in {"vertical", "horizontal"}:
-            raise ValueError("Escolha uma polarização válida.")
+        if self.polarization.lower() not in {'vertical', 'horizontal'}:
+            raise ValueError(tr('Escolha uma polarização válida.'))
         if self.mode.upper() not in MODE_PROFILES:
-            raise ValueError("Escolha um modo de recepção válido.")
+            raise ValueError(tr('Escolha um modo de recepção válido.'))
         if self.radius_km not in COVERAGE_RESOLUTION_PRESETS:
-            raise ValueError("Escolha um dos raios de cobertura disponíveis.")
+            raise ValueError(tr('Escolha um dos raios de cobertura disponíveis.'))
         if self.resolution_preset not in RESOLUTION_PRESETS:
-            raise ValueError("Escolha uma resolução de cobertura válida.")
+            raise ValueError(tr('Escolha uma resolução de cobertura válida.'))
         if self.resolution_preset == "custom":
             if self.custom_resolution_m is None:
-                raise ValueError("Informe a resolução personalizada.")
+                raise ValueError(tr('Informe a resolução personalizada.'))
             if not 25 <= int(self.custom_resolution_m) <= 10_000:
                 raise ValueError(
-                    "A resolução personalizada deve estar entre 25 e 10.000 m."
+                    tr('A resolução personalizada deve estar entre 25 e 10.000 m.')
                 )
         if not 10.0 <= self.terrain_step_m <= 100.0:
             raise ValueError(
-                "A amostragem do perfil deve estar entre 10 e 100 m."
+                tr('A amostragem do perfil deve estar entre 10 e 100 m.')
             )
         if not 1.0 <= self.time_percentage <= 50.0:
-            raise ValueError("A P.1812 aceita percentuais de tempo entre 1 e 50%.")
+            raise ValueError(tr('A P.1812 aceita percentuais de tempo entre 1 e 50%.'))
         heights = {
-            "altura da antena transmissora": self.transmitter_height_m,
-            "altura da antena receptora": self.receiver_height_m,
+            tr("Altura da antena transmissora"): self.transmitter_height_m,
+            tr("Altura da antena receptora"): self.receiver_height_m,
         }
         for label, value in heights.items():
             if value < 1.0 or value > 3000.0:
                 raise ValueError(
-                    f"A {label} deve estar entre 1 e 3.000 m "
-                    "para a P.1812."
+                    tr("O valor de {field} deve estar entre 1 e 3.000 m para a P.1812.", field=label)
                 )
         if self.transmitter_power_w <= 0.0:
-            raise ValueError("A potência transmissora deve ser positiva.")
+            raise ValueError(tr('A potência transmissora deve ser positiva.'))
         for label, value in {
-            "perda da linha transmissora": self.transmitter_line_loss_db,
-            "perda da linha receptora": self.receiver_line_loss_db,
+            tr("Perda no cabo transmissor"): self.transmitter_line_loss_db,
+            tr("Perda no cabo receptor"): self.receiver_line_loss_db,
         }.items():
             if value < 0.0:
-                raise ValueError(f"A {label} não pode ser negativa.")
+                raise ValueError(tr('A {x0} não pode ser negativa.', x0=label))
         if not -200.0 <= self.receiver_threshold_dbm <= 0.0:
-            raise ValueError("A sensibilidade deve estar entre -200 e 0 dBm.")
+            raise ValueError(tr('A sensibilidade deve estar entre -200 e 0 dBm.'))
 
 
 @dataclass(frozen=True)
@@ -245,7 +244,7 @@ def run_radial_coverage_analysis_legacy(
     request.validate()
     destination = request.output_directory.expanduser().resolve()
     destination.mkdir(parents=True, exist_ok=True)
-    _notify(progress, "Cobertura: preparando os dados digitais da P.1812…")
+    _notify(progress, tr('Cobertura: preparando os dados digitais da P.1812…'))
     ensure_itu_data(
         include_p1812=True,
         include_p2001=False,
@@ -259,7 +258,7 @@ def run_radial_coverage_analysis_legacy(
     initial_bearings = np.arange(0.0, 360.0, 10.0)
     _notify(
         progress,
-        "Cobertura: primeira passagem com 36 perfis radiais de 10°…",
+        tr('Cobertura: primeira passagem com 36 perfis radiais de 10°…'),
     )
     for index, bearing in enumerate(initial_bearings, start=1):
         radial = _calculate_radial(
@@ -272,8 +271,7 @@ def run_radial_coverage_analysis_legacy(
         radials[_bearing_key(bearing)] = radial
         _notify(
             progress,
-            f"Cobertura: radial inicial {index}/{len(initial_bearings)} "
-            f"({bearing:.1f}°).",
+            tr('Cobertura: radial inicial {x0}/{x1} ({x2:.1f}°).', x0=index, x1=len(initial_bearings), x2=bearing),
         )
 
     minimum_step, maximum_radials = _angular_limits(request.radius_km)
@@ -295,8 +293,7 @@ def run_radial_coverage_analysis_legacy(
         candidates = candidates[:available]
         _notify(
             progress,
-            f"Cobertura: refinamento angular {pass_index}, "
-            f"{len(candidates)} novos perfis…",
+            tr('Cobertura: refinamento angular {x0}, {x1} novos perfis…', x0=pass_index, x1=len(candidates)),
         )
         for index, (bearing, _) in enumerate(candidates, start=1):
             radial = _calculate_radial(
@@ -310,12 +307,11 @@ def run_radial_coverage_analysis_legacy(
             if index % 8 == 0 or index == len(candidates):
                 _notify(
                     progress,
-                    f"Cobertura: refinamento {index}/{len(candidates)} "
-                    f"({len(radials)} radiais no total).",
+                    tr('Cobertura: refinamento {x0}/{x1} ({x2} radiais no total).', x0=index, x1=len(candidates), x2=len(radials)),
                 )
 
     ordered = tuple(sorted(radials.values(), key=lambda item: item.bearing_deg))
-    _notify(progress, "Cobertura: interpolando o raster final…")
+    _notify(progress, tr('Cobertura: interpolando o raster final…'))
     grid_path = destination / "coverage_margin_db.npy"
     grid, grid_metadata = interpolate_radials_to_grid(
         ordered,
@@ -368,7 +364,7 @@ def run_radial_coverage_analysis_legacy(
         encoding="utf-8",
     )
     paths["metadata"] = metadata_path
-    _notify(progress, "Cobertura concluída: mapa de calor e contornos gerados.")
+    _notify(progress, tr('Cobertura concluída: mapa de calor e contornos gerados.'))
     return CoverageOutcome(
         request=request,
         radials=ordered,
@@ -393,7 +389,7 @@ def _calculate_radial(
         bearing_deg,
         distances,
     )
-    _notify(progress, f"Terreno: amostrando radial {bearing_deg:.3f}°…")
+    _notify(progress, tr('Terreno: amostrando radial {x0:.3f}°…', x0=bearing_deg))
     elevations = sample_elevations(
         latitudes,
         longitudes,
@@ -513,7 +509,7 @@ def _adaptive_margin_profile(
     valid = sorted(index for index, value in cache.items() if np.isfinite(value))
     if len(valid) < 2:
         raise RuntimeError(
-            "A P.1812 não produziu pontos suficientes neste perfil radial."
+            tr('A P.1812 não produziu pontos suficientes neste perfil radial.')
         )
     target = np.arange(count)
     margins = np.interp(
@@ -671,7 +667,7 @@ def interpolate_radials_to_grid(
         grid[row_start:row_stop] = values.astype(np.float32)
         if row_start % (chunk_rows * 8) == 0:
             percent = 100.0 * row_stop / dimension
-            _notify(progress, f"Cobertura: raster interpolado {percent:.0f}%…")
+            _notify(progress, tr('Cobertura: raster interpolado {x0:.0f}%…', x0=percent))
     grid.flush()
     return grid, {
         "radius_km": radius_km,
@@ -693,7 +689,7 @@ def _base_project(request: CoverageRequest) -> Project:
         },
     )
     transmitter = Terminal(
-        name="Transmissor",
+        name=tr('Transmissor'),
         latitude_deg=request.latitude_deg,
         longitude_deg=request.longitude_deg,
         antenna_height_m=request.transmitter_height_m,
@@ -708,7 +704,7 @@ def _base_project(request: CoverageRequest) -> Project:
         np.asarray([1000.0]),
     )
     receiver = Terminal(
-        name="Receptor móvel",
+        name='Receptor móvel',
         latitude_deg=float(receiver_latitudes[0]),
         longitude_deg=float(receiver_longitudes[0]),
         antenna_height_m=request.receiver_height_m,
@@ -727,7 +723,7 @@ def _base_project(request: CoverageRequest) -> Project:
         terminal_a=transmitter,
         terminal_b=receiver,
         terrain_profile="adaptive-radial-coverage",
-        terrain_source="Copernicus GLO-30 automático",
+        terrain_source='Copernicus GLO-30 automático',
         terrain_resolution_m=float(request.resolution_m),
         clutter_included=False,
         models=ModelSelection(itm=False, p1812=True, p2001=False),
@@ -800,3 +796,4 @@ def _bearing_key(value: float) -> float:
 def _notify(progress: ProgressCallback | None, message: str) -> None:
     if progress is not None:
         progress(message)
+

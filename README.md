@@ -1,4 +1,4 @@
-# Radio Link Planner 0.4.3
+# Radio Link Planner 0.5
 
 Protótipo científico local para análise de enlaces terrestres de
 radioamadorismo em VHF e UHF. O programa analisa enlaces ponto a ponto e
@@ -37,6 +37,9 @@ não estiver disponível, o navegador continua funcionando como alternativa.
 - vetorização da P.1812 e terreno preparado em arquivos mapeados compartilháveis;
 - reaproveitamento da perda ao ajustar potência, ganhos, cabos e sensibilidade;
 - ícone próprio no executável, janela, atalhos e instalador;
+- interface, mapas e relatórios em cinco idiomas;
+- preferência de idioma persistente e seletor com bandeiras;
+- aba Sobre com identificação e contato do desenvolvedor;
 - curvatura terrestre com fator k configurável;
 - primeira zona de Fresnel e obstruções críticas;
 - ITM 1.3 oficial da NTIA em modo ponto a ponto;
@@ -84,12 +87,23 @@ PYTHONPATH=src python -m radiolink analyze \
 
 O workflow **Windows release** produz dois formatos:
 
-- `RadioLinkPlanner-0.4.3-Windows-x64-Setup.exe`: instalador recomendado;
-- `RadioLinkPlanner-0.4.3-Windows-x64.zip`: pacote portátil para testes.
+- `RadioLinkPlanner-0.5-Windows-x64-Setup.exe`: instalador recomendado;
+- `RadioLinkPlanner-0.5-Windows-x64.zip`: pacote portátil para testes.
 
-A versão 0.4.3 associa explicitamente o ícone aprovado aos atalhos do menu
-Iniciar e da área de trabalho. O ícone fica em um arquivo próprio, com nome
-por versão, para não reutilizar a referência antiga durante a atualização.
+A versão 0.5 é uma pré-versão para validação antes da 1.0. A tela inicial
+oferece português, inglês, espanhol, francês e alemão, com bandeiras e nomes
+nativos. O idioma escolhido é lembrado para as próximas aberturas e se aplica
+aos formulários, mensagens, mapas, gráficos, resumos e PDFs. O instalador
+oferece os mesmos cinco idiomas.
+
+A aba **Sobre**, disponível nos módulos e pela tela inicial, mostra a versão,
+mês/ano de lançamento, Mario Pin, PU2PTU e `mariopin@gmail.com`.
+
+O tempo restante aparece uma única vez junto à barra de progresso. Os ícones
+próprios dos atalhos e a atualização sobre a versão 0.4.3 são verificados na
+construção do instalador. Projetos de cobertura novos armazenam opções
+independentes do idioma (formato 1.1); a leitura dos projetos 1.0 permanece
+compatível.
 
 A previsão de duração considera o motor otimizado e o histórico compatível
 da versão 0.4.2. A interface distingue uma estimativa inicial aproximada de

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .i18n import tr
+
 import importlib
 import importlib.metadata
 import importlib.resources
@@ -95,7 +97,7 @@ def default_data_directory() -> Path:
         root = (
             Path(xdg_data_home)
             if xdg_data_home
-            else Path.home() / ".local" / "share"
+            else Path.home() / '.local' / "share"
         )
     return root / "RadioLinkPlanner" / "ITU-R"
 
@@ -151,7 +153,7 @@ def load_digital_product_module(
     product_path = directory / product.output_filename
     if not product_path.is_file():
         raise FileNotFoundError(
-            f"dados {product.recommendation} não encontrados em {product_path}"
+            tr('dados {x0} não encontrados em {x1}', x0=product.recommendation, x1=product_path)
         )
 
     qualified_name = f"{product.package_name}.{module_name}"
@@ -270,13 +272,11 @@ def install_digital_product(
                     (maps_dir / filename).unlink(missing_ok=True)
     except urllib.error.URLError as exc:
         raise RuntimeError(
-            f"não foi possível baixar os dados oficiais ITU-R "
-            f"{product.recommendation}; verifique a conexão com a internet"
+            tr('não foi possível baixar os dados oficiais ITU-R {x0}; verifique a conexão com a internet', x0=product.recommendation)
         ) from exc
     except PermissionError as exc:
         raise RuntimeError(
-            f"o aplicativo não consegue gravar os dados ITU-R em "
-            f"{package_dir}; verifique as permissões da pasta do usuário"
+            tr('o aplicativo não consegue gravar os dados ITU-R em {x0}; verifique as permissões da pasta do usuário', x0=package_dir)
         ) from exc
     if not output.exists():
         raise RuntimeError(f"{product.output_filename} was not generated")
@@ -379,3 +379,4 @@ def _check_cancelled(cancel_check: CancelCheck | None) -> None:
 def _notify(progress: ProgressCallback | None, message: str) -> None:
     if progress is not None:
         progress(message)
+

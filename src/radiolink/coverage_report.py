@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .i18n import tr, html_language, map_locale
+
 import html
 import json
 import math
@@ -43,14 +45,14 @@ def write_coverage_outputs(
     report_path = output_directory / "coverage_report.html"
 
     _check_cancelled(cancel_check)
-    _notify(progress, "Cobertura: renderizando escala de cores…")
+    _notify(progress, tr('Cobertura: renderizando escala de cores…'))
     sampled, axis_km = _sample_grid_for_rendering(
         grid,
         request.radius_km,
         request.resolution_m,
     )
     _check_cancelled(cancel_check)
-    _notify(progress, "Cobertura: grade preparada para renderização.")
+    _notify(progress, tr('Cobertura: grade preparada para renderização.'))
     overlay_tiles = _render_overlay(
         request,
         sampled,
@@ -58,7 +60,7 @@ def write_coverage_outputs(
         overlay_path,
     )
     _check_cancelled(cancel_check)
-    _notify(progress, "Cobertura: heatmap interativo renderizado.")
+    _notify(progress, tr('Cobertura: heatmap interativo renderizado.'))
     contour_geojson = _render_heatmap_and_contours(
         request,
         sampled,
@@ -66,7 +68,7 @@ def write_coverage_outputs(
         heatmap_path,
     )
     _check_cancelled(cancel_check)
-    _notify(progress, "Cobertura: contornos científicos gerados.")
+    _notify(progress, tr('Cobertura: contornos científicos gerados.'))
     contours_path.write_text(
         json.dumps(contour_geojson, ensure_ascii=False, separators=(",", ":")),
         encoding="utf-8",
@@ -96,12 +98,12 @@ def write_coverage_outputs(
 
     paths["report_pdf"] = write_coverage_pdf(
         request=request,
-        statistics=statistics,
+        statistics={**grid_metadata, **statistics},
         paths=paths,
         output_path=output_directory / "relatorio_cobertura.pdf",
     )
     _check_cancelled(cancel_check)
-    _notify(progress, "Cobertura: mapa e relatório finalizados.")
+    _notify(progress, tr('Cobertura: mapa e relatório finalizados.'))
     return paths, statistics
 
 
@@ -231,7 +233,7 @@ def _render_heatmap_and_contours(
         edgecolor="#ffffff",
         linewidth=1.1,
         zorder=10,
-        label="Transmissor",
+        label=tr('Transmissor'),
     )
     axis.set_title(
         f"{request.name} — {request.frequency_mhz:.3f} MHz",
@@ -239,12 +241,12 @@ def _render_heatmap_and_contours(
         fontsize=15,
         fontweight="bold",
     )
-    axis.set_xlabel("Deslocamento leste–oeste (km)")
-    axis.set_ylabel("Deslocamento norte–sul (km)")
+    axis.set_xlabel(tr('Deslocamento leste–oeste (km)'))
+    axis.set_ylabel(tr('Deslocamento norte–sul (km)'))
     axis.set_aspect("equal")
     axis.grid(True, color="#ffffff", alpha=0.15)
     colorbar = figure.colorbar(image, ax=axis, shrink=0.86, pad=0.025)
-    colorbar.set_label("Margem do enlace (dB)")
+    colorbar.set_label(tr('Margem do enlace (dB)'))
     axis.legend(loc="lower right")
     figure.tight_layout()
     figure.savefig(output_path, bbox_inches="tight")
@@ -356,47 +358,42 @@ def _build_coverage_report(
         float(grid_metadata.get("compute_seconds", 0.0))
     )
     if radials is None:
-        eyebrow = "Radio Link Planner · grade métrica direta"
+        eyebrow = tr('Radio Link Planner · grade métrica direta')
         traceability_rows = f"""
-        <tr><th>Modelo</th><td>ITU-R P.1812-8</td></tr>
-        <tr><th>Implementação</th>
+        <tr><th>{html.escape(tr('Modelo'))}</th><td>ITU-R P.1812-8</td></tr>
+        <tr><th>{html.escape(tr('Implementação'))}</th>
           <td>{html.escape(str(grid_metadata["model_version"]))}</td></tr>
-        <tr><th>Método</th><td>Grade métrica direta (AEQD)</td></tr>
-        <tr><th>Resolução das células</th>
-          <td>{request.resolution_m} m</td></tr>
-        <tr><th>Amostragem do terreno nos perfis</th>
-          <td>{request.terrain_step_m:g} m</td></tr>
-        <tr><th>Células dentro do círculo</th><td>{raster_cells:,}</td></tr>
-        <tr><th>Células concluídas</th>
+        <tr><th>{html.escape(tr('Método'))}</th><td>{html.escape(tr('Grade métrica direta (AEQD)'))}</td></tr>
+        <tr><th>{html.escape(tr('Resolução das células'))}</th>
+          <td>{html.escape(tr('{x0} m', x0=request.resolution_m))}</td></tr>
+        <tr><th>{html.escape(tr('Amostragem do terreno nos perfis'))}</th>
+          <td>{html.escape(tr('{x0:g} m', x0=request.terrain_step_m))}</td></tr>
+        <tr><th>{html.escape(tr('Células dentro do círculo'))}</th><td>{raster_cells:,}</td></tr>
+        <tr><th>{html.escape(tr('Células concluídas'))}</th>
           <td>{grid_metadata.get("calculated_cells", raster_cells):,}</td></tr>
-        <tr><th>Células P.1812 calculadas</th>
+        <tr><th>{html.escape(tr('Células P.1812 calculadas'))}</th>
           <td>{grid_metadata["p1812_cells"]:,}</td></tr>
-        <tr><th>Células de curta distância (espaço livre)</th>
+        <tr><th>{html.escape(tr('Células de curta distância (espaço livre)'))}</th>
           <td>{grid_metadata["short_range_free_space_cells"]:,}</td></tr>
-        <tr><th>Células com falha</th><td>{failed_cells:,}</td></tr>
-        <tr><th>Células interpoladas pelo motor</th><td>0</td></tr>
-        <tr><th>Células com perda reaproveitada</th>
+        <tr><th>{html.escape(tr('Células com falha'))}</th><td>{failed_cells:,}</td></tr>
+        <tr><th>{html.escape(tr('Células interpoladas pelo motor'))}</th><td>0</td></tr>
+        <tr><th>{html.escape(tr('Células com perda reaproveitada'))}</th>
           <td>{grid_metadata.get("reused_propagation_cells", 0):,}</td></tr>
-        <tr><th>Chamadas P.1812 nesta execução</th>
+        <tr><th>{html.escape(tr('Chamadas P.1812 nesta execução'))}</th>
           <td>{grid_metadata.get("p1812_calls_this_run", grid_metadata["p1812_cells"]):,}</td></tr>
-        <tr><th>Pontos de terreno processados</th>
+        <tr><th>{html.escape(tr('Pontos de terreno processados'))}</th>
           <td>{grid_metadata["terrain_profile_points"]:,}</td></tr>
-        <tr><th>Processos de cálculo</th>
+        <tr><th>{html.escape(tr('Processos de cálculo'))}</th>
           <td>{grid_metadata["worker_count"]}</td></tr>
-        <tr><th>Tempo acumulado da grade</th>
+        <tr><th>{html.escape(tr('Tempo acumulado da grade'))}</th>
           <td>{html.escape(compute_duration)}</td></tr>
-        <tr><th>Retomadas de checkpoint</th><td>{resume_count}</td></tr>
-        <tr><th>Relevo</th><td>Copernicus GLO-30</td></tr>"""
-        method_notes = """
-      <p class="note">Cada centro de célula a partir de 250 m recebeu uma
-      execução independente da P.1812 com seu próprio perfil de terreno.
-      Não há interpolação de perda entre radiais ou entre células. A imagem
-      pode ser reamostrada apenas para exibição no navegador.</p>
-      <p class="note">A P.1812-8 declara escopo a partir de 0,25 km.
-      Dentro dessa distância, o programa utiliza perda em espaço livre,
-      identificada separadamente nos metadados.</p>"""
+        <tr><th>{html.escape(tr('Retomadas de checkpoint'))}</th><td>{resume_count}</td></tr>
+        <tr><th>{html.escape(tr('Relevo'))}</th><td>Copernicus GLO-30</td></tr>"""
+        method_notes = f"""
+      <p class="note">{html.escape(tr("Cada centro de célula a partir de 250 m recebeu uma execução independente da P.1812 com seu próprio perfil de terreno. Não há interpolação de perda entre radiais ou entre células. A imagem pode ser reamostrada apenas para exibição no navegador."))}</p>
+      <p class="note">{html.escape(tr("A P.1812-8 declara escopo a partir de 0,25 km. Dentro dessa distância, o programa utiliza perda em espaço livre, identificada separadamente nos metadados."))}</p>"""
     else:
-        eyebrow = "Radio Link Planner · comparação radial legada"
+        eyebrow = tr('Radio Link Planner · comparação radial legada')
         evaluated = sum(item.evaluated_point_count for item in radials)
         traceability_rows = f"""
         <tr><th>Modelo</th><td>ITU-R P.1812-8</td></tr>
@@ -406,17 +403,15 @@ def _build_coverage_report(
         <tr><th>Pontos avaliados fisicamente</th><td>{evaluated:,}</td></tr>
         <tr><th>Células do raster interpolado</th><td>{raster_cells:,}</td></tr>
         <tr><th>Relevo</th><td>Copernicus GLO-30</td></tr>"""
-        method_notes = """
-      <p class="note">Resultado legado mantido somente para comparações
-      controladas. O raster foi interpolado entre perfis radiais e não
-      representa uma execução independente da P.1812 em cada célula.</p>"""
+        method_notes = f"""
+      <p class="note">{html.escape(tr("Resultado legado mantido somente para comparações controladas. O raster foi interpolado entre perfis radiais e não representa uma execução independente da P.1812 em cada célula."))}</p>"""
     return f"""<!doctype html>
-<html lang="pt-BR">
+<html lang="{html_language()}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <title>{html.escape(request.name)} — Radio Link Planner</title>
+  <title>{html.escape(tr('{x0} — Radio Link Planner', x0=html.escape(request.name)))}</title>
   <link rel="stylesheet" href="{html.escape(map_css, quote=True)}">
   <style>
     :root {{ --ink:#17191d; --muted:#60646c; --line:#d7dae0;
@@ -462,44 +457,41 @@ def _build_coverage_report(
   <header>
     <div class="eyebrow">{eyebrow}</div>
     <h1>{html.escape(request.name)}</h1>
-    <div>{request.frequency_mhz:.3f} MHz · P.1812 a
-         {request.time_percentage:.0f}% do tempo · raio {request.radius_km} km</div>
+    <div>{html.escape(tr('{x0:.3f} MHz · P.1812 a {x1:.0f}% do tempo · raio {x2} km', x0=request.frequency_mhz, x1=request.time_percentage, x2=request.radius_km))}</div>
   </header>
   <main>
     <section class="card map-wrap">
-      <div id="coverage-map" aria-label="Mapa de cobertura"></div>
+      <div id="coverage-map" aria-label="{html.escape(tr('Mapa de cobertura'), quote=True)}"></div>
       <div class="legend">
-        <strong>Margem do enlace</strong>
+        <strong>{html.escape(tr('Margem do enlace'))}</strong>
         <div class="legend-gradient"></div>
         <div class="legend-ticks"><span>−12</span><span>0</span>
-          <span>+6</span><span>+12</span><span>+18 dB</span></div>
-        <div style="margin-top:7px">Contornos: 0, +3, +6 e +12 dB</div>
+          <span>+6</span><span>+12</span><span>{html.escape(tr('+18 dB'))}</span></div>
+        <div style="margin-top:7px">{html.escape(tr('Contornos: 0, +3, +6 e +12 dB'))}</div>
       </div>
     </section>
     <section class="card">
       <div class="stats">
-        <div class="stat"><span>Área com margem ≥ 0 dB</span>
-          <strong>{statistics["covered_percent"]:.1f}%</strong></div>
-        <div class="stat"><span>Margem ≥ +3 dB</span>
-          <strong>{statistics["margin_3_db_percent"]:.1f}%</strong></div>
-        <div class="stat"><span>Margem ≥ +6 dB</span>
-          <strong>{statistics["margin_6_db_percent"]:.1f}%</strong></div>
-        <div class="stat"><span>Margem ≥ +12 dB</span>
-          <strong>{statistics["margin_12_db_percent"]:.1f}%</strong></div>
+        <div class="stat"><span>{html.escape(tr('Área com margem ≥ 0 dB'))}</span>
+          <strong>{html.escape(tr('{x0:.1f}%', x0=statistics['covered_percent']))}</strong></div>
+        <div class="stat"><span>{html.escape(tr('Margem ≥ +3 dB'))}</span>
+          <strong>{html.escape(tr('{x0:.1f}%', x0=statistics['margin_3_db_percent']))}</strong></div>
+        <div class="stat"><span>{html.escape(tr('Margem ≥ +6 dB'))}</span>
+          <strong>{html.escape(tr('{x0:.1f}%', x0=statistics['margin_6_db_percent']))}</strong></div>
+        <div class="stat"><span>{html.escape(tr('Margem ≥ +12 dB'))}</span>
+          <strong>{html.escape(tr('{x0:.1f}%', x0=statistics['margin_12_db_percent']))}</strong></div>
       </div>
     </section>
     <section class="card">
-      <h2>Rastreabilidade do cálculo</h2>
+      <h2>{html.escape(tr('Rastreabilidade do cálculo'))}</h2>
       <table>
         {traceability_rows}
       </table>
       {method_notes}
-      <p class="note">Vegetação, edificações e ruído local ainda não estão
-      representados nesta versão; áreas urbanas e florestais devem ser
-      interpretadas com essa limitação.</p>
+      <p class="note">{html.escape(tr('Vegetação, edificações e ruído local ainda não estão representados nesta versão; áreas urbanas e florestais devem ser interpretadas com essa limitação.'))}</p>
     </section>
     <section class="card">
-      <img src="coverage_heatmap.png" alt="Mapa técnico de cobertura"
+      <img src="coverage_heatmap.png" alt="{html.escape(tr('Mapa técnico de cobertura'), quote=True)}"
            style="width:100%;height:auto;display:block">
     </section>
   </main>
@@ -509,6 +501,7 @@ def _build_coverage_report(
     const coverageBounds = {json.dumps(bounds)};
     const contourData = {embedded_contours};
     const map = new maplibregl.Map({{
+      locale: {json.dumps(map_locale(), ensure_ascii=False)},
       container: "coverage-map",
       style: {{
         version: 8,
@@ -566,7 +559,7 @@ def _build_coverage_report(
       }});
       new maplibregl.Marker({{color:"#c91f37"}})
         .setLngLat([{request.longitude_deg},{request.latitude_deg}])
-        .setPopup(new maplibregl.Popup().setText("Transmissor"))
+        .setPopup(new maplibregl.Popup().setText({json.dumps(tr("Transmissor"))}))
         .addTo(map);
     }});
   </script>

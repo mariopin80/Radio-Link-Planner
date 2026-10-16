@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "radio-link-planner"
-version = "0.4.3"
+version = "0.5"
 description = "Planejamento científico local de enlaces e cobertura VHF/UHF"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -34,6 +34,7 @@ models = [
 ]
 dev = [
   "pytest>=8.3",
+  "pypdf>=5",
 ]
 
 [project.scripts]

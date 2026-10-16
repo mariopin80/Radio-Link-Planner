@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .i18n import tr
+
 import csv
 import math
 import os
@@ -103,7 +105,7 @@ def download_tile(
     if sea_marker.exists():
         raise CopernicusSeaTileError(code)
     if destination.exists() and destination.stat().st_size > 10_000:
-        _notify(progress, f"Terreno: usando bloco {code} do cache.")
+        _notify(progress, tr('Terreno: usando bloco {x0} do cache.', x0=code))
         return destination
 
     temporary = destination.with_suffix(".part")
@@ -112,7 +114,7 @@ def download_tile(
         tile_url(code),
         headers={"User-Agent": "RadioLinkPlanner/0.4 (+https://github.com/mariopin80)"},
     )
-    _notify(progress, f"Terreno: baixando bloco Copernicus {code}…")
+    _notify(progress, tr('Terreno: baixando bloco Copernicus {x0}…', x0=code))
     try:
         if cancel_check is not None and cancel_check():
             raise InterruptedError("terrain download cancelled")
@@ -133,7 +135,7 @@ def download_tile(
                     if percent >= next_report:
                         _notify(
                             progress,
-                            f"Terreno: bloco {code}, {min(percent, 100)}%…",
+                            tr('Terreno: bloco {x0}, {x1}%…', x0=code, x1=min(percent, 100)),
                         )
                         next_report += 10
         if temporary.stat().st_size <= 10_000:
@@ -186,8 +188,7 @@ def extract_profile(
     tile_groups = _tile_groups(latitudes, longitudes)
     _notify(
         progress,
-        f"Terreno: {distance_m / 1000.0:.2f} km, "
-        f"{count} amostras e {len(tile_groups)} bloco(s).",
+        tr('Terreno: {x0:.2f} km, {x1} amostras e {x2} bloco(s).', x0=distance_m / 1000.0, x1=count, x2=len(tile_groups)),
     )
 
     elevations = np.empty(count, dtype=float)
@@ -196,7 +197,7 @@ def extract_profile(
         try:
             source = download_tile(code, cache_dir=cache_dir, progress=progress)
         except CopernicusSeaTileError:
-            _notify(progress, f"Terreno: bloco {code} é marítimo; usando 0 m.")
+            _notify(progress, tr('Terreno: bloco {x0} é marítimo; usando 0 m.', x0=code))
             elevations[indices] = 0.0
             continue
         if rasterio is None:
@@ -221,7 +222,7 @@ def extract_profile(
         longitudes,
         elevations,
     )
-    _notify(progress, f"Terreno: perfil salvo com {count} pontos.")
+    _notify(progress, tr('Terreno: perfil salvo com {x0} pontos.', x0=count))
     return TerrainProfile.from_csv(destination)
 
 
@@ -236,7 +237,7 @@ def sample_elevations(
     latitudes = np.asarray(latitudes_deg, dtype=float)
     longitudes = np.asarray(longitudes_deg, dtype=float)
     if latitudes.shape != longitudes.shape or latitudes.ndim != 1:
-        raise ValueError("latitude and longitude arrays must be one-dimensional")
+        raise ValueError('latitude and longitude arrays must be one-dimensional')
     if len(latitudes) == 0:
         raise ValueError("at least one coordinate is required")
     if not np.all(np.isfinite(latitudes)) or not np.all(np.isfinite(longitudes)):
@@ -248,7 +249,7 @@ def sample_elevations(
         try:
             source = download_tile(code, cache_dir=cache_dir, progress=progress)
         except CopernicusSeaTileError:
-            _notify(progress, f"Terreno: bloco {code} é marítimo; usando 0 m.")
+            _notify(progress, tr('Terreno: bloco {x0} é marítimo; usando 0 m.', x0=code))
             elevations[indices] = 0.0
             continue
         if rasterio is None:
@@ -270,7 +271,7 @@ def _require_rasterio() -> Any:
         import rasterio
     except ImportError as exc:
         raise RuntimeError(
-            "O componente geográfico não está disponível nesta instalação."
+            tr('O componente geográfico não está disponível nesta instalação.')
         ) from exc
     return rasterio
 
@@ -469,3 +470,4 @@ def write_profile_csv(
 def _notify(progress: ProgressCallback | None, message: str) -> None:
     if progress is not None:
         progress(message)
+

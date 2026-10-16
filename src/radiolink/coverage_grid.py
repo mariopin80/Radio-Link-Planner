@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .i18n import tr
+
 import gc
 import hashlib
 import importlib.metadata
@@ -293,7 +295,7 @@ def estimate_coverage(
 
 def format_duration(seconds: float | None) -> str:
     if seconds is None or not math.isfinite(seconds):
-        return "calculando…"
+        return tr('calculando…')
     value = max(0, round(seconds))
     hours, remainder = divmod(value, 3600)
     minutes, secs = divmod(remainder, 60)
@@ -547,7 +549,7 @@ def run_direct_grid_coverage(
         tracker.emit(
             0.0,
             "prepare",
-            "0% — Preparando os dados científicos da P.1812…",
+            tr('0% — Preparando os dados científicos da P.1812…'),
         )
         if external_cancel.is_set():
             _raise_cancelled(completed_cells, estimate.valid_circle_cells, checkpoint)
@@ -603,30 +605,26 @@ def run_direct_grid_coverage(
                     tracker.emit(
                         base_percent,
                         "terrain",
-                        f"{base_percent:.0f}% — Terreno: bloco {code} é marítimo; "
-                        "usando nível do mar.",
+                        tr('{x0:.0f}% — Terreno: bloco {x1} é marítimo; usando nível do mar.', x0=base_percent, x1=code),
                     )
                 terrain_tiles.append(prepare_terrain_tile(code, cache_dir=cache))
                 tile_percent = 2.0 + 6.0 * index / max(len(terrain_codes), 1)
                 tracker.emit(
                     tile_percent,
                     "terrain",
-                    f"{tile_percent:.0f}% — Terreno: bloco {index}/"
-                    f"{len(terrain_codes)} pronto.",
+                    tr('{x0:.0f}% — Terreno: bloco {x1}/{x2} pronto.', x0=tile_percent, x1=index, x2=len(terrain_codes)),
                     completed=index,
                     total=len(terrain_codes),
                 )
 
         pending = [spec for spec in blocks if not bool(completed[spec.block_id])]
         if reused_metadata is not None:
-            tracker.emit(90.0, "cells", "90% — Reaproveitando a perda de propagação; atualizando o orçamento do enlace.", completed=completed_cells, total=estimate.valid_circle_cells, remaining_seconds=0.0)
+            tracker.emit(90.0, "cells", tr('90% — Reaproveitando a perda de propagação; atualizando o orçamento do enlace.'), completed=completed_cells, total=estimate.valid_circle_cells, remaining_seconds=0.0)
         elif resumed and completed_cells:
             tracker.emit(
                 10.0 + 80.0 * completed_cells / estimate.valid_circle_cells,
                 "cells",
-                "Retomando cobertura: "
-                f"{completed_cells:,} de {estimate.valid_circle_cells:,} "
-                "células já estavam concluídas.",
+                tr('Retomando cobertura: {x0:,} de {x1:,} células já estavam concluídas.', x0=completed_cells, x1=estimate.valid_circle_cells),
                 completed=completed_cells,
                 total=estimate.valid_circle_cells,
                 remaining_seconds=estimate.estimated_seconds_high,
@@ -635,7 +633,7 @@ def run_direct_grid_coverage(
             tracker.emit(
                 10.0,
                 "cells",
-                "10% — Grade direta preparada; iniciando as células P.1812.",
+                tr('10% — Grade direta preparada; iniciando as células P.1812.'),
                 completed=0,
                 total=estimate.valid_circle_cells,
                 remaining_seconds=estimate.estimated_seconds_high,
@@ -656,12 +654,9 @@ def run_direct_grid_coverage(
             if external_cancel.is_set():
                 return
             if result.failed_cells:
-                details = "; ".join(result.errors) or "erro numérico não especificado"
+                details = "; ".join(result.errors) or tr('erro numérico não especificado')
                 raise RuntimeError(
-                    "A P.1812 não produziu resultado para "
-                    f"{result.failed_cells} célula(s) do bloco "
-                    f"{result.block_id}. O bloco não foi marcado como concluído "
-                    f"e poderá ser reprocessado. Detalhes: {details}"
+                    tr('A P.1812 não produziu resultado para {x0} célula(s) do bloco {x1}. O bloco não foi marcado como concluído e poderá ser reprocessado. Detalhes: {x2}', x0=result.failed_cells, x1=result.block_id, x2=details)
                 )
             grid[
                 result.row_start : result.row_stop,
@@ -719,9 +714,7 @@ def run_direct_grid_coverage(
             tracker.emit(
                 overall,
                 "cells",
-                f"{overall:.0f}% — Calculando células: "
-                f"{completed_cells:,} de {estimate.valid_circle_cells:,} • "
-                f"restante {format_duration(remaining)}",
+                tr('{x0:.0f}% — Calculando células: {x1:,} de {x2:,}', x0=overall, x1=completed_cells, x2=estimate.valid_circle_cells),
                 completed=completed_cells,
                 total=estimate.valid_circle_cells,
                 remaining_seconds=remaining,
@@ -759,8 +752,7 @@ def run_direct_grid_coverage(
             )
         if completed_cells != estimate.valid_circle_cells:
             raise RuntimeError(
-                "A grade terminou incompleta: "
-                f"{completed_cells:,} de {estimate.valid_circle_cells:,} células."
+                tr('A grade terminou incompleta: {x0:,} de {x1:,} células.', x0=completed_cells, x1=estimate.valid_circle_cells)
             )
 
         session_compute_seconds = time.monotonic() - compute_started
@@ -817,7 +809,7 @@ def run_direct_grid_coverage(
         tracker.emit(
             91.0,
             "render",
-            "91% — Montando o raster calculado e os produtos cartográficos…",
+            tr('91% — Montando o raster calculado e os produtos cartográficos…'),
             completed=completed_cells,
             total=estimate.valid_circle_cells,
         )
@@ -908,7 +900,7 @@ def run_direct_grid_coverage(
         tracker.emit(
             100.0,
             "complete",
-            "100% — Cobertura concluída: grade direta, heatmap e contornos gerados.",
+            tr('100% — Cobertura concluída: grade direta, heatmap e contornos gerados.'),
             completed=completed_cells,
             total=estimate.valid_circle_cells,
             remaining_seconds=0.0,
@@ -1167,15 +1159,14 @@ def smoke_test_direct_grid_worker() -> float:
     )
     if not product_path.is_file():
         raise FileNotFoundError(
-            f"dados {P1812_PRODUCT.recommendation} não encontrados em "
-            f"{product_path}"
+            tr('dados {x0} não encontrados em {x1}', x0=P1812_PRODUCT.recommendation, x1=product_path)
         )
     request = CoverageRequest(
         name="Direct-grid smoke test",
         latitude_deg=-23.0,
         longitude_deg=-47.0,
         frequency_mhz=146.0,
-        polarization="vertical",
+        polarization='vertical',
         mode="FM",
         radius_km=50,
         transmitter_height_m=10.0,
@@ -1284,7 +1275,7 @@ def _worker_configuration(
         terrain_step_m=request.terrain_step_m,
         frequency_mhz=request.frequency_mhz,
         time_percentage=request.time_percentage,
-        polarization_code=2 if request.polarization.lower() == "vertical" else 1,
+        polarization_code=2 if request.polarization.lower() == 'vertical' else 1,
         transmitter_height_m=request.transmitter_height_m,
         transmitter_power_dbm=watts_to_dbm(request.transmitter_power_w),
         transmitter_gain_dbi=request.transmitter_gain_dbi,
@@ -1391,7 +1382,7 @@ def _open_checkpoint(
     if resumed:
         metadata = json.loads(paths.metadata.read_text(encoding="utf-8"))
         if metadata.get("request_fingerprint") != fingerprint:
-            raise RuntimeError("O checkpoint não corresponde a esta cobertura.")
+            raise RuntimeError(tr('O checkpoint não corresponde a esta cobertura.'))
         try:
             grid = np.load(paths.grid, mmap_mode="r+")
             loss = np.load(paths.loss, mmap_mode="r+")
@@ -1399,14 +1390,14 @@ def _open_checkpoint(
             statistics = np.load(paths.block_statistics, mmap_mode="r+")
         except Exception as exc:
             raise RuntimeError(
-                f"O checkpoint de cobertura está danificado: {paths.directory}"
+                tr('O checkpoint de cobertura está danificado: {x0}', x0=paths.directory)
             ) from exc
         if grid.shape != (dimension, dimension) or loss.shape != grid.shape or loss.dtype != np.float64:
-            raise RuntimeError("A grade do checkpoint possui dimensões inválidas.")
+            raise RuntimeError(tr('A grade do checkpoint possui dimensões inválidas.'))
         if completed.shape != (len(blocks),):
-            raise RuntimeError("O estado de blocos do checkpoint é inválido.")
+            raise RuntimeError(tr('O estado de blocos do checkpoint é inválido.'))
         if statistics.shape != (len(blocks), 6):
-            raise RuntimeError("As estatísticas do checkpoint são inválidas.")
+            raise RuntimeError(tr('As estatísticas do checkpoint são inválidas.'))
         return grid, loss, completed, statistics, True
 
     grid = np.lib.format.open_memmap(
@@ -1585,8 +1576,7 @@ def _validate_coverage_extent(request: CoverageRequest) -> None:
     )
     if north > 80.0 or south < -80.0:
         raise ValueError(
-            "Parte da cobertura ultrapassa ±80° de latitude, limite da "
-            "implementação P.1812 utilizada."
+            tr('Parte da cobertura ultrapassa ±80° de latitude, limite da implementação P.1812 utilizada.')
         )
 
 
@@ -1620,7 +1610,7 @@ def _performance_history_path() -> Path:
         root = (
             Path(xdg_data_home)
             if xdg_data_home
-            else Path.home() / ".local" / "share"
+            else Path.home() / '.local' / "share"
         )
     return root / "RadioLinkPlanner" / "coverage-performance.json"
 

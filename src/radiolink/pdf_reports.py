@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .i18n import tr, choice_label
+
 from pathlib import Path
 from typing import Any
 
@@ -30,9 +32,7 @@ def write_link_pdf(
         report["Paragraph"](_escape(project.name), styles["title"]),
         report["Paragraph"](
             (
-                f"Relatório de enlace ponto a ponto • "
-                f"{project.frequency_mhz:.3f} MHz • "
-                f"{_escape(project.primary_mode.upper())}"
+                tr('Relatório de enlace ponto a ponto • {x0:.3f} MHz • {x1}', x0=project.frequency_mhz, x1=_escape(project.primary_mode.upper()))
             ),
             styles["subtitle"],
         ),
@@ -41,24 +41,22 @@ def write_link_pdf(
             report,
             styles,
             (
-                "Resultado de planejamento baseado nos parâmetros informados e "
-                "nos modelos selecionados. Vegetação, edificações e perdas de "
-                "instalação só aparecem quando explicitamente representadas."
+                tr('Resultado de planejamento baseado nos parâmetros informados e nos modelos selecionados. Vegetação, edificações e perdas de instalação só aparecem quando explicitamente representadas.')
             ),
         ),
         report["Spacer"](1, 14),
-        report["Paragraph"]("Configuração", styles["heading"]),
+        report["Paragraph"](tr('Configuração'), styles["heading"]),
         _table(
             report,
             [
-                ["Parâmetro", "Terminal A", "Terminal B"],
+                [tr('Parâmetro'), tr('Terminal A'), tr('Terminal B')],
                 [
-                    "Local",
+                    tr('Local'),
                     _escape(project.terminal_a.name),
                     _escape(project.terminal_b.name),
                 ],
                 [
-                    "Coordenadas",
+                    tr('Coordenadas'),
                     (
                         f"{project.terminal_a.latitude_deg:.6f}, "
                         f"{project.terminal_a.longitude_deg:.6f}"
@@ -69,12 +67,12 @@ def write_link_pdf(
                     ),
                 ],
                 [
-                    "Altura da antena",
+                    tr('Altura da antena'),
                     f"{project.terminal_a.antenna_height_m:g} m",
                     f"{project.terminal_b.antenna_height_m:g} m",
                 ],
                 [
-                    "Ganho / perda de linha",
+                    tr('Ganho / perda de linha'),
                     (
                         f"{project.terminal_a.antenna_gain_dbi:g} dBi / "
                         f"{project.terminal_a.line_loss_db:g} dB"
@@ -85,7 +83,7 @@ def write_link_pdf(
                     ),
                 ],
                 [
-                    "Potência TX",
+                    tr('Potência TX'),
                     f"{project.terminal_a.tx_power_w:g} W",
                     f"{project.terminal_b.tx_power_w:g} W",
                 ],
@@ -93,7 +91,7 @@ def write_link_pdf(
             widths=(105, 190, 190),
         ),
         report["Spacer"](1, 14),
-        report["Paragraph"]("Geometria do percurso", styles["heading"]),
+        report["Paragraph"](tr('Geometria do percurso'), styles["heading"]),
     ]
     geometry = result["geometry"]
     story.extend(
@@ -101,14 +99,14 @@ def write_link_pdf(
             _table(
                 report,
                 [
-                    ["Distância", f"{geometry['profile_distance_km']:.3f} km"],
-                    ["Condição limitante", describe_geometry_clearance(geometry)],
+                    [tr('Distância'), f"{geometry['profile_distance_km']:.3f} km"],
+                    [tr('Condição limitante'), describe_geometry_clearance(geometry)],
                     [
-                        "Fresnel de 60% obstruída",
+                        tr('Fresnel de 60% obstruída'),
                         f"{geometry['fresnel_60_obstructed_percent']:.1f}%",
                     ],
                     [
-                        "Fator k exibido no perfil",
+                        tr('Fator k exibido no perfil'),
                         f"{project.environment.effective_earth_k:.3f}",
                     ],
                 ],
@@ -116,7 +114,7 @@ def write_link_pdf(
                 header_rows=0,
             ),
             report["Spacer"](1, 14),
-            report["Paragraph"]("Resultados por direção", styles["heading"]),
+            report["Paragraph"](tr('Resultados por direção'), styles["heading"]),
         ]
     )
     for direction in result["directions"].values():
@@ -133,9 +131,7 @@ def write_link_pdf(
         story.append(
             report["Paragraph"](
                 (
-                    f"Classificação: <b>{_escape(str(assessment.get('classification', '—')).upper())}</b> "
-                    f"• confiança do diagnóstico: "
-                    f"{_escape(str(assessment.get('confidence', '—')))}"
+                    tr('Classificação: <b>{x0}</b> • confiança do diagnóstico: {x1}', x0=_escape(choice_label(str(assessment.get('classification', '—'))).upper()), x1=_escape(choice_label(str(assessment.get('confidence', '—')))))
                 ),
                 styles["body"],
             )
@@ -148,14 +144,14 @@ def write_link_pdf(
             item["model_id"]: item
             for item in direction.get("monte_carlo", ())
         }
-        rows = [["Modelo", "Perda", "Potência RX", "Margem", "Monte Carlo"]]
+        rows = [[tr('Modelo'), tr('Perda'), tr('Potência RX'), tr('Margem'), "Monte Carlo"]]
         for model in direction.get("design_models", ()):
             model_id = model.get("model_id", "—")
             if model.get("status") != "ok":
                 rows.append(
                     [
                         str(model_id).upper(),
-                        str(model.get("status", "indisponível")),
+                        choice_label(str(model.get("status", "unavailable"))),
                         "—",
                         "—",
                         "—",
@@ -192,8 +188,8 @@ def write_link_pdf(
         )
 
     for title, key in (
-        ("Perfil topográfico e zona de Fresnel", "profile_plot"),
-        ("Análise de Monte Carlo", "monte_carlo_plot"),
+        (tr('Perfil topográfico e zona de Fresnel'), "profile_plot"),
+        (tr('Análise de Monte Carlo'), "monte_carlo_plot"),
     ):
         image_path = paths.get(key)
         if image_path and image_path.is_file():
@@ -208,19 +204,16 @@ def write_link_pdf(
     story.extend(
         [
             report["Spacer"](1, 14),
-            report["Paragraph"]("Rastreabilidade", styles["heading"]),
+            report["Paragraph"](tr('Rastreabilidade'), styles["heading"]),
             report["Paragraph"](
                 (
-                    "Identificador do resultado: "
-                    f"<font name='Courier'>{_escape(str(result.get('result_sha256', '—')))}</font>"
+                    tr("Identificador do resultado: <font name='Courier'>{x0}</font>", x0=_escape(str(result.get('result_sha256', '—'))))
                 ),
                 styles["small"],
             ),
             report["Paragraph"](
                 (
-                    "A interpretação de viabilidade deve considerar uma margem de "
-                    "engenharia adequada ao serviço, à disponibilidade pretendida "
-                    "e às perdas práticas não modeladas."
+                    tr('A interpretação de viabilidade deve considerar uma margem de engenharia adequada ao serviço, à disponibilidade pretendida e às perdas práticas não modeladas.')
                 ),
                 styles["small"],
             ),
@@ -247,8 +240,7 @@ def write_coverage_pdf(
         report["Paragraph"](_escape(request.name), styles["title"]),
         report["Paragraph"](
             (
-                f"Relatório de cobertura • {request.frequency_mhz:.3f} MHz • "
-                f"P.1812 a {request.time_percentage:g}% do tempo"
+                tr('Relatório de cobertura • {x0:.3f} MHz • P.1812 a {x1:g}% do tempo', x0=request.frequency_mhz, x1=request.time_percentage)
             ),
             styles["subtitle"],
         ),
@@ -257,64 +249,62 @@ def write_coverage_pdf(
             report,
             styles,
             (
-                "As porcentagens representam células da grade que superam cada "
-                "limiar no cenário modelado. Não são garantia de cobertura em "
-                "campo e não incluem automaticamente árvores ou edificações."
+                tr('As porcentagens representam células da grade que superam cada limiar no cenário modelado. Não são garantia de cobertura em campo e não incluem automaticamente árvores ou edificações.')
             ),
         ),
         report["Spacer"](1, 14),
-        report["Paragraph"]("Configuração", styles["heading"]),
+        report["Paragraph"](tr('Configuração'), styles["heading"]),
         _table(
             report,
             [
-                ["Parâmetro", "Valor", "Parâmetro", "Valor"],
+                [tr('Parâmetro'), tr('Valor'), tr('Parâmetro'), tr('Valor')],
                 [
-                    "Centro",
+                    tr("Centro"),
                     f"{request.latitude_deg:.6f}, {request.longitude_deg:.6f}",
-                    "Raio",
+                    tr('Raio'),
                     f"{request.radius_km} km",
                 ],
                 [
-                    "Célula da grade",
+                    tr('Célula da grade'),
                     f"{request.resolution_m} m",
-                    "Polarização",
-                    request.polarization.capitalize(),
+                    tr('Polarização'),
+                    choice_label(request.polarization),
                 ],
                 [
-                    "Potência / ganho TX",
+                    tr('Potência / ganho TX'),
                     (
                         f"{request.transmitter_power_w:g} W / "
                         f"{request.transmitter_gain_dbi:g} dBi"
                     ),
-                    "Altura TX",
+                    tr('Altura TX'),
                     f"{request.transmitter_height_m:g} m",
                 ],
                 [
-                    "Sensibilidade / ganho RX",
+                    tr('Sensibilidade / ganho RX'),
                     (
                         f"{request.receiver_threshold_dbm:g} dBm / "
                         f"{request.receiver_gain_dbi:g} dBi"
                     ),
-                    "Altura RX",
+                    tr('Altura RX'),
                     f"{request.receiver_height_m:g} m",
                 ],
             ],
             widths=(100, 155, 100, 130),
         ),
         report["Spacer"](1, 14),
-        report["Paragraph"]("Síntese da cobertura", styles["heading"]),
+        report["Paragraph"](tr('Síntese da cobertura'), styles["heading"]),
         _table(
             report,
             [
-                ["Indicador", "Resultado"],
-                ["Margem mínima", _signed_number(statistics.get("minimum_margin_db"), " dB")],
-                ["Margem máxima", _signed_number(statistics.get("maximum_margin_db"), " dB")],
-                ["Área com margem ≥ 0 dB", f"{statistics['covered_percent']:.1f}%"],
-                ["Área com margem ≥ +3 dB", f"{statistics['margin_3_db_percent']:.1f}%"],
-                ["Área com margem ≥ +6 dB", f"{statistics['margin_6_db_percent']:.1f}%"],
-                ["Área com margem ≥ +12 dB", f"{statistics['margin_12_db_percent']:.1f}%"],
+                [tr("Indicador"), tr('Resultado')],
+                [tr('Margem mínima'), _signed_number(statistics.get("minimum_margin_db"), " dB")],
+                [tr('Margem máxima'), _signed_number(statistics.get("maximum_margin_db"), " dB")],
+                [tr('Área com margem ≥ 0 dB'), f"{statistics['covered_percent']:.1f}%"],
+                [tr('Área com margem ≥ +3 dB'), f"{statistics['margin_3_db_percent']:.1f}%"],
+                [tr('Área com margem ≥ +6 dB'), f"{statistics['margin_6_db_percent']:.1f}%"],
+                [tr('Área com margem ≥ +12 dB'), f"{statistics['margin_12_db_percent']:.1f}%"],
                 [
-                    "Células calculadas",
+                    tr('Células calculadas'),
                     f"{statistics.get('calculated_cells', 0):,}",
                 ],
             ],
@@ -326,7 +316,7 @@ def write_coverage_pdf(
         story.extend(
             [
                 report["PageBreak"](),
-                report["Paragraph"]("Mapa técnico de margens", styles["heading"]),
+                report["Paragraph"](tr('Mapa técnico de margens'), styles["heading"]),
                 report["Spacer"](1, 8),
                 _fit_image(report, heatmap, 500, 650),
             ]
@@ -334,14 +324,10 @@ def write_coverage_pdf(
     story.extend(
         [
             report["Spacer"](1, 14),
-            report["Paragraph"]("Limitações de interpretação", styles["heading"]),
+            report["Paragraph"](tr('Limitações de interpretação'), styles["heading"]),
             report["Paragraph"](
                 (
-                    "A P.1812 considera o perfil topográfico e os mecanismos de "
-                    "propagação previstos na recomendação. Obstáculos menores que "
-                    "a resolução do terreno, ruído local, interferência, perdas por "
-                    "polarização e variações de instalação devem ser tratados como "
-                    "margens adicionais de engenharia."
+                    tr('A P.1812 considera o perfil topográfico e os mecanismos de propagação previstos na recomendação. Obstáculos menores que a resolução do terreno, ruído local, interferência, perdas por polarização e variações de instalação devem ser tratados como margens adicionais de engenharia.')
                 ),
                 styles["small"],
             ),
@@ -369,7 +355,7 @@ def _reportlab() -> dict[str, Any]:
         )
     except ImportError as exc:
         raise RuntimeError(
-            "A dependência de relatórios PDF (ReportLab) não está instalada."
+            tr('A dependência de relatórios PDF (ReportLab) não está instalada.')
         ) from exc
     return locals()
 
@@ -467,6 +453,24 @@ def _table(
     widths: tuple[float, ...],
     header_rows: int = 1,
 ) -> Any:
+    # Paragraphs wrap translated headings and long terminal names within cells.
+    # Plain strings can overlap the next column, especially in German.
+    rows = [
+        [
+            report["Paragraph"](
+                str(value),
+                report["ParagraphStyle"](
+                    "TableHeader" if row_index < header_rows else "TableCell",
+                    fontName="Helvetica-Bold" if row_index < header_rows else "Helvetica",
+                    fontSize=7.5,
+                    leading=10,
+                    textColor=report["colors"].white if row_index < header_rows else report["colors"].HexColor(_DARK),
+                ),
+            )
+            for value in row
+        ]
+        for row_index, row in enumerate(rows)
+    ]
     table = report["Table"](
         rows,
         colWidths=list(widths),
@@ -547,12 +551,12 @@ def _build_document(
         canvas.drawString(
             16 * report["mm"],
             8 * report["mm"],
-            "Radio Link Planner • processamento local",
+            tr('Radio Link Planner • processamento local'),
         )
         canvas.drawRightString(
             width - 16 * report["mm"],
             8 * report["mm"],
-            f"Página {doc.page}",
+            tr('Página {x0}', x0=doc.page),
         )
         canvas.restoreState()
 
@@ -588,3 +592,4 @@ def _escape(value: str) -> str:
     import html
 
     return html.escape(value)
+

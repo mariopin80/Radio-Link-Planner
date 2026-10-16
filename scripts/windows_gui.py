@@ -13,13 +13,14 @@ def run() -> int:
         output_directory = Path(sys.argv[2]).resolve()
         try:
             smoke_test(output_directory)
-            # Verify that the packaged icon and home images load in Tk, too.
+            from radiolink.release_checks import check_interface, check_localized_reports
+            check_localized_reports(output_directory / "languages")
+            # Exercise the packaged screens, choices and progress in all languages.
             import tkinter as tk
-            from radiolink.desktop import RadioLinkPlannerApp
             root = tk.Tk()
             try:
                 root.withdraw()
-                RadioLinkPlannerApp(root)
+                check_interface(root, output_directory)
                 root.update_idletasks()
             finally:
                 root.destroy()

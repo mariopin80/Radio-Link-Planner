@@ -1,2 +1,6 @@
-__version__ = "0.4.3"
+__version__ = "0.5"
+RELEASE_MONTH = "Outubro de 2026"
+DEVELOPER = "Mario Pin"
+CALLSIGN = "PU2PTU"
+CONTACT_EMAIL = "mariopin@gmail.com"
 

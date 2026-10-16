@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .i18n import tr, choice_label, html_language, map_locale
+
 import html
 import json
 import os
@@ -29,11 +31,10 @@ def describe_geometry_clearance(geometry: dict[str, Any]) -> str:
     obstruction_m = geometry["worst_obstruction_m"]
     if obstruction_m > 0.0:
         return (
-            f"Pior obstrução geométrica: {obstruction_m:.1f} m a {distance_km:.1f} km"
+            tr('Pior obstrução geométrica: {x0:.1f} m a {x1:.1f} km', x0=obstruction_m, x1=distance_km)
         )
     return (
-        f"Menor folga geométrica: {geometry['worst_clearance_m']:.1f} m "
-        f"a {distance_km:.1f} km"
+        tr('Menor folga geométrica: {x0:.1f} m a {x1:.1f} km', x0=geometry['worst_clearance_m'], x1=distance_km)
     )
 
 
@@ -109,28 +110,28 @@ def render_profile_plot(
         ground,
         color="#4e5158",
         alpha=0.95,
-        label="Terreno / superfície",
+        label=tr('Terreno / superfície'),
     )
     axis.plot(
         distance_km,
         arrays.apparent_terrain_m_asl,
         color="#d98b39",
         linewidth=1.1,
-        label=f"Terreno aparente (k={project.environment.effective_earth_k:.3f})",
+        label=tr('Terreno aparente (k={x0:.3f})', x0=project.environment.effective_earth_k),
     )
     axis.plot(
         distance_km,
         arrays.direct_ray_m_asl,
         color="#e7333f",
         linewidth=1.6,
-        label="Raio direto",
+        label=tr('Raio direto'),
     )
     axis.plot(
         distance_km,
         arrays.direct_ray_m_asl + 0.6 * arrays.fresnel_radius_m,
         color="#7db6d8",
         linewidth=0.9,
-        label="60% da 1ª Fresnel",
+        label=tr('60% da 1ª Fresnel'),
     )
     axis.plot(
         distance_km,
@@ -143,9 +144,9 @@ def render_profile_plot(
     marker_color = "#f6c85f" if is_obstructed else "#3a9d62"
     box_color = "#fff7df" if is_obstructed else "#eaf7ef"
     annotation = (
-        f"Pior bloqueio: {geometry['worst_obstruction_m']:.1f} m"
+        tr('Pior bloqueio: {x0:.1f} m', x0=geometry['worst_obstruction_m'])
         if is_obstructed
-        else f"Menor folga: {geometry['worst_clearance_m']:.1f} m"
+        else tr('Menor folga: {x0:.1f} m', x0=geometry['worst_clearance_m'])
     )
     axis.axvline(
         geometry["worst_obstruction_distance_km"],
@@ -154,7 +155,7 @@ def render_profile_plot(
         linewidth=1.0,
     )
     axis.annotate(
-        (f"{annotation}\na {geometry['worst_obstruction_distance_km']:.1f} km"),
+        tr("{annotation}\na {distance:.1f} km", annotation=annotation, distance=geometry["worst_obstruction_distance_km"]),
         xy=(
             geometry["worst_obstruction_distance_km"],
             np.interp(
@@ -180,8 +181,8 @@ def render_profile_plot(
         fontsize=15,
         fontweight="bold",
     )
-    axis.set_xlabel("Distância desde o terminal A (km)")
-    axis.set_ylabel("Altitude / altura aparente (m)")
+    axis.set_xlabel(tr('Distância desde o terminal A (km)'))
+    axis.set_ylabel(tr('Altitude / altura aparente (m)'))
     axis.grid(True, alpha=0.18)
     axis.legend(loc="upper right", ncol=2, fontsize=8)
     axis.set_xlim(0.0, profile.total_distance_km)
@@ -222,7 +223,7 @@ def render_monte_carlo_plot(
             linewidth=1.8,
             color=colors.get(simulation["model_id"]),
             label=(
-                "P1812 (condicional em p50)"
+                tr('P1812 (condicional em p50)')
                 if simulation["temporal_sampling"] == "conditional_fixed_quantile"
                 else simulation["model_id"].upper()
             ),
@@ -251,11 +252,11 @@ def render_monte_carlo_plot(
             color="#d62728",
             linestyle="--",
             linewidth=1.2,
-            label=f"Limiar {project.primary_mode.upper()}: {threshold:.1f} dBm",
+            label=tr('Limiar {x0}: {x1:.1f} dBm', x0=project.primary_mode.upper(), x1=threshold),
         )
-    axis_hist.set_title("Distribuição da potência recebida", loc="left")
-    axis_hist.set_xlabel("Potência no receptor (dBm)")
-    axis_hist.set_ylabel("Densidade relativa")
+    axis_hist.set_title(tr('Distribuição da potência recebida'), loc="left")
+    axis_hist.set_xlabel(tr('Potência no receptor (dBm)'))
+    axis_hist.set_ylabel(tr('Densidade relativa'))
     axis_hist.grid(True, alpha=0.18)
     axis_hist.legend(fontsize=8)
     bars = axis_bar.bar(labels, probabilities, color=bar_colors)
@@ -264,11 +265,11 @@ def render_monte_carlo_plot(
         color="#d62728",
         linestyle="--",
         linewidth=1.2,
-        label=f"Meta {project.target_availability_percent:.0f}%",
+        label=tr('Meta {x0:.0f}%', x0=project.target_availability_percent),
     )
     axis_bar.set_ylim(0.0, 105.0)
-    axis_bar.set_ylabel("Probabilidade estimada (%)")
-    axis_bar.set_title(f"Funcionamento em {project.primary_mode.upper()}", loc="left")
+    axis_bar.set_ylabel(tr('Probabilidade estimada (%)'))
+    axis_bar.set_title(tr('Funcionamento em {x0}', x0=project.primary_mode.upper()), loc="left")
     axis_bar.grid(True, axis="y", alpha=0.18)
     axis_bar.legend(fontsize=8)
     for bar, value, simulation in zip(bars, probabilities, simulations):
@@ -293,7 +294,7 @@ def render_monte_carlo_plot(
         fig.text(
             0.55,
             0.018,
-            "* P.1812: probabilidade condicional ao p50; não é disponibilidade anual.",
+            tr('* P.1812: probabilidade condicional ao p50; não é disponibilidade anual.'),
             fontsize=7.5,
             color="#555555",
             ha="left",
@@ -316,46 +317,44 @@ def build_markdown_summary(project: Project, result: dict[str, Any]) -> str:
     lines = [
         f"# {project.name}",
         "",
-        f"Versão do motor: {result['engine_version']}",
+        tr('Versão do motor: {x0}', x0=result['engine_version']),
         "",
-        "## Geometria",
+        tr('## Geometria'),
         "",
-        f"- Distância: {geometry['profile_distance_km']:.3f} km",
+        tr('- Distância: {x0:.3f} km', x0=geometry['profile_distance_km']),
         f"- {describe_geometry_clearance(geometry)}",
         (
-            "- Raio máximo da primeira Fresnel: "
-            f"{geometry['maximum_fresnel_radius_m']:.1f} m"
+            tr('- Raio máximo da primeira Fresnel: {x0:.1f} m', x0=geometry['maximum_fresnel_radius_m'])
         ),
         (
-            "- Fresnel de 60% obstruída em "
-            f"{geometry['fresnel_60_obstructed_percent']:.1f}% do percurso"
+            tr('- Fresnel de 60% obstruída em {x0:.1f}% do percurso', x0=geometry['fresnel_60_obstructed_percent'])
         ),
         "",
     ]
     for direction in result["directions"].values():
         assessment = direction["assessment"]
         classification_label = {
-            "robust": "robusto",
-            "viable": "viável",
-            "marginal": "marginal",
-            "improbable": "improvável",
-            "indeterminate": "indeterminado",
+            "robust": tr('robusto'),
+            "viable": tr('viável'),
+            "marginal": tr('marginal'),
+            "improbable": tr('improvável'),
+            "indeterminate": tr('indeterminado'),
         }.get(assessment["classification"], assessment["classification"])
         confidence_label = {
-            "high": "alta",
-            "medium": "média",
-            "low": "baixa",
+            "high": tr('alta'),
+            "medium": tr('média'),
+            "low": tr('baixa'),
         }.get(assessment["confidence"], assessment["confidence"])
         lines.extend(
             [
                 f"## {direction['transmitter']} → {direction['receiver']}",
                 "",
-                f"**Parecer: {classification_label}**  ",
-                f"Confiança: {confidence_label}",
+                tr('**Parecer: {x0}**  ', x0=classification_label),
+                tr('Confiança: {x0}', x0=confidence_label),
                 "",
-                f"### Comparação coerente em {direction['comparison_percent']:.0f}%",
+                tr('### Comparação coerente em {x0:.0f}%', x0=direction['comparison_percent']),
                 "",
-                "| Modelo | Perda (dB) |",
+                tr('| Modelo | Perda (dB) |'),
                 "|---|---:|",
             ]
         )
@@ -365,23 +364,22 @@ def build_markdown_summary(project: Project, result: dict[str, Any]) -> str:
                     f"| {model['model_id'].upper()} | {model['loss_db']:.2f} |"
                 )
             else:
-                lines.append(f"| {model['model_id'].upper()} | {model['status']} |")
+                lines.append(f"| {model['model_id'].upper()} | {choice_label(model['status'])} |")
         if assessment["model_spread_db"] is not None:
             lines.extend(
                 [
                     "",
                     (
-                        "Dispersão entre modelos: "
-                        f"**{assessment['model_spread_db']:.2f} dB**."
+                        tr('Dispersão entre modelos: **{x0:.2f} dB**.', x0=assessment['model_spread_db'])
                     ),
                 ]
             )
         lines.extend(
             [
                 "",
-                f"### Ponto de projeto: {direction['target_availability_percent']:.0f}%",
+                tr('### Ponto de projeto: {x0:.0f}%', x0=direction['target_availability_percent']),
                 "",
-                "| Modelo | Quantil de projeto | Perda (dB) | Potência (dBm) | Margem (dB) |",
+                tr('| Modelo | Quantil de projeto | Perda (dB) | Potência (dBm) | Margem (dB) |'),
                 "|---|---:|---:|---:|---:|",
             ]
         )
@@ -390,7 +388,7 @@ def build_markdown_summary(project: Project, result: dict[str, Any]) -> str:
             budget = budgets.get(model["model_id"])
             if model["status"] != "ok" or budget is None:
                 lines.append(
-                    f"| {model['model_id'].upper()} | — | indisponível | — | — |"
+                    tr('| {x0} | — | indisponível | — | — |', x0=model['model_id'].upper())
                 )
                 continue
             lines.append(
@@ -405,38 +403,32 @@ def build_markdown_summary(project: Project, result: dict[str, Any]) -> str:
                 [
                     "",
                     (
-                        "> A P.1812 é limitada a 1–50% do tempo. Seu valor na "
-                        "tabela é mediano e não representa a meta de "
-                        f"{project.target_availability_percent:.0f}%."
+                        tr('> A P.1812 é limitada a 1–50% do tempo. Seu valor na tabela é mediano e não representa a meta de {x0:.0f}%.', x0=project.target_availability_percent)
                     ),
                 ]
             )
-        lines.extend(["", "### Recomendações", ""])
+        lines.extend(["", tr('### Recomendações'), ""])
         for item in assessment["recommendations"]:
             lines.append(
-                f"- {item['action']}: aproximadamente "
-                f"+{item['estimated_margin_improvement_db']:.1f} dB "
-                f"({item['basis']})."
+                tr('- {x0}: aproximadamente +{x1:.1f} dB ({x2}).', x0=recommendation_action(item), x1=item['estimated_margin_improvement_db'], x2=tr(item['basis']))
             )
-        lines.extend(["", "### Incertezas declaradas", ""])
+        lines.extend(["", tr('### Incertezas declaradas'), ""])
         for item in assessment["uncertainties"]:
-            lines.append(f"- {item}.")
+            lines.append(f"- {tr(item)}.")
         lines.append("")
     lines.extend(
         [
-            "## Rastreabilidade",
+            tr('## Rastreabilidade'),
             "",
-            f"- SHA-256 do perfil: `{result['traceability']['terrain_sha256']}`",
-            f"- Pontos do perfil: {result['traceability']['terrain_point_count']}",
+            tr('- SHA-256 do perfil: `{x0}`', x0=result['traceability']['terrain_sha256']),
+            tr('- Pontos do perfil: {x0}', x0=result['traceability']['terrain_point_count']),
             (
-                "- Passo nominal: "
-                f"{result['traceability']['terrain_nominal_step_m']:.3f} m"
+                tr('- Passo nominal: {x0:.3f} m', x0=result['traceability']['terrain_nominal_step_m'])
             ),
-            f"- SHA-256 do resultado: `{result['result_sha256']}`",
+            tr('- SHA-256 do resultado: `{x0}`', x0=result['result_sha256']),
             "",
             (
-                "Os modelos permanecem separados; a divergência entre eles "
-                "não é tratada como uma distribuição aleatória."
+                tr('Os modelos permanecem separados; a divergência entre eles não é tratada como uma distribuição aleatória.')
             ),
             "",
         ]
@@ -465,17 +457,17 @@ def build_html_report(
     if make_plots:
         images = (
             '<section class="visual"><img src="profile.png" '
-            'alt="Perfil técnico do enlace"></section>'
+            f'alt="{html.escape(tr("Perfil técnico do enlace"))}"></section>'
             '<section class="visual"><img src="monte_carlo.png" '
-            'alt="Resultado de Monte Carlo"></section>'
+            f'alt="{html.escape(tr("Resultado de Monte Carlo"))}"></section>'
         )
     return f"""<!doctype html>
-<html lang="pt-BR">
+<html lang="{html_language()}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <title>{html.escape(project.name)} — Radio Link Planner</title>
+  <title>{html.escape(tr('{x0} — Radio Link Planner', x0=html.escape(project.name)))}</title>
   <link rel="stylesheet" href="{html.escape(map_css, quote=True)}">
   <style>
     :root {{ --ink:#17191d; --muted:#60646c; --line:#d7dae0;
@@ -514,25 +506,24 @@ def build_html_report(
 </head>
 <body>
   <header>
-    <div class="version">Radio Link Planner {html.escape(result["engine_version"])}</div>
+    <div class="version">{html.escape(tr('Radio Link Planner {x0}', x0=html.escape(result['engine_version'])))}</div>
     <h1>{html.escape(project.name)}</h1>
-    <div>{project.frequency_mhz:.3f} MHz · análise local e rastreável</div>
+    <div>{html.escape(tr('{x0:.3f} MHz · análise local e rastreável', x0=project.frequency_mhz))}</div>
   </header>
   <main>
     <section class="map-card">
-      <div id="route-map" aria-label="Mapa interativo do enlace"></div>
-      <div class="map-note">Mapa interativo MapLibre. A camada OpenStreetMap
-      requer internet; o cálculo científico usa o perfil Copernicus salvo
-      localmente e não depende do mapa.</div>
+      <div id="route-map" aria-label="{html.escape(tr('Mapa interativo do enlace'), quote=True)}"></div>
+      <div class="map-note">{html.escape(tr('Mapa interativo MapLibre. A camada OpenStreetMap requer internet; o cálculo científico usa o perfil Copernicus salvo localmente e não depende do mapa.'))}</div>
     </section>
     {images}
     <article>{summary_html}</article>
-    <div class="footer">Gerado em {html.escape(result["generated_at_utc"])}</div>
+    <div class="footer">{html.escape(tr('Gerado em {x0}', x0=html.escape(result['generated_at_utc'])))}</div>
   </main>
   <script src="{html.escape(map_js, quote=True)}"></script>
   <script>
     const routeData = {route_json};
     const map = new maplibregl.Map({{
+      locale: {json.dumps(map_locale(), ensure_ascii=False)},
       container: "route-map",
       style: {{
         version: 8,
@@ -712,3 +703,13 @@ def _markdown_summary_to_simple_html(markdown: str) -> str:
     close_list()
     close_table()
     return "\n".join(output)
+
+
+
+def recommendation_action(item: dict[str, Any]) -> str:
+    action = item["action"]
+    prefix = "aumentar o ganho da antena de "
+    suffix = " para 9 dBi"
+    if action.startswith(prefix) and action.endswith(suffix):
+        return tr("aumentar o ganho da antena de {terminal} para 9 dBi", terminal=action[len(prefix):-len(suffix)])
+    return tr(action)

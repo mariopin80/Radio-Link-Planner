@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+from .i18n import tr
+
 import json
 from collections.abc import Mapping
 from pathlib import Path
 
 COVERAGE_PROJECT_TYPE = "radio-link-planner-coverage"
-COVERAGE_PROJECT_SCHEMA = "1.0"
+COVERAGE_PROJECT_SCHEMA = "1.1"
 COVERAGE_PROJECT_KEYS = frozenset(
     {
         "name",
-        "latitude",
-        "longitude",
+        'latitude',
+        'longitude',
         "frequency",
         "polarization",
         "mode",
@@ -39,7 +41,7 @@ def write_coverage_project(
     missing = COVERAGE_PROJECT_KEYS.difference(values)
     if missing:
         raise ValueError(
-            "Projeto de cobertura incompleto: "
+            tr('Projeto de cobertura incompleto: ')
             + ", ".join(sorted(missing))
         )
     destination = Path(path).resolve()
@@ -64,22 +66,22 @@ def read_coverage_project(path: str | Path) -> dict[str, str]:
     source = Path(path).resolve()
     payload = json.loads(source.read_text(encoding="utf-8"))
     if payload.get("project_type") != COVERAGE_PROJECT_TYPE:
-        raise ValueError("O arquivo não é um projeto de cobertura.")
-    if payload.get("schema_version") != COVERAGE_PROJECT_SCHEMA:
+        raise ValueError(tr('O arquivo não é um projeto de cobertura.'))
+    if payload.get("schema_version") not in {"1.0", COVERAGE_PROJECT_SCHEMA}:
         raise ValueError(
-            "Versão de projeto de cobertura não suportada: "
-            f"{payload.get('schema_version')!r}."
+            tr('Versão de projeto de cobertura não suportada: {x0!r}.', x0=payload.get('schema_version'))
         )
     values = payload.get("values")
     if not isinstance(values, dict):
-        raise ValueError("O projeto de cobertura não contém parâmetros válidos.")
+        raise ValueError(tr('O projeto de cobertura não contém parâmetros válidos.'))
     missing = COVERAGE_PROJECT_KEYS.difference(values)
     if missing:
         raise ValueError(
-            "Projeto de cobertura incompleto: "
+            tr('Projeto de cobertura incompleto: ')
             + ", ".join(sorted(missing))
         )
     return {
         key: str(values[key])
         for key in COVERAGE_PROJECT_KEYS
     }
+

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .i18n import tr, choice_label
+
 import shutil
 import sys
 from collections.abc import Callable
@@ -94,10 +96,10 @@ def run_form_analysis(
     if request.existing_terrain_path is not None:
         source = request.existing_terrain_path.resolve()
         if not source.is_file():
-            raise FileNotFoundError(f"Perfil de terreno não encontrado: {source}")
+            raise FileNotFoundError(tr('Perfil de terreno não encontrado: {x0}', x0=source))
         if source != terrain_path:
             shutil.copyfile(source, terrain_path)
-        _notify(progress, "Terreno: usando o perfil do projeto carregado.")
+        _notify(progress, tr('Terreno: usando o perfil do projeto carregado.'))
         profile = TerrainProfile.from_csv(terrain_path)
         project.terrain_resolution_m = profile.nominal_step_m
     else:
@@ -142,9 +144,9 @@ def _analyze(
     make_plots: bool,
     progress: ProgressCallback | None,
 ) -> AnalysisOutcome:
-    _notify(progress, "Modelos: calculando ITM, P.1812 e P.2001…")
+    _notify(progress, tr('Modelos: calculando ITM, P.1812 e P.2001…'))
     result, arrays = analyze_project(project, profile)
-    _notify(progress, "Relatório: gerando resultados, mapa e gráficos…")
+    _notify(progress, tr('Relatório: gerando resultados, mapa e gráficos…'))
     paths = write_outputs(
         output_directory,
         project,
@@ -153,7 +155,7 @@ def _analyze(
         arrays,
         make_plots=make_plots,
     )
-    _notify(progress, "Análise concluída.")
+    _notify(progress, tr('Análise concluída.'))
     return AnalysisOutcome(project=project, result=result, paths=paths)
 
 
@@ -183,25 +185,24 @@ def build_desktop_summary(outcome: AnalysisOutcome) -> str:
         project.name,
         (
             f"{project.frequency_mhz:.3f} MHz • "
-            f"{project.primary_mode.upper()} • {project.polarization.value}"
+            f"{project.primary_mode.upper()} • {choice_label(project.polarization.value)}"
         ),
         "",
-        f"Distância: {geometry['profile_distance_km']:.3f} km",
+        tr('Distância: {x0:.3f} km', x0=geometry['profile_distance_km']),
         describe_geometry_clearance(geometry),
         (
-            "Fresnel de 60% obstruída em "
-            f"{geometry['fresnel_60_obstructed_percent']:.1f}% do percurso"
+            tr('Fresnel de 60% obstruída em {x0:.1f}% do percurso', x0=geometry['fresnel_60_obstructed_percent'])
         ),
         "",
     ]
     classification_labels = {
-        "robust": "ROBUSTO",
-        "viable": "VIÁVEL",
-        "marginal": "MARGINAL",
-        "improbable": "IMPROVÁVEL",
-        "indeterminate": "INDETERMINADO",
+        "robust": tr('ROBUSTO'),
+        "viable": tr('VIÁVEL'),
+        "marginal": tr('MARGINAL'),
+        "improbable": tr('IMPROVÁVEL'),
+        "indeterminate": tr('INDETERMINADO'),
     }
-    confidence_labels = {"high": "alta", "medium": "média", "low": "baixa"}
+    confidence_labels = {"high": tr('alta'), "medium": tr('média'), "low": tr('baixa')}
     for direction in result["directions"].values():
         assessment = direction["assessment"]
         classification = classification_labels.get(
@@ -213,7 +214,7 @@ def build_desktop_summary(outcome: AnalysisOutcome) -> str:
         lines.extend(
             [
                 f"{direction['transmitter']} → {direction['receiver']}",
-                f"Parecer: {classification} • confiança {confidence}",
+                tr('Parecer: {x0} • confiança {x1}', x0=classification, x1=confidence),
             ]
         )
         budgets = {budget["model_id"]: budget for budget in direction["link_budgets"]}
@@ -225,13 +226,12 @@ def build_desktop_summary(outcome: AnalysisOutcome) -> str:
             model_id = model["model_id"]
             if model["status"] != "ok" or model_id not in budgets:
                 lines.append(
-                    f"  {model_id.upper()}: {model['status']} (consulte o relatório)"
+                    tr('  {x0}: {x1} (consulte o relatório)', x0=model_id.upper(), x1=choice_label(model['status']))
                 )
                 continue
             budget = budgets[model_id]
             detail = (
-                f"perda {model['loss_db']:.2f} dB • "
-                f"margem {budget['fade_margin_db']:+.2f} dB"
+                tr('perda {x0:.2f} dB • margem {x1:+.2f} dB', x0=model['loss_db'], x1=budget['fade_margin_db'])
             )
             simulation = simulations.get(model_id)
             if simulation:
@@ -245,14 +245,14 @@ def build_desktop_summary(outcome: AnalysisOutcome) -> str:
                 )
                 if primary:
                     detail += (
-                        f" • sucesso {primary['success_probability_percent']:.1f}%"
+                        tr(' • sucesso {x0:.1f}%', x0=primary['success_probability_percent'])
                     )
             lines.append(f"  {model_id.upper()}: {detail}")
         lines.append("")
     lines.extend(
         [
-            f"Relatório: {outcome.paths['report_html']}",
-            f"SHA-256 do resultado: {result['result_sha256']}",
+            tr('Relatório: {x0}', x0=outcome.paths['report_html']),
+            tr('SHA-256 do resultado: {x0}', x0=result['result_sha256']),
         ]
     )
     return "\n".join(lines)
@@ -336,9 +336,10 @@ def _smoke_test_local_report_server(report_path: Path) -> None:
             body = response.read()
             referrer_policy = response.headers.get("Referrer-Policy")
         if b"maplibregl.Map" not in body:
-            raise RuntimeError("local report server returned an invalid report")
+            raise RuntimeError('local report server returned an invalid report')
         if referrer_policy != "strict-origin-when-cross-origin":
-            raise RuntimeError("local report server omitted its referrer policy")
+            raise RuntimeError('local report server omitted its referrer policy')
     finally:
         server.shutdown()
         server.server_close()
+

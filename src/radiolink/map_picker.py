@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .i18n import tr, html_language, map_locale
+
 import html
 import importlib.util
 import json
@@ -83,14 +85,14 @@ def open_coordinate_picker(
                     latitude = float(query["lat"][0])
                     longitude = float(query["lon"][0])
                     if not -90.0 <= latitude <= 90.0:
-                        raise ValueError("invalid latitude")
+                        raise ValueError('invalid latitude')
                     if not -180.0 <= longitude <= 180.0:
-                        raise ValueError("invalid longitude")
+                        raise ValueError('invalid longitude')
                 except (KeyError, IndexError, ValueError):
                     self._send(
                         400,
                         "text/plain; charset=utf-8",
-                        "Coordenadas inválidas.".encode("utf-8"),
+                        tr('Coordenadas inválidas.').encode("utf-8"),
                     )
                     return
                 self._send(
@@ -98,11 +100,10 @@ def open_coordinate_picker(
                     "text/html; charset=utf-8",
                     (
                         "<!doctype html><meta charset='utf-8'>"
-                        "<title>Local selecionado</title>"
+                        f"<title>{html.escape(tr('Local selecionado'))}</title>"
                         "<body style='font:18px Segoe UI;padding:40px'>"
-                        "<h2>Local selecionado</h2>"
-                        "<p>As coordenadas foram enviadas ao Radio Link Planner. "
-                        "Esta janela será fechada automaticamente.</p>"
+                        f"<h2>{html.escape(tr('Local selecionado'))}</h2>"
+                        f"<p>{html.escape(tr('As coordenadas foram enviadas ao Radio Link Planner. Esta janela será fechada automaticamente.'))}</p>"
                         "<script>setTimeout(() => window.close(), 350);</script>"
                         "</body>"
                     ).encode("utf-8"),
@@ -187,7 +188,7 @@ def build_picker_html(
             "dist/maplibre-gl.js"
         )
     return f"""<!doctype html>
-<html lang="pt-BR">
+<html lang="{html_language()}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -213,13 +214,14 @@ def build_picker_html(
   <div id="map"></div>
   <section class="panel">
     <h1>{html.escape(title)}</h1>
-    <p>Clique no mapa para posicionar o marcador e confirme o local.</p>
-    <div class="coordinates" id="coordinates">Nenhum ponto selecionado</div>
-    <button id="confirm" disabled>Usar este local</button>
+    <p>{html.escape(tr('Clique no mapa para posicionar o marcador e confirme o local.'))}</p>
+    <div class="coordinates" id="coordinates">{html.escape(tr('Nenhum ponto selecionado'))}</div>
+    <button id="confirm" disabled>{html.escape(tr('Usar este local'))}</button>
   </section>
   <script src="{map_js}"></script>
   <script>
     const map = new maplibregl.Map({{
+      locale: {json.dumps(map_locale(), ensure_ascii=False)},
       container:"map",
       center:{json.dumps([longitude, latitude])},
       zoom:{zoom},
@@ -259,3 +261,4 @@ def build_picker_html(
 </body>
 </html>
 """
+

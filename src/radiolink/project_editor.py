@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .i18n import tr
+
 import json
 import re
 import unicodedata
@@ -87,7 +89,7 @@ def project_from_editor_values(
     _validate_desktop_scope(values)
     mode = values.primary_mode.upper()
     if mode not in MODE_PROFILES:
-        raise ValueError(f"Modo desconhecido: {values.primary_mode}")
+        raise ValueError(tr('Modo desconhecido: {x0}', x0=values.primary_mode))
 
     def terminal(data: TerminalEditorValues) -> Terminal:
         return Terminal(
@@ -118,7 +120,7 @@ def project_from_editor_values(
             terminal_a=terminal(values.terminal_a),
             terminal_b=terminal(values.terminal_b),
             terrain_profile=terrain_profile,
-            terrain_source="Copernicus GLO-30 automático",
+            terrain_source='Copernicus GLO-30 automático',
             terrain_resolution_m=30.0,
             clutter_included=False,
             metadata={
@@ -155,19 +157,20 @@ def project_slug(name: str) -> str:
     normalized = unicodedata.normalize("NFKD", name)
     ascii_name = normalized.encode("ascii", "ignore").decode("ascii").lower()
     slug = re.sub(r"[^a-z0-9]+", "-", ascii_name).strip("-")
-    return slug or "novo-enlace"
+    return slug or 'novo-enlace'
 
 
 def _validate_desktop_scope(values: ProjectEditorValues) -> None:
     if not values.name.strip():
-        raise ValueError("Informe um nome para o enlace.")
+        raise ValueError(tr('Informe um nome para o enlace.'))
     if not (
         MIN_DESKTOP_FREQUENCY_MHZ <= values.frequency_mhz <= MAX_DESKTOP_FREQUENCY_MHZ
     ):
         raise ValueError(
-            "A frequência deve estar entre 30 e 3000 MHz nesta versão VHF/UHF."
+            tr('A frequência deve estar entre 30 e 3000 MHz nesta versão VHF/UHF.')
         )
     if not (MIN_DESKTOP_DISTANCE_KM <= values.distance_km <= MAX_DESKTOP_DISTANCE_KM):
         raise ValueError(
-            "A distância deve estar entre 3 e 1000 km nesta versão científica."
+            tr('A distância deve estar entre 3 e 1000 km nesta versão científica.')
         )
+
