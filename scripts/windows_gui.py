@@ -13,6 +13,16 @@ def run() -> int:
         output_directory = Path(sys.argv[2]).resolve()
         try:
             smoke_test(output_directory)
+            # Verify that the packaged icon and home images load in Tk, too.
+            import tkinter as tk
+            from radiolink.desktop import RadioLinkPlannerApp
+            root = tk.Tk()
+            try:
+                root.withdraw()
+                RadioLinkPlannerApp(root)
+                root.update_idletasks()
+            finally:
+                root.destroy()
         except Exception:
             output_directory.mkdir(parents=True, exist_ok=True)
             (output_directory / "smoke-error.txt").write_text(
@@ -28,3 +38,4 @@ def run() -> int:
 if __name__ == "__main__":
     multiprocessing.freeze_support()
     raise SystemExit(run())
+

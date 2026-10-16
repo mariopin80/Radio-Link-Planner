@@ -147,6 +147,14 @@ class RadioLinkPlannerApp:
 
     def _configure_window(self) -> None:
         self.root.title(f"{APP_NAME} — {__version__}")
+        icon_directory = bundle_root() / "assets"
+        self.window_icons = [
+            tk.PhotoImage(file=str(icon_directory / f"app-icon-{size}.png"))
+            for size in (64, 32, 16)
+        ]
+        self.root.iconphoto(True, *self.window_icons)
+        if sys.platform == "win32":
+            self.root.iconbitmap(str(icon_directory / "app-icon.ico"))
         self._set_window_size(1280, 900, min_width=860, min_height=600)
         self.root.configure(background="#11151a")
 
@@ -1397,6 +1405,9 @@ class RadioLinkPlannerApp:
             self.coverage_resolution_var.set(str(exc))
             return
         resume = (
+            " • perda de propagação pronta: atualização sem recalcular a P.1812"
+            if estimate.reusable_propagation_cells
+            else
             f" • retomada disponível: {estimate.resumable_cells:,} células"
             if estimate.resumable_cells
             else ""
@@ -2293,6 +2304,7 @@ def _open_path(path: str | Path) -> None:
 def main() -> int:
     if sys.platform == "win32":
         try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("MarioPin.RadioLinkPlanner")
             ctypes.windll.shcore.SetProcessDpiAwareness(1)
         except (AttributeError, OSError):
             pass
@@ -2304,3 +2316,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

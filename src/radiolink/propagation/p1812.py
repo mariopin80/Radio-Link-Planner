@@ -12,6 +12,7 @@ from .base import (
     ModelStatus,
     QuantileCurve,
 )
+from .p1812_fast import optimize_p1812
 
 
 class P1812Model:
@@ -41,7 +42,7 @@ class P1812Model:
                 "P.1812-8 supports 30 MHz to 6 GHz",
             )
         try:
-            P1812 = load_digital_product_module(P1812_PRODUCT, "P1812")
+            P1812 = optimize_p1812(load_digital_product_module(P1812_PRODUCT, "P1812"))
 
             profile = context.directional_profile
             transmitter, receiver = context.transmitter_receiver
@@ -120,3 +121,4 @@ class P1812Model:
             direction=context.direction.value,
             warnings=(warning,),
         )
+

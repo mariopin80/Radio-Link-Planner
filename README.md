@@ -1,4 +1,4 @@
-# Radio Link Planner 0.4
+# Radio Link Planner 0.4.2
 
 Protótipo científico local para análise de enlaces terrestres de
 radioamadorismo em VHF e UHF. O programa analisa enlaces ponto a ponto e
@@ -33,6 +33,10 @@ não estiver disponível, o navegador continua funcionando como alternativa.
 - cancelamento e retomada automática dos blocos já concluídos;
 - mapa de calor com escala de margem;
 - contornos de 0, +3, +6 e +12 dB;
+- contornos mais finos e transparentes, com rótulos espaçados no mapa;
+- vetorização da P.1812 e terreno preparado em arquivos mapeados compartilháveis;
+- reaproveitamento da perda ao ajustar potência, ganhos, cabos e sensibilidade;
+- ícone próprio no executável, janela, atalhos e instalador;
 - curvatura terrestre com fator k configurável;
 - primeira zona de Fresnel e obstruções críticas;
 - ITM 1.3 oficial da NTIA em modo ponto a ponto;
@@ -78,10 +82,10 @@ PYTHONPATH=src python -m radiolink analyze \
 
 ## MVP desktop para Windows
 
-O workflow **Windows MVP** produz dois formatos:
+O workflow **Windows release** produz dois formatos:
 
-- `RadioLinkPlanner-0.4.1-Windows-x64-Setup.exe`: instalador recomendado;
-- `RadioLinkPlanner-0.4.1-Windows-x64.zip`: pacote portátil para testes.
+- `RadioLinkPlanner-0.4.2-Windows-x64-Setup.exe`: instalador recomendado;
+- `RadioLinkPlanner-0.4.2-Windows-x64.zip`: pacote portátil para testes.
 
 O instalador cria a pasta `Program Files\Radio Link Planner`, atalhos no menu
 Iniciar, um atalho opcional na área de trabalho e o desinstalador. Não é
@@ -139,6 +143,20 @@ O MVP permite:
    **Cancelar** preserva os blocos prontos; repetir os mesmos parâmetros e a
    mesma pasta retoma a execução.
 7. Abra o mapa interativo ao concluir.
+
+Depois da primeira cobertura na versão 0.4.2, ajustes de potência, ganho,
+perdas de linha ou sensibilidade na mesma pasta de resultados reutilizam a
+perda calculada. O mapa, os contornos e os relatórios são atualizados para o
+novo orçamento do enlace. A interface informa quando essa reutilização está
+disponível. Mudanças dos parâmetros físicos de propagação ou dos dados
+científicos exigem novo cálculo. O programa verifica a integridade da grade
+de perda antes de reutilizá-la.
+
+Os pixels preparados ficam na subpasta `prepared` do cache Copernicus. São
+arquivos mapeados somente para leitura pelos processos; o sistema operacional
+compartilha e pode recuperar essas páginas de memória. Essa preparação usa
+espaço adicional em disco, sem alterar a amostragem de 30 m. Se o cache não
+puder ser gravado, o programa usa a leitura de blocos já existente.
 
 A cobertura usa a ITU-R P.1812-8 em um percentual de tempo entre 1 e 50%. O
 raster é uma grade azimutal equidistante centrada no transmissor. Cada célula
@@ -205,6 +223,8 @@ Para a cobertura:
 
 - `coverage_project.json`: parâmetros usados no cálculo;
 - `coverage_margin_db.npy`: grade direta final de margem;
+- `coverage_loss_db.npy`: perda física por célula em precisão dupla;
+- `coverage_propagation.json`: identidade e integridade da perda reutilizável;
 - `coverage_metadata.json`: motor, versão, células, perfis, tempos,
   paralelismo e hipóteses científicas;
 - `coverage_overlay.png`: camada transparente para o mapa;
@@ -248,3 +268,4 @@ disponibilidades superiores.
 
 Consulte [docs/scientific-scope.md](docs/scientific-scope.md) para limitações,
 hipóteses e critérios de classificação.
+

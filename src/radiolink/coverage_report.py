@@ -218,9 +218,10 @@ def _render_heatmap_and_contours(
         grid,
         levels=CONTOUR_LEVELS_DB,
         colors=("#7a0012", "#8a5a00", "#1d551f", "#08384f"),
-        linewidths=(1.5, 1.25, 1.25, 1.4),
+        linewidths=(0.65, 0.5, 0.5, 0.6),
+        alpha=0.5,
     )
-    axis.clabel(contours, fmt=lambda value: f"{value:+.0f} dB", fontsize=8)
+    axis.clabel(contours, fmt=lambda value: f"{value:+.0f} dB", fontsize=7)
     axis.scatter(
         [0.0],
         [0.0],
@@ -374,6 +375,10 @@ def _build_coverage_report(
           <td>{grid_metadata["short_range_free_space_cells"]:,}</td></tr>
         <tr><th>Células com falha</th><td>{failed_cells:,}</td></tr>
         <tr><th>Células interpoladas pelo motor</th><td>0</td></tr>
+        <tr><th>Células com perda reaproveitada</th>
+          <td>{grid_metadata.get("reused_propagation_cells", 0):,}</td></tr>
+        <tr><th>Chamadas P.1812 nesta execução</th>
+          <td>{grid_metadata.get("p1812_calls_this_run", grid_metadata["p1812_cells"]):,}</td></tr>
         <tr><th>Pontos de terreno processados</th>
           <td>{grid_metadata["terrain_profile_points"]:,}</td></tr>
         <tr><th>Processos de cálculo</th>
@@ -539,8 +544,8 @@ def _build_coverage_report(
             "match",["get","level_db"],
             0,"#7a0012",3,"#8a5a00",6,"#1d551f",12,"#08384f","#111"
           ],
-          "line-width":2.0,
-          "line-opacity":0.95
+          "line-width":0.7,
+          "line-opacity":0.45
         }}
       }});
       map.addLayer({{
@@ -548,13 +553,15 @@ def _build_coverage_report(
         layout:{{
           "symbol-placement":"line",
           "text-field":["get","label"],
-          "text-size":11,
+          "text-size":10,
+          "symbol-spacing":500,
           "text-allow-overlap":false
         }},
         paint:{{
           "text-color":"#111",
           "text-halo-color":"#fff",
-          "text-halo-width":1.4
+          "text-halo-width":0.8,
+          "text-opacity":0.7
         }}
       }});
       new maplibregl.Marker({{color:"#c91f37"}})
@@ -625,3 +632,4 @@ def _notify(progress: ProgressCallback | None, message: str) -> None:
 def _check_cancelled(cancel_check: Callable[[], bool] | None) -> None:
     if cancel_check is not None and cancel_check():
         raise InterruptedError("coverage report rendering cancelled")
+

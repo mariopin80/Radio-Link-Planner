@@ -14,7 +14,7 @@ import threading
 import time
 from collections.abc import Iterator
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -44,8 +44,10 @@ from .itu_data import (
     product_data_directory,
 )
 from .link_budget import watts_to_dbm
+from .propagation.p1812_fast import OPTIMIZATION_VERSION, optimize_p1812
+from .terrain_cache import PreparedTerrainSampler, PreparedTerrainTile, prepare_terrain_tile
 
-DIRECT_GRID_ENGINE_VERSION = "1"
+DIRECT_GRID_ENGINE_VERSION = "2"
 GRID_PROJECTION = "spherical azimuthal equidistant"
 GRID_BLOCK_SIZE = 16
 MINIMUM_P1812_DISTANCE_M = 250.0
@@ -71,6 +73,7 @@ class CoverageEstimate:
     terrain_tile_count: int
     uncached_terrain_tile_count: int
     resumable_cells: int = 0
+    reusable_propagation_cells: int = 0
 
     @property
     def warning_level(self) -> str:
@@ -105,6 +108,7 @@ class GridBlockResult:
     failed_cells: int
     elapsed_seconds: float
     errors: tuple[str, ...] = ()
+    loss_db: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -126,6 +130,7 @@ class _WorkerConfiguration:
     receiver_gain_dbi: float
     receiver_line_loss_db: float
     receiver_threshold_dbm: float
+    terrain_tiles: tuple[PreparedTerrainTile, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -133,6 +138,7 @@ class _CheckpointPaths:
     directory: Path
     metadata: Path
     grid: Path
+    loss: Path
     completed: Path
     block_statistics: Path
 
@@ -173,6 +179,7 @@ class _ProgressTracker:
 _WORKER_CONFIGURATION: _WorkerConfiguration | None = None
 _WORKER_P1812: Any | None = None
 _WORKER_CANCEL_EVENT: Any | None = None
+_WORKER_TERRAIN: PreparedTerrainSampler | None = None
 
 
 def default_worker_count() -> int:
@@ -229,7 +236,7 @@ def estimate_coverage(
     uncached = sum(
         1
         for code in codes
-        if not _valid_cached_tile(cache / f"{code}.tif")
+        if not _valid_cached_tile(cache / f"{code}.tif") and not (cache / f"{code}.sea").is_file()
     )
     download_low = uncached * 12.0
     download_high = uncached * 60.0
@@ -257,6 +264,9 @@ def estimate_coverage(
         + download_high
         + 1.45 * compute_seconds * fraction_remaining
     )
+    reusable = valid_cells if _propagation_cache_metadata(request) is not None else 0
+    if reusable:
+        low, high = 5.0, 50.0
 
     return CoverageEstimate(
         resolution_m=resolution,
@@ -273,6 +283,7 @@ def estimate_coverage(
         terrain_tile_count=len(codes),
         uncached_terrain_tile_count=uncached,
         resumable_cells=resumable,
+        reusable_propagation_cells=reusable,
     )
 
 
@@ -334,6 +345,79 @@ def coverage_request_fingerprint(request: CoverageRequest) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def propagation_fingerprint(request: CoverageRequest) -> str:
+    """Identify physical loss independently of the radio link budget."""
+    fields = (
+        "latitude_deg", "longitude_deg", "radius_km", "frequency_mhz",
+        "time_percentage", "transmitter_height_m", "receiver_height_m",
+        "terrain_step_m",
+    )
+    payload = {name: getattr(request, name) for name in fields}
+    payload.update(
+        resolution_m=request.resolution_m, polarization=request.polarization.lower(),
+        engine_version=DIRECT_GRID_ENGINE_VERSION, model_version=_p1812_version(),
+        optimization_version=OPTIMIZATION_VERSION,
+    )
+    cache = default_cache_directory()
+    sources = []
+    for code in coverage_terrain_tile_codes(request):
+        tile = cache / f"{code}.tif"
+        sources.append(tile if tile.is_file() else cache / f"{code}.sea")
+    sources.append(product_data_directory(P1812_PRODUCT) / P1812_PRODUCT.output_filename)
+    stamps = []
+    for source in sources:
+        try:
+            stat = source.stat()
+            stamps.append((str(source.resolve()), stat.st_size, stat.st_mtime_ns))
+        except OSError:
+            stamps.append((str(source), None, None))
+    payload["sources"] = stamps
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _propagation_cache_metadata(request: CoverageRequest) -> dict[str, Any] | None:
+    directory = request.output_directory.expanduser().resolve()
+    try:
+        metadata = json.loads((directory / "coverage_propagation.json").read_text(encoding="utf-8"))
+        if metadata["fingerprint"] != propagation_fingerprint(request):
+            return None
+        if not (directory / "coverage_loss_db.npy").is_file():
+            return None
+        return metadata
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def _load_propagation_cache(request: CoverageRequest) -> tuple[np.memmap, dict[str, Any]] | None:
+    metadata = _propagation_cache_metadata(request)
+    if metadata is None:
+        return None
+    array = None
+    try:
+        path = request.output_directory.expanduser().resolve() / "coverage_loss_db.npy"
+        if _file_sha256(path) != metadata["sha256"]:
+            return None
+        array = np.load(path, mmap_mode="r", allow_pickle=False)
+        dimension = coverage_grid_dimension(request.radius_km, request.resolution_m)
+        if array.shape != (dimension, dimension) or array.dtype != np.float64:
+            raise ValueError("invalid propagation cache shape/dtype")
+        if np.count_nonzero(np.isfinite(array)) != coverage_circle_cell_count(request.radius_km, request.resolution_m):
+            raise ValueError("incomplete propagation cache")
+        return array, metadata
+    except (OSError, ValueError, KeyError, TypeError):
+        if array is not None:
+            _close_memmap(array)
+        return None
+
+
 def coverage_terrain_tile_codes(request: CoverageRequest) -> tuple[str, ...]:
     """Return the GLO-30 tiles in the circle's conservative bounding box."""
     radius_m = request.radius_km * 1000.0
@@ -393,83 +477,361 @@ def run_direct_grid_coverage(
         )
     )
     checkpoint = _checkpoint_paths(request, fingerprint)
-    grid, completed, block_statistics, resumed = _open_checkpoint(
+    grid, loss_grid, completed, block_statistics, resumed = _open_checkpoint(
         request,
         fingerprint,
         blocks,
         checkpoint,
     )
-    completed_cells = int(np.sum(block_statistics[completed, 0]))
-    if resumed:
-        try:
-            existing_metadata = json.loads(
-                checkpoint.metadata.read_text(encoding="utf-8")
-            )
-            resume_count = int(existing_metadata.get("resumed_runs", 0)) + 1
-            previous_compute_seconds = float(
-                existing_metadata.get("accumulated_compute_seconds", 0.0)
-            )
-        except (OSError, ValueError, TypeError, json.JSONDecodeError):
-            resume_count = 1
-            previous_compute_seconds = 0.0
-    else:
-        resume_count = 0
-        previous_compute_seconds = 0.0
-    _update_checkpoint_metadata(
-        request,
-        fingerprint,
-        blocks,
-        checkpoint,
-        completed_cells=completed_cells,
-        resumed_runs=resume_count,
-        accumulated_compute_seconds=previous_compute_seconds,
-    )
-
-    tracker.emit(
-        0.0,
-        "prepare",
-        "0% — Preparando os dados científicos da P.1812…",
-    )
-    if external_cancel.is_set():
-        _raise_cancelled(completed_cells, estimate.valid_circle_cells, checkpoint)
     try:
-        ensure_itu_data(
-            include_p1812=True,
-            include_p2001=False,
-            cleanup_source_maps=True,
-            progress=lambda message: tracker.emit(
-                2.0,
-                "prepare",
-                f"2% — P.1812: {message}",
-            ),
-            cancel_check=external_cancel.is_set,
-        )
-    except InterruptedError:
-        _raise_cancelled(
-            completed_cells,
-            estimate.valid_circle_cells,
+        cached_propagation = _load_propagation_cache(request)
+        reused_metadata = None
+        if cached_propagation is not None:
+            cached_loss, reused_metadata = cached_propagation
+            configuration = _worker_configuration(request, estimate.grid_width)
+            try:
+                for spec in blocks:
+                    if external_cancel.is_set():
+                        break
+                    selected = np.s_[spec.row_start:spec.row_stop, spec.column_start:spec.column_stop]
+                    loss_grid[selected] = cached_loss[selected]
+                    grid[selected] = _margin_from_loss(configuration, cached_loss[selected])
+                    count = int(np.count_nonzero(np.isfinite(cached_loss[selected])))
+                    block_statistics[spec.block_id] = (count, 0, count, 0, 0, 0)
+                    completed[spec.block_id] = True
+                # The centre uses the documented short-range free-space exception.
+                centre = (estimate.grid_width - 1) / 2.0
+                for spec in blocks:
+                    if not completed[spec.block_id]:
+                        continue
+                    yy, xx = np.mgrid[spec.row_start:spec.row_stop, spec.column_start:spec.column_stop]
+                    short = int(np.count_nonzero(np.hypot(xx-centre, yy-centre)*request.resolution_m < MINIMUM_P1812_DISTANCE_M))
+                    block_statistics[spec.block_id, 2] -= short
+                    block_statistics[spec.block_id, 3] = short
+                loss_grid.flush()
+                grid.flush()
+                block_statistics.flush()
+                completed.flush()
+            finally:
+                _close_memmap(cached_loss)
+        completed_cells = int(np.sum(block_statistics[completed, 0]))
+        if resumed:
+            try:
+                existing_metadata = json.loads(
+                    checkpoint.metadata.read_text(encoding="utf-8")
+                )
+                resume_count = int(existing_metadata.get("resumed_runs", 0)) + 1
+                previous_compute_seconds = float(
+                    existing_metadata.get("accumulated_compute_seconds", 0.0)
+                )
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                resume_count = 1
+                previous_compute_seconds = 0.0
+        else:
+            resume_count = 0
+            previous_compute_seconds = 0.0
+        _update_checkpoint_metadata(
+            request,
+            fingerprint,
+            blocks,
             checkpoint,
+            completed_cells=completed_cells,
+            resumed_runs=resume_count,
+            accumulated_compute_seconds=previous_compute_seconds,
         )
 
-    terrain_codes = coverage_terrain_tile_codes(request)
-    cache = default_cache_directory()
-    for index, code in enumerate(terrain_codes, start=1):
+        tracker.emit(
+            0.0,
+            "prepare",
+            "0% — Preparando os dados científicos da P.1812…",
+        )
         if external_cancel.is_set():
+            _raise_cancelled(completed_cells, estimate.valid_circle_cells, checkpoint)
+        terrain_tiles: list[PreparedTerrainTile] = []
+        if completed_cells < estimate.valid_circle_cells:
+            try:
+                ensure_itu_data(
+                    include_p1812=True,
+                    include_p2001=False,
+                    cleanup_source_maps=True,
+                    progress=lambda message: tracker.emit(
+                        2.0,
+                        "prepare",
+                        f"2% — P.1812: {message}",
+                    ),
+                    cancel_check=external_cancel.is_set,
+                )
+            except InterruptedError:
+                _raise_cancelled(
+                    completed_cells,
+                    estimate.valid_circle_cells,
+                    checkpoint,
+                )
+
+            terrain_codes = coverage_terrain_tile_codes(request)
+            cache = default_cache_directory()
+            for index, code in enumerate(terrain_codes, start=1):
+                if external_cancel.is_set():
+                    _raise_cancelled(
+                        completed_cells,
+                        estimate.valid_circle_cells,
+                        checkpoint,
+                    )
+                base_percent = 2.0 + 6.0 * (index - 1) / max(len(terrain_codes), 1)
+                try:
+                    download_tile(
+                        code,
+                        cache_dir=cache,
+                        progress=lambda message, value=base_percent: tracker.emit(
+                            value,
+                            "terrain",
+                            f"{value:.0f}% — {message}",
+                        ),
+                        cancel_check=external_cancel.is_set,
+                    )
+                except InterruptedError:
+                    _raise_cancelled(
+                        completed_cells,
+                        estimate.valid_circle_cells,
+                        checkpoint,
+                    )
+                except CopernicusSeaTileError:
+                    tracker.emit(
+                        base_percent,
+                        "terrain",
+                        f"{base_percent:.0f}% — Terreno: bloco {code} é marítimo; "
+                        "usando nível do mar.",
+                    )
+                terrain_tiles.append(prepare_terrain_tile(code, cache_dir=cache))
+                tile_percent = 2.0 + 6.0 * index / max(len(terrain_codes), 1)
+                tracker.emit(
+                    tile_percent,
+                    "terrain",
+                    f"{tile_percent:.0f}% — Terreno: bloco {index}/"
+                    f"{len(terrain_codes)} pronto.",
+                    completed=index,
+                    total=len(terrain_codes),
+                )
+
+        pending = [spec for spec in blocks if not bool(completed[spec.block_id])]
+        if reused_metadata is not None:
+            tracker.emit(90.0, "cells", "90% — Reaproveitando a perda de propagação; atualizando o orçamento do enlace.", completed=completed_cells, total=estimate.valid_circle_cells, remaining_seconds=0.0)
+        elif resumed and completed_cells:
+            tracker.emit(
+                10.0 + 80.0 * completed_cells / estimate.valid_circle_cells,
+                "cells",
+                "Retomando cobertura: "
+                f"{completed_cells:,} de {estimate.valid_circle_cells:,} "
+                "células já estavam concluídas.",
+                completed=completed_cells,
+                total=estimate.valid_circle_cells,
+                remaining_seconds=estimate.estimated_seconds_high,
+            )
+        else:
+            tracker.emit(
+                10.0,
+                "cells",
+                "10% — Grade direta preparada; iniciando as células P.1812.",
+                completed=0,
+                total=estimate.valid_circle_cells,
+                remaining_seconds=estimate.estimated_seconds_high,
+            )
+
+        compute_started = time.monotonic()
+        session_start_cells = completed_cells
+        session_start_p1812_cells = int(np.sum(block_statistics[completed, 2]))
+        session_profile_points = 0
+        configuration = replace(_worker_configuration(request, estimate.grid_width), terrain_tiles=tuple(terrain_tiles))
+        # Keep neighbouring endpoints close in the queue so each worker can reuse
+        # opened GeoTIFF datasets and their internal raster blocks.
+        ordered_pending = pending
+
+        def accept_result(result: GridBlockResult) -> None:
+            nonlocal completed_cells, session_profile_points
+            if external_cancel.is_set():
+                return
+            if result.failed_cells:
+                details = "; ".join(result.errors) or "erro numérico não especificado"
+                raise RuntimeError(
+                    "A P.1812 não produziu resultado para "
+                    f"{result.failed_cells} célula(s) do bloco "
+                    f"{result.block_id}. O bloco não foi marcado como concluído "
+                    f"e poderá ser reprocessado. Detalhes: {details}"
+                )
+            grid[
+                result.row_start : result.row_stop,
+                result.column_start : result.column_stop,
+            ] = result.margin_db
+            grid.flush()
+            selected = np.s_[result.row_start:result.row_stop, result.column_start:result.column_stop]
+            if result.loss_db is None:
+                # Compatibility for injected/testing block evaluators.
+                loss_grid[selected] = _margin_from_loss(configuration, 0.0) - result.margin_db.astype(float)
+            else:
+                loss_grid[selected] = result.loss_db
+            loss_grid.flush()
+            block_statistics[result.block_id] = (
+                result.calculated_cells,
+                result.profile_points,
+                result.p1812_cells,
+                result.short_range_cells,
+                result.failed_cells,
+                round(result.elapsed_seconds * 1000.0),
+            )
+            block_statistics.flush()
+            completed[result.block_id] = True
+            completed.flush()
+            completed_cells += result.calculated_cells
+            session_profile_points += result.profile_points
+            _update_checkpoint_metadata(
+                request,
+                fingerprint,
+                blocks,
+                checkpoint,
+                completed_cells=completed_cells,
+                resumed_runs=resume_count,
+                accumulated_compute_seconds=(
+                    previous_compute_seconds
+                    + max(0.0, time.monotonic() - compute_started)
+                ),
+            )
+            session_cells = completed_cells - session_start_cells
+            elapsed = max(0.001, time.monotonic() - compute_started)
+            observed_rate = session_cells / elapsed if session_cells else 0.0
+            remaining = (
+                (estimate.valid_circle_cells - completed_cells) / observed_rate
+                if observed_rate > 0.0
+                else estimate.estimated_seconds_high
+            )
+            overall = 10.0 + 80.0 * min(
+                1.0,
+                completed_cells / estimate.valid_circle_cells,
+            )
+            tracker.emit(
+                overall,
+                "cells",
+                f"{overall:.0f}% — Calculando células: "
+                f"{completed_cells:,} de {estimate.valid_circle_cells:,} • "
+                f"restante {format_duration(remaining)}",
+                completed=completed_cells,
+                total=estimate.valid_circle_cells,
+                remaining_seconds=remaining,
+            )
+        if ordered_pending and workers == 1:
+            local_cancel = external_cancel
+            _initialize_grid_worker(configuration, local_cancel)
+            for spec in ordered_pending:
+                if external_cancel.is_set():
+                    break
+                accept_result(_evaluate_grid_block(spec))
+        elif ordered_pending:
+            _run_parallel_blocks(
+                ordered_pending,
+                configuration,
+                workers,
+                external_cancel,
+                accept_result,
+            )
+
+        if external_cancel.is_set():
+            _record_performance(
+                workers=workers,
+                cells=completed_cells - session_start_cells,
+                profile_points=session_profile_points,
+                elapsed_seconds=max(
+                    time.monotonic() - compute_started,
+                    0.001,
+                ),
+            )
             _raise_cancelled(
                 completed_cells,
                 estimate.valid_circle_cells,
                 checkpoint,
             )
-        base_percent = 2.0 + 6.0 * (index - 1) / max(len(terrain_codes), 1)
+        if completed_cells != estimate.valid_circle_cells:
+            raise RuntimeError(
+                "A grade terminou incompleta: "
+                f"{completed_cells:,} de {estimate.valid_circle_cells:,} células."
+            )
+
+        session_compute_seconds = time.monotonic() - compute_started
+        compute_seconds = previous_compute_seconds + session_compute_seconds
+        all_profile_points = int(np.sum(block_statistics[completed, 1]))
+        p1812_cells = int(np.sum(block_statistics[completed, 2]))
+        short_range_cells = int(np.sum(block_statistics[completed, 3]))
+        failed_cells = int(np.sum(block_statistics[completed, 4]))
+        worker_compute_seconds = float(
+            np.sum(block_statistics[completed, 5])
+        ) / 1000.0
+        _record_performance(
+            workers=workers,
+            cells=completed_cells - session_start_cells,
+            profile_points=session_profile_points,
+            elapsed_seconds=max(session_compute_seconds, 0.001),
+        )
+        grid_metadata = {
+            "engine": "direct_metric_grid",
+            "engine_version": DIRECT_GRID_ENGINE_VERSION,
+            "optimization_version": OPTIMIZATION_VERSION,
+            "propagation_cache_reused": reused_metadata is not None,
+            "reused_propagation_cells": completed_cells if reused_metadata is not None else 0,
+            "p1812_calls_this_run": int(np.sum(block_statistics[completed, 2])) - session_start_p1812_cells,
+            "source_terrain_profile_points": reused_metadata.get("source_terrain_profile_points", 0) if reused_metadata else all_profile_points,
+            "model": "ITU-R P.1812-8",
+            "model_version": _p1812_version(),
+            "projection": GRID_PROJECTION,
+            "radius_km": request.radius_km,
+            "resolution_m": request.resolution_m,
+            "terrain_profile_step_m": request.terrain_step_m,
+            "grid_width": estimate.grid_width,
+            "grid_height": estimate.grid_height,
+            "square_grid_cells": estimate.grid_width * estimate.grid_height,
+            "valid_circle_cells": estimate.valid_circle_cells,
+            "calculated_cells": completed_cells,
+            "p1812_cells": p1812_cells,
+            "short_range_free_space_cells": short_range_cells,
+            "failed_cells": failed_cells,
+            "terrain_profile_points": all_profile_points,
+            "propagation_interpolated_cells": 0,
+            "worker_count": workers,
+            "block_size": GRID_BLOCK_SIZE,
+            "compute_seconds": compute_seconds,
+            "session_compute_seconds": session_compute_seconds,
+            "worker_compute_seconds": worker_compute_seconds,
+            "resumed": resumed,
+            "resume_count": resume_count,
+            "terrain_source": "Copernicus GLO-30",
+            "terrain_zone_assumption": "all_inland_land",
+            "clutter_included": False,
+        }
+
+        tracker.emit(
+            91.0,
+            "render",
+            "91% — Montando o raster calculado e os produtos cartográficos…",
+            completed=completed_cells,
+            total=estimate.valid_circle_cells,
+        )
+        if external_cancel.is_set():
+            _raise_cancelled(completed_cells, estimate.valid_circle_cells, checkpoint)
+
+        from .coverage_report import write_coverage_outputs
+
+        render_messages = 0
+
+        def render_progress(message: str) -> None:
+            nonlocal render_messages
+            render_messages += 1
+            percent = min(98.5, 91.0 + render_messages * 1.5)
+            tracker.emit(percent, "render", f"{percent:.0f}% — {message}")
+
         try:
-            download_tile(
-                code,
-                cache_dir=cache,
-                progress=lambda message, value=base_percent: tracker.emit(
-                    value,
-                    "terrain",
-                    f"{value:.0f}% — {message}",
-                ),
+            report_paths, report_statistics = write_coverage_outputs(
+                request=request,
+                grid=grid,
+                grid_metadata=grid_metadata,
+                output_directory=destination,
+                progress=render_progress,
                 cancel_check=external_cancel.is_set,
             )
         except InterruptedError:
@@ -478,298 +840,88 @@ def run_direct_grid_coverage(
                 estimate.valid_circle_cells,
                 checkpoint,
             )
-        except CopernicusSeaTileError:
-            tracker.emit(
-                base_percent,
-                "terrain",
-                f"{base_percent:.0f}% — Terreno: bloco {code} é marítimo; "
-                "usando nível do mar.",
-            )
-        tile_percent = 2.0 + 6.0 * index / max(len(terrain_codes), 1)
-        tracker.emit(
-            tile_percent,
-            "terrain",
-            f"{tile_percent:.0f}% — Terreno: bloco {index}/"
-            f"{len(terrain_codes)} pronto.",
-            completed=index,
-            total=len(terrain_codes),
-        )
-
-    pending = [spec for spec in blocks if not bool(completed[spec.block_id])]
-    if resumed and completed_cells:
-        tracker.emit(
-            10.0 + 80.0 * completed_cells / estimate.valid_circle_cells,
-            "cells",
-            "Retomando cobertura: "
-            f"{completed_cells:,} de {estimate.valid_circle_cells:,} "
-            "células já estavam concluídas.",
-            completed=completed_cells,
-            total=estimate.valid_circle_cells,
-            remaining_seconds=estimate.estimated_seconds_high,
-        )
-    else:
-        tracker.emit(
-            10.0,
-            "cells",
-            "10% — Grade direta preparada; iniciando as células P.1812.",
-            completed=0,
-            total=estimate.valid_circle_cells,
-            remaining_seconds=estimate.estimated_seconds_high,
-        )
-
-    compute_started = time.monotonic()
-    session_start_cells = completed_cells
-    session_profile_points = 0
-    configuration = _worker_configuration(request, estimate.grid_width)
-    # Keep neighbouring endpoints close in the queue so each worker can reuse
-    # opened GeoTIFF datasets and their internal raster blocks.
-    ordered_pending = pending
-
-    def accept_result(result: GridBlockResult) -> None:
-        nonlocal completed_cells, session_profile_points
         if external_cancel.is_set():
-            return
-        if result.failed_cells:
-            details = "; ".join(result.errors) or "erro numérico não especificado"
-            raise RuntimeError(
-                "A P.1812 não produziu resultado para "
-                f"{result.failed_cells} célula(s) do bloco "
-                f"{result.block_id}. O bloco não foi marcado como concluído "
-                f"e poderá ser reprocessado. Detalhes: {details}"
+            _raise_cancelled(completed_cells, estimate.valid_circle_cells, checkpoint)
+
+        project_path = destination / "coverage_project.json"
+        project_path.write_text(
+            json.dumps(
+                {
+                    **_request_payload(request, include_output_directory=True),
+                    "model": "ITU-R P.1812-8",
+                    "engine": "direct_metric_grid",
+                    "contour_levels_db": list(CONTOUR_LEVELS_DB),
+                },
+                ensure_ascii=False,
+                indent=2,
             )
-        grid[
-            result.row_start : result.row_stop,
-            result.column_start : result.column_stop,
-        ] = result.margin_db
-        grid.flush()
-        block_statistics[result.block_id] = (
-            result.calculated_cells,
-            result.profile_points,
-            result.p1812_cells,
-            result.short_range_cells,
-            result.failed_cells,
-            round(result.elapsed_seconds * 1000.0),
+            + "\n",
+            encoding="utf-8",
         )
-        block_statistics.flush()
-        completed[result.block_id] = True
-        completed.flush()
-        completed_cells += result.calculated_cells
-        session_profile_points += result.profile_points
-        _update_checkpoint_metadata(
-            request,
-            fingerprint,
-            blocks,
-            checkpoint,
-            completed_cells=completed_cells,
-            resumed_runs=resume_count,
-            accumulated_compute_seconds=(
-                previous_compute_seconds
-                + max(0.0, time.monotonic() - compute_started)
-            ),
+        statistics = {
+            **grid_metadata,
+            **report_statistics,
+            "time_percentage": request.time_percentage,
+            "total_elapsed_seconds": time.monotonic() - tracker.started,
+            "request_fingerprint": fingerprint,
+            "completed_at_utc": datetime.now(UTC).isoformat(),
+        }
+        metadata_path = destination / "coverage_metadata.json"
+        metadata_path.write_text(
+            json.dumps(statistics, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
         )
-        session_cells = completed_cells - session_start_cells
-        elapsed = max(0.001, time.monotonic() - compute_started)
-        observed_rate = session_cells / elapsed if session_cells else 0.0
-        remaining = (
-            (estimate.valid_circle_cells - completed_cells) / observed_rate
-            if observed_rate > 0.0
-            else estimate.estimated_seconds_high
-        )
-        overall = 10.0 + 80.0 * min(
-            1.0,
-            completed_cells / estimate.valid_circle_cells,
-        )
+
+        final_loss_path = destination / "coverage_loss_db.npy"
+        loss_grid.flush()
+        _close_memmap(loss_grid)
+        _copy_completed_grid(checkpoint.loss, final_loss_path)
+        cache_metadata = {
+            "schema_version": 1,
+            "fingerprint": propagation_fingerprint(request),
+            "sha256": _file_sha256(final_loss_path),
+            "source_terrain_profile_points": grid_metadata["source_terrain_profile_points"],
+            "calculated_cells": completed_cells,
+        }
+        temporary = destination / "coverage_propagation.tmp"
+        temporary.write_text(json.dumps(cache_metadata, indent=2) + "\n", encoding="utf-8")
+        os.replace(temporary, destination / "coverage_propagation.json")
+        _close_memmap(grid)
+        _close_memmap(completed)
+        _close_memmap(block_statistics)
+        # Windows can retain a file lock briefly after the memory map is closed.
+        # Do not promote the checkpoint with os.replace(): copying keeps the
+        # completed result independent of that transient lock.
+        gc.collect()
+        final_grid_path = destination / "coverage_margin_db.npy"
+        _copy_completed_grid(checkpoint.grid, final_grid_path)
+        _remove_completed_checkpoint(checkpoint)
         tracker.emit(
-            overall,
-            "cells",
-            f"{overall:.0f}% — Calculando células: "
-            f"{completed_cells:,} de {estimate.valid_circle_cells:,} • "
-            f"restante {format_duration(remaining)}",
+            100.0,
+            "complete",
+            "100% — Cobertura concluída: grade direta, heatmap e contornos gerados.",
             completed=completed_cells,
             total=estimate.valid_circle_cells,
-            remaining_seconds=remaining,
+            remaining_seconds=0.0,
         )
-    if workers == 1:
-        local_cancel = external_cancel
-        _initialize_grid_worker(configuration, local_cancel)
-        for spec in ordered_pending:
-            if external_cancel.is_set():
-                break
-            accept_result(_evaluate_grid_block(spec))
-    elif ordered_pending:
-        _run_parallel_blocks(
-            ordered_pending,
-            configuration,
-            workers,
-            external_cancel,
-            accept_result,
-        )
-
-    if external_cancel.is_set():
-        _record_performance(
-            workers=workers,
-            cells=completed_cells - session_start_cells,
-            profile_points=session_profile_points,
-            elapsed_seconds=max(
-                time.monotonic() - compute_started,
-                0.001,
-            ),
-        )
-        _raise_cancelled(
-            completed_cells,
-            estimate.valid_circle_cells,
-            checkpoint,
-        )
-    if completed_cells != estimate.valid_circle_cells:
-        raise RuntimeError(
-            "A grade terminou incompleta: "
-            f"{completed_cells:,} de {estimate.valid_circle_cells:,} células."
-        )
-
-    session_compute_seconds = time.monotonic() - compute_started
-    compute_seconds = previous_compute_seconds + session_compute_seconds
-    all_profile_points = int(np.sum(block_statistics[completed, 1]))
-    p1812_cells = int(np.sum(block_statistics[completed, 2]))
-    short_range_cells = int(np.sum(block_statistics[completed, 3]))
-    failed_cells = int(np.sum(block_statistics[completed, 4]))
-    worker_compute_seconds = float(
-        np.sum(block_statistics[completed, 5])
-    ) / 1000.0
-    _record_performance(
-        workers=workers,
-        cells=completed_cells - session_start_cells,
-        profile_points=session_profile_points,
-        elapsed_seconds=max(session_compute_seconds, 0.001),
-    )
-    grid_metadata = {
-        "engine": "direct_metric_grid",
-        "engine_version": DIRECT_GRID_ENGINE_VERSION,
-        "model": "ITU-R P.1812-8",
-        "model_version": _p1812_version(),
-        "projection": GRID_PROJECTION,
-        "radius_km": request.radius_km,
-        "resolution_m": request.resolution_m,
-        "terrain_profile_step_m": request.terrain_step_m,
-        "grid_width": estimate.grid_width,
-        "grid_height": estimate.grid_height,
-        "square_grid_cells": estimate.grid_width * estimate.grid_height,
-        "valid_circle_cells": estimate.valid_circle_cells,
-        "calculated_cells": completed_cells,
-        "p1812_cells": p1812_cells,
-        "short_range_free_space_cells": short_range_cells,
-        "failed_cells": failed_cells,
-        "terrain_profile_points": all_profile_points,
-        "propagation_interpolated_cells": 0,
-        "worker_count": workers,
-        "block_size": GRID_BLOCK_SIZE,
-        "compute_seconds": compute_seconds,
-        "session_compute_seconds": session_compute_seconds,
-        "worker_compute_seconds": worker_compute_seconds,
-        "resumed": resumed,
-        "resume_count": resume_count,
-        "terrain_source": "Copernicus GLO-30",
-        "terrain_zone_assumption": "all_inland_land",
-        "clutter_included": False,
-    }
-
-    tracker.emit(
-        91.0,
-        "render",
-        "91% — Montando o raster calculado e os produtos cartográficos…",
-        completed=completed_cells,
-        total=estimate.valid_circle_cells,
-    )
-    if external_cancel.is_set():
-        _raise_cancelled(completed_cells, estimate.valid_circle_cells, checkpoint)
-
-    from .coverage_report import write_coverage_outputs
-
-    render_messages = 0
-
-    def render_progress(message: str) -> None:
-        nonlocal render_messages
-        render_messages += 1
-        percent = min(98.5, 91.0 + render_messages * 1.5)
-        tracker.emit(percent, "render", f"{percent:.0f}% — {message}")
-
-    try:
-        report_paths, report_statistics = write_coverage_outputs(
+        paths = {
+            "project_json": project_path,
+            "margin_grid": final_grid_path,
+            "loss_grid": final_loss_path,
+            "metadata": metadata_path,
+            **report_paths,
+        }
+        return CoverageOutcome(
             request=request,
-            grid=grid,
-            grid_metadata=grid_metadata,
-            output_directory=destination,
-            progress=render_progress,
-            cancel_check=external_cancel.is_set,
+            radials=(),
+            paths=paths,
+            statistics=statistics,
         )
-    except InterruptedError:
-        _raise_cancelled(
-            completed_cells,
-            estimate.valid_circle_cells,
-            checkpoint,
-        )
-    if external_cancel.is_set():
-        _raise_cancelled(completed_cells, estimate.valid_circle_cells, checkpoint)
-
-    project_path = destination / "coverage_project.json"
-    project_path.write_text(
-        json.dumps(
-            {
-                **_request_payload(request, include_output_directory=True),
-                "model": "ITU-R P.1812-8",
-                "engine": "direct_metric_grid",
-                "contour_levels_db": list(CONTOUR_LEVELS_DB),
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    statistics = {
-        **grid_metadata,
-        **report_statistics,
-        "time_percentage": request.time_percentage,
-        "total_elapsed_seconds": time.monotonic() - tracker.started,
-        "request_fingerprint": fingerprint,
-        "completed_at_utc": datetime.now(UTC).isoformat(),
-    }
-    metadata_path = destination / "coverage_metadata.json"
-    metadata_path.write_text(
-        json.dumps(statistics, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-
-    _close_memmap(grid)
-    _close_memmap(completed)
-    _close_memmap(block_statistics)
-    # Windows can retain a file lock briefly after the memory map is closed.
-    # Do not promote the checkpoint with os.replace(): copying keeps the
-    # completed result independent of that transient lock.
-    del grid, completed, block_statistics
-    gc.collect()
-    final_grid_path = destination / "coverage_margin_db.npy"
-    _copy_completed_grid(checkpoint.grid, final_grid_path)
-    _remove_completed_checkpoint(checkpoint)
-    tracker.emit(
-        100.0,
-        "complete",
-        "100% — Cobertura concluída: grade direta, heatmap e contornos gerados.",
-        completed=completed_cells,
-        total=estimate.valid_circle_cells,
-        remaining_seconds=0.0,
-    )
-    paths = {
-        "project_json": project_path,
-        "margin_grid": final_grid_path,
-        "metadata": metadata_path,
-        **report_paths,
-    }
-    return CoverageOutcome(
-        request=request,
-        radials=(),
-        paths=paths,
-        statistics=statistics,
-    )
+    finally:
+        for array in (grid, loss_grid, completed, block_statistics):
+            _close_memmap(array)
+        if workers == 1 and _WORKER_TERRAIN is not None:
+            _WORKER_TERRAIN.close()
 
 
 def _run_parallel_blocks(
@@ -829,10 +981,13 @@ def _initialize_grid_worker(
     configuration: _WorkerConfiguration,
     cancel_event: Any,
 ) -> None:
-    global _WORKER_CONFIGURATION, _WORKER_P1812, _WORKER_CANCEL_EVENT
+    global _WORKER_CONFIGURATION, _WORKER_P1812, _WORKER_CANCEL_EVENT, _WORKER_TERRAIN
     _WORKER_CONFIGURATION = configuration
     _WORKER_CANCEL_EVENT = cancel_event
-    _WORKER_P1812 = load_digital_product_module(P1812_PRODUCT, "P1812")
+    _WORKER_P1812 = optimize_p1812(load_digital_product_module(P1812_PRODUCT, "P1812"))
+    if _WORKER_TERRAIN is not None:
+        _WORKER_TERRAIN.close()
+    _WORKER_TERRAIN = PreparedTerrainSampler(configuration.terrain_tiles) if configuration.terrain_tiles else None
 
 
 def _evaluate_grid_block(spec: GridBlockSpec) -> GridBlockResult:
@@ -843,6 +998,7 @@ def _evaluate_grid_block(spec: GridBlockSpec) -> GridBlockResult:
     rows = spec.row_stop - spec.row_start
     columns = spec.column_stop - spec.column_start
     values = np.full((rows, columns), np.nan, dtype=np.float32)
+    losses = np.full((rows, columns), np.nan, dtype=np.float64)
     calculated = 0
     profile_points = 0
     p1812_cells = 0
@@ -884,21 +1040,24 @@ def _evaluate_grid_block(spec: GridBlockSpec) -> GridBlockResult:
                         distance_m,
                         configuration.resolution_m / 2.0,
                     )
-                    values[local_row, local_column] = _free_space_margin(
+                    loss = _free_space_loss(
                         configuration,
                         effective_distance,
                     )
+                    losses[local_row, local_column] = loss
+                    values[local_row, local_column] = _margin_from_loss(configuration, loss)
                     short_range_cells += 1
                     continue
                 bearing_deg = (
                     math.degrees(math.atan2(east_m, north_m)) + 360.0
                 ) % 360.0
-                margin, count = _p1812_cell_margin(
+                loss, count = _p1812_cell_loss(
                     configuration,
                     bearing_deg,
                     distance_m,
                 )
-                values[local_row, local_column] = margin
+                losses[local_row, local_column] = loss
+                values[local_row, local_column] = _margin_from_loss(configuration, loss)
                 profile_points += count
                 p1812_cells += 1
             except Exception as exc:
@@ -920,10 +1079,11 @@ def _evaluate_grid_block(spec: GridBlockSpec) -> GridBlockResult:
         failed_cells=failures,
         elapsed_seconds=time.monotonic() - started,
         errors=tuple(errors),
+        loss_db=losses,
     )
 
 
-def _p1812_cell_margin(
+def _p1812_cell_loss(
     configuration: _WorkerConfiguration,
     bearing_deg: float,
     distance_m: float,
@@ -936,18 +1096,33 @@ def _p1812_cell_margin(
         bearing_deg,
         distances_m,
     )
-    elevations = sample_elevations(latitudes, longitudes, progress=None)
-    margin = _p1812_margin_for_profile(
+    elevations = (
+        _WORKER_TERRAIN.sample(latitudes, longitudes)
+        if _WORKER_TERRAIN is not None
+        else sample_elevations(latitudes, longitudes, progress=None)
+    )
+    loss = _p1812_loss_for_profile(
         configuration,
         distances_m,
         latitudes,
         longitudes,
         elevations,
     )
-    return margin, count
+    return loss, count
 
 
 def _p1812_margin_for_profile(
+    configuration: _WorkerConfiguration,
+    distances_m: np.ndarray,
+    latitudes: np.ndarray,
+    longitudes: np.ndarray,
+    elevations: np.ndarray,
+) -> float:
+    loss = _p1812_loss_for_profile(configuration, distances_m, latitudes, longitudes, elevations)
+    return _margin_from_loss(configuration, loss)
+
+
+def _p1812_loss_for_profile(
     configuration: _WorkerConfiguration,
     distances_m: np.ndarray,
     latitudes: np.ndarray,
@@ -970,10 +1145,9 @@ def _p1812_margin_for_profile(
         configuration.longitude_deg,
         float(longitudes[-1]),
     )
-    margin = _margin_from_loss(configuration, float(loss))
-    if not math.isfinite(margin):
-        raise ValueError("P.1812 returned a non-finite margin")
-    return margin
+    if not math.isfinite(float(loss)):
+        raise ValueError("P.1812 returned a non-finite loss")
+    return float(loss)
 
 
 def smoke_test_direct_grid_worker() -> float:
@@ -1057,13 +1231,20 @@ def _free_space_margin(
     configuration: _WorkerConfiguration,
     distance_m: float,
 ) -> float:
+    return _margin_from_loss(configuration, _free_space_loss(configuration, distance_m))
+
+
+def _free_space_loss(
+    configuration: _WorkerConfiguration,
+    distance_m: float,
+) -> float:
     distance_km = max(distance_m / 1000.0, 1e-6)
     loss_db = (
         32.447783
         + 20.0 * math.log10(configuration.frequency_mhz)
         + 20.0 * math.log10(distance_km)
     )
-    return _margin_from_loss(configuration, loss_db)
+    return loss_db
 
 
 def _margin_from_loss(
@@ -1183,6 +1364,7 @@ def _checkpoint_paths(
         directory=directory,
         metadata=directory / "checkpoint.json",
         grid=directory / "coverage_margin_db.npy",
+        loss=directory / "coverage_loss_db.npy",
         completed=directory / "completed_blocks.npy",
         block_statistics=directory / "block_statistics.npy",
     )
@@ -1193,7 +1375,7 @@ def _open_checkpoint(
     fingerprint: str,
     blocks: tuple[GridBlockSpec, ...],
     paths: _CheckpointPaths,
-) -> tuple[np.memmap, np.memmap, np.memmap, bool]:
+) -> tuple[np.memmap, np.memmap, np.memmap, np.memmap, bool]:
     dimension = coverage_grid_dimension(request.radius_km, request.resolution_m)
     resumed = paths.metadata.is_file()
     paths.directory.mkdir(parents=True, exist_ok=True)
@@ -1203,19 +1385,20 @@ def _open_checkpoint(
             raise RuntimeError("O checkpoint não corresponde a esta cobertura.")
         try:
             grid = np.load(paths.grid, mmap_mode="r+")
+            loss = np.load(paths.loss, mmap_mode="r+")
             completed = np.load(paths.completed, mmap_mode="r+")
             statistics = np.load(paths.block_statistics, mmap_mode="r+")
         except Exception as exc:
             raise RuntimeError(
                 f"O checkpoint de cobertura está danificado: {paths.directory}"
             ) from exc
-        if grid.shape != (dimension, dimension):
+        if grid.shape != (dimension, dimension) or loss.shape != grid.shape or loss.dtype != np.float64:
             raise RuntimeError("A grade do checkpoint possui dimensões inválidas.")
         if completed.shape != (len(blocks),):
             raise RuntimeError("O estado de blocos do checkpoint é inválido.")
         if statistics.shape != (len(blocks), 6):
             raise RuntimeError("As estatísticas do checkpoint são inválidas.")
-        return grid, completed, statistics, True
+        return grid, loss, completed, statistics, True
 
     grid = np.lib.format.open_memmap(
         paths.grid,
@@ -1226,6 +1409,11 @@ def _open_checkpoint(
     for row_start in range(0, dimension, 256):
         grid[row_start : row_start + 256] = np.nan
     grid.flush()
+    loss = np.lib.format.open_memmap(
+        paths.loss, mode="w+", dtype=np.float64, shape=(dimension, dimension),
+    )
+    loss[:] = np.nan
+    loss.flush()
     completed = np.lib.format.open_memmap(
         paths.completed,
         mode="w+",
@@ -1251,7 +1439,7 @@ def _open_checkpoint(
         resumed_runs=0,
         accumulated_compute_seconds=0.0,
     )
-    return grid, completed, statistics, False
+    return grid, loss, completed, statistics, False
 
 
 def _update_checkpoint_metadata(
@@ -1293,6 +1481,7 @@ def _remove_completed_checkpoint(paths: _CheckpointPaths) -> None:
     for path in (
         paths.metadata,
         paths.grid,
+        paths.loss,
         paths.completed,
         paths.block_statistics,
     ):
@@ -1339,9 +1528,9 @@ def _resumable_cell_count(request: CoverageRequest) -> int:
 
 
 def _close_memmap(array: np.memmap) -> None:
-    array.flush()
     mapped = getattr(array, "_mmap", None)
-    if mapped is not None:
+    if mapped is not None and not mapped.closed:
+        array.flush()
         mapped.close()
 
 
@@ -1432,6 +1621,8 @@ def _machine_key(workers: int) -> str:
         (
             platform.system(),
             platform.machine(),
+            DIRECT_GRID_ENGINE_VERSION,
+            OPTIMIZATION_VERSION,
             str(os.cpu_count() or 0),
             str(workers),
         )
@@ -1498,3 +1689,4 @@ def _record_performance(
         os.replace(temporary, path)
     except OSError:
         return
+
