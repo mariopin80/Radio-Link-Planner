@@ -1,4 +1,4 @@
-# Radio Link Planner 0.4.2
+# Radio Link Planner 0.4.3
 
 Protótipo científico local para análise de enlaces terrestres de
 radioamadorismo em VHF e UHF. O programa analisa enlaces ponto a ponto e
@@ -84,8 +84,20 @@ PYTHONPATH=src python -m radiolink analyze \
 
 O workflow **Windows release** produz dois formatos:
 
-- `RadioLinkPlanner-0.4.2-Windows-x64-Setup.exe`: instalador recomendado;
-- `RadioLinkPlanner-0.4.2-Windows-x64.zip`: pacote portátil para testes.
+- `RadioLinkPlanner-0.4.3-Windows-x64-Setup.exe`: instalador recomendado;
+- `RadioLinkPlanner-0.4.3-Windows-x64.zip`: pacote portátil para testes.
+
+A versão 0.4.3 associa explicitamente o ícone aprovado aos atalhos do menu
+Iniciar e da área de trabalho. O ícone fica em um arquivo próprio, com nome
+por versão, para não reutilizar a referência antiga durante a atualização.
+
+A previsão de duração considera o motor otimizado e o histórico compatível
+da versão 0.4.2. A interface distingue uma estimativa inicial aproximada de
+uma previsão pelo histórico deste computador. O intervalo se refere ao
+cálculo e à geração dos mapas; downloads pendentes de terreno são indicados
+à parte, pois dependem da conexão. Durante a execução, o tempo restante é
+atualizado pelo trabalho efetivamente processado, considerando o tamanho dos
+perfis de terreno.
 
 O instalador cria a pasta `Program Files\Radio Link Planner`, atalhos no menu
 Iniciar, um atalho opcional na área de trabalho e o desinstalador. Não é

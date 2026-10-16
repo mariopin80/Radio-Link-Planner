@@ -53,8 +53,11 @@ GRID_BLOCK_SIZE = 16
 MINIMUM_P1812_DISTANCE_M = 250.0
 MAXIMUM_WORKERS = 12
 PERFORMANCE_HISTORY_LIMIT = 12
-DEFAULT_WORK_UNITS_PER_SECOND_PER_WORKER = 55_000.0
-CELL_OVERHEAD_WORK_UNITS = 667.0
+# The optimized model has substantial fixed work per cell. A profile-point-only
+# estimate overstates the growth with distance. These portable startup values
+# are conservative relative to the measured optimized runs; local timings win.
+DEFAULT_WORK_UNITS_PER_SECOND_PER_WORKER = 2_000_000.0
+CELL_OVERHEAD_WORK_UNITS = 8_000.0
 
 
 @dataclass(frozen=True)
@@ -74,6 +77,7 @@ class CoverageEstimate:
     uncached_terrain_tile_count: int
     resumable_cells: int = 0
     reusable_propagation_cells: int = 0
+    estimation_basis: str = "default"
 
     @property
     def warning_level(self) -> str:
@@ -228,7 +232,8 @@ def estimate_coverage(
     )
     profile_points = round(p1812_cells * average_profile_points)
     work_units = profile_points + valid_cells * CELL_OVERHEAD_WORK_UNITS
-    work_rate = _historical_work_rate(workers)
+    historical_rates = _historical_work_rates(workers)
+    work_rate = float(np.median(historical_rates)) if historical_rates else _default_work_rate(workers)
     compute_seconds = work_units / max(work_rate, 1.0)
 
     codes = coverage_terrain_tile_codes(request)
@@ -238,10 +243,10 @@ def estimate_coverage(
         for code in codes
         if not _valid_cached_tile(cache / f"{code}.tif") and not (cache / f"{code}.sea").is_file()
     )
-    download_low = uncached * 12.0
-    download_high = uncached * 60.0
-    fixed_seconds = 20.0
+    # Before a download there is no measured bandwidth. Report missing tiles
+    # separately instead of inventing a fixed number of seconds for each one.
     square_cells = dimension * dimension
+    fixed_seconds = 3.0 + square_cells / 150_000.0
     maximum_profile_points = (
         request.radius_km * 1000.0 / request.terrain_step_m + 1.0
     )
@@ -256,12 +261,10 @@ def estimate_coverage(
     fraction_remaining = max(0.0, 1.0 - resumable / valid_cells)
     low = (
         fixed_seconds
-        + download_low
         + 0.70 * compute_seconds * fraction_remaining
     )
     high = (
         fixed_seconds
-        + download_high
         + 1.45 * compute_seconds * fraction_remaining
     )
     reusable = valid_cells if _propagation_cache_metadata(request) is not None else 0
@@ -284,6 +287,7 @@ def estimate_coverage(
         uncached_terrain_tile_count=uncached,
         resumable_cells=resumable,
         reusable_propagation_cells=reusable,
+        estimation_basis="reused" if reusable else ("history" if historical_rates else "default"),
     )
 
 
@@ -640,6 +644,7 @@ def run_direct_grid_coverage(
         compute_started = time.monotonic()
         session_start_cells = completed_cells
         session_start_p1812_cells = int(np.sum(block_statistics[completed, 2]))
+        session_start_profile_points = int(np.sum(block_statistics[completed, 1]))
         session_profile_points = 0
         configuration = replace(_worker_configuration(request, estimate.grid_width), terrain_tiles=tuple(terrain_tiles))
         # Keep neighbouring endpoints close in the queue so each worker can reuse
@@ -697,11 +702,15 @@ def run_direct_grid_coverage(
             )
             session_cells = completed_cells - session_start_cells
             elapsed = max(0.001, time.monotonic() - compute_started)
-            observed_rate = session_cells / elapsed if session_cells else 0.0
-            remaining = (
-                (estimate.valid_circle_cells - completed_cells) / observed_rate
-                if observed_rate > 0.0
-                else estimate.estimated_seconds_high
+            remaining = _remaining_compute_seconds(
+                total_cells=estimate.valid_circle_cells,
+                total_profile_points=estimate.estimated_profile_points,
+                completed_cells=completed_cells,
+                completed_profile_points=session_start_profile_points + session_profile_points,
+                session_cells=session_cells,
+                session_profile_points=session_profile_points,
+                elapsed_seconds=elapsed,
+                fallback_seconds=estimate.estimated_seconds_high,
             )
             overall = 10.0 + 80.0 * min(
                 1.0,
@@ -1629,25 +1638,72 @@ def _machine_key(workers: int) -> str:
     )
 
 
-def _historical_work_rate(workers: int) -> float:
-    default = (
-        DEFAULT_WORK_UNITS_PER_SECOND_PER_WORKER
-        * max(1.0, workers * 0.75)
-    )
-    path = _performance_history_path()
+def _effective_workers(workers: int) -> float:
+    return max(1.0, workers * 0.75)
+
+
+def _default_work_rate(workers: int) -> float:
+    return DEFAULT_WORK_UNITS_PER_SECOND_PER_WORKER * _effective_workers(workers)
+
+
+def _historical_work_rates(workers: int) -> list[float]:
+    """Recompute rates from raw counts, retaining compatible 0.4.2 history.
+
+    Stored rates used the previous per-cell weight. Reusing those numbers
+    with the new weights would silently break calibration. Normalizing other
+    worker counts is only a fallback when the requested count has no samples.
+    """
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        values = [
-            float(item["work_units_per_second"])
-            for item in payload.get("runs", [])
-            if item.get("machine_key") == _machine_key(workers)
-            and float(item.get("work_units_per_second", 0.0)) > 0.0
-        ]
-    except (OSError, ValueError, TypeError, json.JSONDecodeError):
-        return default
-    if not values:
-        return default
-    return float(np.median(np.asarray(values[-5:], dtype=float)))
+        payload = json.loads(_performance_history_path().read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            return []
+        runs = payload.get("runs", [])
+        if not isinstance(runs, list):
+            return []
+    except (OSError, ValueError, TypeError):
+        return []
+    exact: list[float] = []
+    scaled: list[float] = []
+    for item in runs:
+        try:
+            count = int(item["workers"])
+            if count < 1 or item.get("machine_key") != _machine_key(count):
+                continue
+            cells = int(item["cells"])
+            points = int(item["profile_points"])
+            elapsed = float(item["elapsed_seconds"])
+            # Very short cancellations/startup-only runs are too noisy.
+            if cells < 128 or points <= 0 or not math.isfinite(elapsed) or elapsed < 0.25:
+                continue
+            rate = (points + cells * CELL_OVERHEAD_WORK_UNITS) / elapsed
+            if not math.isfinite(rate) or rate <= 0:
+                continue
+            if count == workers:
+                exact.append(rate)
+            else:
+                scaled.append(rate / _effective_workers(count) * _effective_workers(workers))
+        except (KeyError, TypeError, ValueError, OverflowError):
+            continue
+    return (exact or scaled)[-5:]
+
+
+def _historical_work_rate(workers: int) -> float:
+    rates = _historical_work_rates(workers)
+    return float(np.median(rates)) if rates else _default_work_rate(workers)
+
+
+def _remaining_compute_seconds(
+    *, total_cells: int, total_profile_points: int, completed_cells: int,
+    completed_profile_points: int, session_cells: int,
+    session_profile_points: int, elapsed_seconds: float, fallback_seconds: float,
+) -> float:
+    if completed_cells >= total_cells:
+        return 0.0
+    if session_cells <= 0 or elapsed_seconds <= 0:
+        return fallback_seconds
+    completed_work = session_profile_points + session_cells * CELL_OVERHEAD_WORK_UNITS
+    remaining_work = max(0, total_profile_points-completed_profile_points) + (total_cells-completed_cells)*CELL_OVERHEAD_WORK_UNITS
+    return elapsed_seconds * remaining_work / completed_work
 
 
 def _record_performance(
@@ -1665,7 +1721,10 @@ def _record_performance(
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         payload = {"schema_version": 1, "runs": []}
-    runs = list(payload.get("runs", []))
+    if not isinstance(payload, dict):
+        payload = {"schema_version": 1, "runs": []}
+    previous = payload.get("runs", [])
+    runs = list(previous) if isinstance(previous, list) else []
     work_units = profile_points + cells * CELL_OVERHEAD_WORK_UNITS
     runs.append(
         {
@@ -1675,6 +1734,7 @@ def _record_performance(
             "profile_points": profile_points,
             "elapsed_seconds": elapsed_seconds,
             "work_units_per_second": work_units / elapsed_seconds,
+            "cell_overhead_work_units": CELL_OVERHEAD_WORK_UNITS,
             "recorded_at_utc": datetime.now(UTC).isoformat(),
         }
     )

@@ -1414,18 +1414,21 @@ class RadioLinkPlannerApp:
         )
         terrain = (
             f" • {estimate.uncached_terrain_tile_count} bloco(s) de terreno "
-            "a baixar"
+            "a baixar (tempo de download à parte)"
             if estimate.uncached_terrain_tile_count
             else " • terreno já disponível em cache"
         )
+        basis = "pelo histórico deste computador" if estimate.estimation_basis == "history" else "aproximada, sem histórico local"
+        if estimate.estimation_basis == "reused":
+            basis = "com perda reaproveitada"
         self.coverage_resolution_var.set(
             f"Célula: {estimate.resolution_m} m • grade "
             f"{estimate.grid_width:,} × {estimate.grid_height:,} • "
-            f"{estimate.valid_circle_cells:,} cálculos • previsão inicial "
+            f"{estimate.valid_circle_cells:,} células • cálculo e mapas "
             f"{format_duration(estimate.estimated_seconds_low)}–"
             f"{format_duration(estimate.estimated_seconds_high)} • "
             f"memória ~{estimate.estimated_memory_mb:,.0f} MB"
-            f"{terrain}{resume}."
+            f" • previsão {basis}{terrain}{resume}."
         )
 
     def _coverage_mode_changed(self, _: tk.Event[tk.Misc]) -> None:
@@ -1975,7 +1978,9 @@ class RadioLinkPlannerApp:
         if not needs_confirmation:
             return True
         severity = (
-            "Esta combinação pode levar várias horas."
+            "A configuração usará uma parcela elevada da memória disponível."
+            if estimate.warning_level == "normal"
+            else "A previsão de cálculo ultrapassa 30 minutos."
             if estimate.warning_level == "red"
             else "Esta combinação pode levar mais de 10 minutos."
         )
@@ -1985,6 +1990,14 @@ class RadioLinkPlannerApp:
             if estimate.resumable_cells
             else ""
         )
+        download_text = (
+            f"\nDownload adicional: {estimate.uncached_terrain_tile_count} bloco(s) "
+            "de terreno; o tempo depende da conexão."
+            if estimate.uncached_terrain_tile_count else ""
+        )
+        basis = "histórico deste computador" if estimate.estimation_basis == "history" else "estimativa inicial aproximada"
+        if estimate.estimation_basis == "reused":
+            basis = "perda de propagação reaproveitada"
         return bool(
             messagebox.askyesno(
                 APP_NAME,
@@ -1992,12 +2005,13 @@ class RadioLinkPlannerApp:
                 f"Grade: {estimate.grid_width:,} × "
                 f"{estimate.grid_height:,}\n"
                 f"Células: {estimate.valid_circle_cells:,}\n"
-                f"Tempo previsto: "
+                f"Cálculo e geração dos mapas ({basis}): "
                 f"{format_duration(estimate.estimated_seconds_low)}–"
                 f"{format_duration(estimate.estimated_seconds_high)}\n"
                 f"Memória prevista: "
                 f"~{estimate.estimated_memory_mb:,.0f} MB\n"
                 f"Processos de cálculo: {estimate.worker_count}"
+                f"{download_text}"
                 f"{resume_text}\n\nDeseja iniciar?",
                 icon="warning",
             )

@@ -144,7 +144,7 @@ jobs:
         run: |
           Compress-Archive `
             -Path "dist\RadioLinkPlanner\*" `
-            -DestinationPath "RadioLinkPlanner-0.4.2-Windows-x64.zip"
+            -DestinationPath "RadioLinkPlanner-0.4.3-Windows-x64.zip"
 
       - name: Install Inno Setup 6
         shell: pwsh
@@ -181,13 +181,29 @@ jobs:
             exit $LASTEXITCODE
           }
 
-      - name: Smoke-test installed application
+      - name: Smoke-test upgrade, shortcuts and installed application
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $installer = Resolve-Path `
-            "installer-output\RadioLinkPlanner-0.4.2-Windows-x64-Setup.exe"
+            "installer-output\RadioLinkPlanner-0.4.3-Windows-x64-Setup.exe"
           $installDirectory = Join-Path $env:RUNNER_TEMP "RadioLinkPlanner"
           $smokeOutput = Join-Path $env:RUNNER_TEMP "rlp-installer-smoke"
+          $previousDirectory = Join-Path $env:RUNNER_TEMP "rlp-previous-installer"
+          gh release download "v0.4.2" `
+            --repo "$env:GITHUB_REPOSITORY" `
+            --pattern "RadioLinkPlanner-0.4.2-Windows-x64-Setup.exe" `
+            --dir $previousDirectory
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $previousSetup = Start-Process `
+            -FilePath (Join-Path $previousDirectory "RadioLinkPlanner-0.4.2-Windows-x64-Setup.exe") `
+            -ArgumentList @(
+              "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-",
+              "/TASKS=desktopicon", "/DIR=$installDirectory"
+            ) `
+            -Wait -PassThru
+          if ($previousSetup.ExitCode -ne 0) { exit $previousSetup.ExitCode }
           $setup = Start-Process `
             -FilePath $installer `
             -ArgumentList @(
@@ -195,6 +211,7 @@ jobs:
               "/SUPPRESSMSGBOXES",
               "/NORESTART",
               "/SP-",
+              "/TASKS=desktopicon",
               "/DIR=$installDirectory"
             ) `
             -Wait `
@@ -202,6 +219,8 @@ jobs:
           if ($setup.ExitCode -ne 0) {
             exit $setup.ExitCode
           }
+          & "scripts\verify_windows_shortcuts.ps1" `
+            -InstallDirectory $installDirectory -Version "0.4.3"
           $process = Start-Process `
             -FilePath "$installDirectory\RadioLinkPlanner.exe" `
             -ArgumentList "--smoke-test", $smokeOutput `
@@ -254,8 +273,8 @@ jobs:
         shell: pwsh
         run: |
           $files = @(
-            "RadioLinkPlanner-0.4.2-Windows-x64.zip",
-            "installer-output\RadioLinkPlanner-0.4.2-Windows-x64-Setup.exe"
+            "RadioLinkPlanner-0.4.3-Windows-x64.zip",
+            "installer-output\RadioLinkPlanner-0.4.3-Windows-x64-Setup.exe"
           )
           $lines = foreach ($file in $files) {
             $hash = Get-FileHash -Algorithm SHA256 $file
@@ -268,37 +287,37 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v0.4.2"
+          $tag = "v0.4.3"
           gh release view `
             $tag `
             --repo "$env:GITHUB_REPOSITORY" *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload `
               $tag `
-              "RadioLinkPlanner-0.4.2-Windows-x64.zip" `
-              "installer-output\RadioLinkPlanner-0.4.2-Windows-x64-Setup.exe" `
+              "RadioLinkPlanner-0.4.3-Windows-x64.zip" `
+              "installer-output\RadioLinkPlanner-0.4.3-Windows-x64-Setup.exe" `
               "SHA256SUMS.txt" `
               --clobber `
               --repo "$env:GITHUB_REPOSITORY"
           } else {
             gh release create `
               $tag `
-              "RadioLinkPlanner-0.4.2-Windows-x64.zip" `
-              "installer-output\RadioLinkPlanner-0.4.2-Windows-x64-Setup.exe" `
+              "RadioLinkPlanner-0.4.3-Windows-x64.zip" `
+              "installer-output\RadioLinkPlanner-0.4.3-Windows-x64-Setup.exe" `
               "SHA256SUMS.txt" `
               --target "$env:GITHUB_SHA" `
-              --title "Radio Link Planner 0.4.2" `
-              --notes-file "docs/release-0.4.2.md" `
+              --title "Radio Link Planner 0.4.3" `
+              --notes-file "docs/release-0.4.3.md" `
               --latest `
               --repo "$env:GITHUB_REPOSITORY"
           }
 
       - uses: actions/upload-artifact@v4
         with:
-          name: RadioLinkPlanner-0.4.2-Windows-x64
+          name: RadioLinkPlanner-0.4.3-Windows-x64
           path: |
-            RadioLinkPlanner-0.4.2-Windows-x64.zip
-            installer-output/RadioLinkPlanner-0.4.2-Windows-x64-Setup.exe
+            RadioLinkPlanner-0.4.3-Windows-x64.zip
+            installer-output/RadioLinkPlanner-0.4.3-Windows-x64-Setup.exe
             SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
