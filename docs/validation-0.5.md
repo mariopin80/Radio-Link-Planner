@@ -2,7 +2,7 @@
 
 ## Execução local
 
-- 80 testes automatizados, incluindo as referências ITM, P.1812 e P.2001, executados com os componentes científicos instalados.
+- 81 testes automatizados, incluindo as referências ITM, P.1812 e P.2001, executados com os componentes científicos instalados.
 - Interface exercitada nos cinco idiomas: seletores, polarização, resolução, projetos novos e antigos, aba Sobre e tempo restante em um único local.
 - Cinco análises completas do enlace de referência (500 execuções Monte Carlo por modelo), com HTML, PDF, perfil e gráficos. Resultados científicos idênticos entre os idiomas, desconsiderando apenas a data e o hash de cada execução.
 - Grade de 81 células com GeoTIFFs sintéticos controlados, processamento em dois processos, geração de produtos e reutilização das perdas para emitir os relatórios em cinco idiomas. Todas as grades idênticas.

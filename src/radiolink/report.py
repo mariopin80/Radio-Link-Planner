@@ -467,7 +467,7 @@ def build_html_report(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <title>{html.escape(tr('{x0} — Radio Link Planner', x0=html.escape(project.name)))}</title>
+  <title>{html.escape(tr('{x0} — Radio Link Planner', x0=project.name))}</title>
   <link rel="stylesheet" href="{html.escape(map_css, quote=True)}">
   <style>
     :root {{ --ink:#17191d; --muted:#60646c; --line:#d7dae0;
@@ -506,7 +506,7 @@ def build_html_report(
 </head>
 <body>
   <header>
-    <div class="version">{html.escape(tr('Radio Link Planner {x0}', x0=html.escape(result['engine_version'])))}</div>
+    <div class="version">{html.escape(tr('Radio Link Planner {x0}', x0=result['engine_version']))}</div>
     <h1>{html.escape(project.name)}</h1>
     <div>{html.escape(tr('{x0:.3f} MHz · análise local e rastreável', x0=project.frequency_mhz))}</div>
   </header>
@@ -517,7 +517,7 @@ def build_html_report(
     </section>
     {images}
     <article>{summary_html}</article>
-    <div class="footer">{html.escape(tr('Gerado em {x0}', x0=html.escape(result['generated_at_utc'])))}</div>
+    <div class="footer">{html.escape(tr('Gerado em {x0}', x0=result['generated_at_utc']))}</div>
   </main>
   <script src="{html.escape(map_js, quote=True)}"></script>
   <script>

@@ -411,7 +411,7 @@ def _build_coverage_report(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <title>{html.escape(tr('{x0} — Radio Link Planner', x0=html.escape(request.name)))}</title>
+  <title>{html.escape(tr('{x0} — Radio Link Planner', x0=request.name))}</title>
   <link rel="stylesheet" href="{html.escape(map_css, quote=True)}">
   <style>
     :root {{ --ink:#17191d; --muted:#60646c; --line:#d7dae0;

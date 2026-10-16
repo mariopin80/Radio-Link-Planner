@@ -19,6 +19,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: windows-validation-release
+  cancel-in-progress: true
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -292,10 +296,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "v0.5"
+          $currentHead = gh api "repos/$env:GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($currentHead -ne $env:GITHUB_SHA) {
+            Write-Host "A newer commit is being validated; skipping this release."
+            exit 0
+          }
           gh release view `
             $tag `
             --repo "$env:GITHUB_REPOSITORY" *> $null
           if ($LASTEXITCODE -eq 0) {
+            $isPrerelease = gh release view $tag --repo "$env:GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease
+            if ($isPrerelease -ne "true") { throw "Refusing to replace a stable release." }
+            gh api --method PATCH "repos/$env:GITHUB_REPOSITORY/git/refs/tags/$tag" `
+              -f "sha=$env:GITHUB_SHA" -F force=true
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            gh release edit $tag --repo "$env:GITHUB_REPOSITORY" --target "$env:GITHUB_SHA" --prerelease --latest=false
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             gh release upload `
               $tag `
               "RadioLinkPlanner-0.5-Windows-x64.zip" `

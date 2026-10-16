@@ -71,6 +71,35 @@ def test_preferences_persist_and_corrupt_files_fall_back(tmp_path):
         assert load_language(path) == "pt"
 
 
+def test_translated_html_preserves_user_names_and_styles(reference_project, reference_profile):
+    from html.parser import HTMLParser
+    from radiolink.engine import analyze_project
+    from radiolink.report import build_html_report
+
+    project = reference_project.model_copy(deep=True)
+    project.name = "Station A & <Station B>"
+    project.models.itm = project.models.p1812 = project.models.p2001 = False
+    result, _ = analyze_project(project, reference_profile)
+    set_language("de")
+    markup = build_html_report(project, reference_profile, result, make_plots=False)
+    class Title(HTMLParser):
+        active = False
+        text = ""
+        def handle_starttag(self, tag, attrs):
+            self.active = tag == "title"
+        def handle_endtag(self, tag):
+            if tag == "title":
+                self.active = False
+        def handle_data(self, text):
+            if self.active:
+                self.text += text
+    title = Title()
+    title.feed(markup)
+    assert title.text == project.name + " — Radio Link Planner"
+    assert "<Station B>" not in markup
+    assert "&gt;" not in markup.split("<style>")[1].split("</style>")[0]
+
+
 @pytest.mark.skipif(sys.platform != "win32" and not os.environ.get("DISPLAY"), reason="requires a display")
 def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeypatch):
     import tkinter as tk
