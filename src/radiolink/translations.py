@@ -1,6 +1,12 @@
 """English, Spanish, French and German translations of Portuguese source messages."""
 
 MESSAGES: dict[str, tuple[str, str, str, str]] = {
+    'Licenças e fontes de dados': ('Licences and data sources', 'Licencias y fuentes de datos', 'Licences et sources de données', 'Lizenzen und Datenquellen'),
+    'Terreno: Copernicus GLO-30. Mapas: OpenStreetMap. Modelos: NTIA ITM, Py1812 e Py2001.': ('Terrain: Copernicus GLO-30. Maps: OpenStreetMap. Models: NTIA ITM, Py1812 and Py2001.', 'Terreno: Copernicus GLO-30. Mapas: OpenStreetMap. Modelos: NTIA ITM, Py1812 y Py2001.', 'Relief : Copernicus GLO-30. Cartes : OpenStreetMap. Modèles : NTIA ITM, Py1812 et Py2001.', 'Gelände: Copernicus GLO-30. Karten: OpenStreetMap. Modelle: NTIA ITM, Py1812 und Py2001.'),
+    'Avisos e licenças de terceiros': ('Third-party notices and licences', 'Avisos y licencias de terceros', 'Avis et licences de tiers', 'Hinweise und Lizenzen Dritter'),
+    'Licença Copernicus': ('Copernicus licence', 'Licencia Copernicus', 'Licence Copernicus', 'Copernicus-Lizenz'),
+    'Créditos OpenStreetMap': ('OpenStreetMap credits', 'Créditos de OpenStreetMap', 'Crédits OpenStreetMap', 'OpenStreetMap-Nachweise'),
+    'Arquivo de licenças não encontrado.': ('Licence notice file not found.', 'No se encontró el archivo de licencias.', 'Fichier des licences introuvable.', 'Lizenzhinweise nicht gefunden.'),
     'Autor': ('Author', 'Autor', 'Auteur', 'Autor'),
     'Avalie o enlace entre duas estações.': ('Assess a link between two stations.', 'Evalúe el enlace entre dos estaciones.', 'Évaluez la liaison entre deux stations.', 'Prüfen Sie die Verbindung zweier Stationen.'),
     'Visualize o alcance da sua estação.': ('View your station’s coverage area.', 'Visualice el alcance de su estación.', 'Visualisez la portée de votre station.', 'Zeigen Sie die Reichweite Ihrer Station.'),
@@ -15,6 +21,7 @@ MESSAGES: dict[str, tuple[str, str, str, str]] = {
     ' • {x0} bloco(s) de terreno a baixar (tempo de download à parte)': (' • {x0} terrain tile(s) to download (download time excluded)', ' • {x0} bloque(s) de terreno por descargar (tiempo de descarga aparte)', ' • {x0} tuile(s) de terrain à télécharger (durée du téléchargement exclue)', ' • {x0} Geländekachel(n) herunterzuladen (Downloadzeit nicht enthalten)'),
     '## Geometria': ('## Geometry', '## Geometría', '## Géométrie', '## Geometrie'),
     '## Rastreabilidade': ('## Traceability', '## Trazabilidad', '## Traçabilité', '## Nachvollziehbarkeit'),
+    '## Fonte e licença do relevo': ('## Terrain source and licence', '## Fuente y licencia del terreno', '## Source et licence du relief', '## Geländedatenquelle und Lizenz'),
     '### Comparação coerente em {x0:.0f}%': ('### Consistent comparison at {x0:.0f}%', '### Comparación coherente al {x0:.0f}%', '### Comparaison cohérente à {x0:.0f}%', '### Vergleich bei einheitlichen {x0:.0f}%'),
     '### Incertezas declaradas': ('### Declared uncertainties', '### Incertidumbres declaradas', '### Incertitudes déclarées', '### Angegebene Unsicherheiten'),
     '### Ponto de projeto: {x0:.0f}%': ('### Design point: {x0:.0f}%', '### Punto de diseño: {x0:.0f}%', '### Point de dimensionnement : {x0:.0f}%', '### Auslegungspunkt: {x0:.0f}%'),
@@ -279,6 +286,7 @@ MESSAGES: dict[str, tuple[str, str, str, str]] = {
     'Os mesmos parâmetros receptores são aplicados a todas as células do mapa.': ('The same receiver parameters apply to every map cell.', 'Los mismos parámetros del receptor se aplican a todas las celdas del mapa.', 'Les mêmes paramètres de réception s’appliquent à toutes les cellules de la carte.', 'Für alle Kartenzellen gelten dieselben Empfängerparameter.'),
     'Os modelos permanecem separados; a divergência entre eles não é tratada como uma distribuição aleatória.': ('The models remain separate; their disagreement is not treated as a random distribution.', 'Los modelos se mantienen separados; sus diferencias no se tratan como una distribución aleatoria.', 'Les modèles restent distincts ; leurs divergences ne sont pas traitées comme une distribution aléatoire.', 'Die Modelle bleiben getrennt; ihre Abweichungen werden nicht als Zufallsverteilung behandelt.'),
     'Outubro de 2026': ('October 2026', 'Octubre de 2026', 'Octobre 2026', 'Oktober 2026'),
+    'Novembro de 2026': ('November 2026', 'Noviembre de 2026', 'Novembre 2026', 'November 2026'),
     'P1812 (condicional em p50)': ('P1812 (conditional on p50)', 'P1812 (condicionada a p50)', 'P1812 (conditionnelle à p50)', 'P1812 (bedingt auf p50)'),
     'Parecer: {x0} • confiança {x1}': ('Assessment: {x0} • confidence {x1}', 'Evaluación: {x0} • confianza {x1}', 'Avis : {x0} • confiance {x1}', 'Bewertung: {x0} • Vertrauen {x1}'),
     'Parte da cobertura ultrapassa ±80° de latitude, limite da implementação P.1812 utilizada.': ('Part of the coverage exceeds ±80° latitude, the limit of this P.1812 implementation.', 'Parte de la cobertura supera los ±80° de latitud, límite de esta implementación P.1812.', 'Une partie de la couverture dépasse ±80° de latitude, limite de cette implémentation de P.1812.', 'Ein Teil der Abdeckung überschreitet ±80° Breite, die Grenze dieser P.1812-Implementierung.'),
@@ -334,6 +342,7 @@ MESSAGES: dict[str, tuple[str, str, str, str]] = {
     'Raio: {x0} km • célula: {x1} m • perfil de terreno: {x2:g} m': ('Radius: {x0} km • cell: {x1} m • terrain profile: {x2:g} m', 'Radio: {x0} km • celda: {x1} m • perfil del terreno: {x2:g} m', 'Rayon : {x0} km • cellule : {x1} m • profil du terrain : {x2:g} m', 'Radius: {x0} km • Zelle: {x1} m • Geländeprofil: {x2:g} m'),
     'Rastreabilidade': ('Traceability', 'Trazabilidad', 'Traçabilité', 'Nachvollziehbarkeit'),
     'Rastreabilidade do cálculo': ('Calculation traceability', 'Trazabilidad del cálculo', 'Traçabilité du calcul', 'Nachvollziehbarkeit der Berechnung'),
+    'Fonte e licença do relevo': ('Terrain source and licence', 'Fuente y licencia del terreno', 'Source et licence du relief', 'Geländedatenquelle und Lizenz'),
     'Receptor de referência': ('Reference receiver', 'Receptor de referencia', 'Récepteur de référence', 'Referenzempfänger'),
     'Recomendada': ('Recommended', 'Recomendada', 'Recommandée', 'Empfohlen'),
     'Relatório de cobertura • {x0:.3f} MHz • P.1812 a {x1:g}% do tempo': ('Coverage report • {x0:.3f} MHz • P.1812 at {x1:g}% of time', 'Informe de cobertura • {x0:.3f} MHz • P.1812 al {x1:g}% del tiempo', 'Rapport de couverture • {x0:.3f} MHz • P.1812 à {x1:g}% du temps', 'Abdeckungsbericht • {x0:.3f} MHz • P.1812 für {x1:g}% der Zeit'),

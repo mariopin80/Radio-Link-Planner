@@ -91,3 +91,11 @@ Dispersão entre modelos: **10.61 dB**.
 - SHA-256 do resultado: `029328ba7d6ec068ca0b5a8e2893aeff1a35eb226db1c7662330fc31d7cd951b`
 
 Os modelos permanecem separados; a divergência entre eles não é tratada como uma distribuição aleatória.
+
+## Fonte e licença do relevo
+
+produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved
+
+The organisations in charge of the Copernicus programme by law or by delegation do not incur any liability for any use of the Copernicus WorldDEM-30.
+
+https://dataspace.copernicus.eu/explore-data/data-collections/copernicus-contributing-missions/collections-description/COP-DEM

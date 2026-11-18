@@ -4,7 +4,7 @@
 
 Ferramenta local de planejamento de **enlaces terrestres VHF/UHF ponto a ponto e cobertura**. Reúne perfis de terreno, modelos de propagação, orçamento bidirecional, análise de incertezas e relatórios técnicos rastreáveis. O repositório contém interface desktop para Windows e motor científico de linha de comando.
 
-**Autor:** Mario Pin, PU2PTU · **Aplicativo:** 0.5.1
+**Autor:** Mario Pin, PU2PTU · **Aplicativo:** 0.5.2
 
 ## O que faz
 

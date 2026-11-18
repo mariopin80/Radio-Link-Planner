@@ -15,6 +15,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from .desktop_core import bundle_root
+from .legal_notices import OSM_HTML_ATTRIBUTION
 from .report import MAPLIBRE_VERSION
 
 CoordinateCallback = Callable[[float, float], None]
@@ -232,7 +233,7 @@ def build_picker_html(
             type:"raster",
             tiles:["https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png"],
             tileSize:256,
-            attribution:"© OpenStreetMap contributors"
+            attribution:{json.dumps(OSM_HTML_ATTRIBUTION, ensure_ascii=False)}
           }}
         }},
         layers:[{{id:"osm",type:"raster",source:"osm"}}]

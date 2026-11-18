@@ -16,6 +16,13 @@ import numpy as np
 from .domain import Project
 from .geodesy import great_circle_points
 from .geometry import GeometryArrays
+from .legal_notices import (
+    COPERNICUS_GLO30_DERIVED_CREDIT,
+    COPERNICUS_GLO30_NO_LIABILITY,
+    COPERNICUS_LICENSE_URL,
+    OSM_HTML_ATTRIBUTION,
+    uses_copernicus_glo30,
+)
 from .terrain import TerrainProfile
 
 _MATPLOTLIB_CACHE = Path(tempfile.gettempdir()) / "radio-link-planner-matplotlib"
@@ -433,6 +440,19 @@ def build_markdown_summary(project: Project, result: dict[str, Any]) -> str:
             "",
         ]
     )
+    if uses_copernicus_glo30(project.terrain_source):
+        lines.extend(
+            [
+                tr('## Fonte e licença do relevo'),
+                "",
+                COPERNICUS_GLO30_DERIVED_CREDIT,
+                "",
+                COPERNICUS_GLO30_NO_LIABILITY,
+                "",
+                COPERNICUS_LICENSE_URL,
+                "",
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -532,7 +552,7 @@ def build_html_report(
             type: "raster",
             tiles: ["https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png"],
             tileSize: 256,
-            attribution: "© OpenStreetMap contributors"
+            attribution: {json.dumps(OSM_HTML_ATTRIBUTION, ensure_ascii=False)}
           }}
         }},
         layers: [{{ id: "osm", type: "raster", source: "osm" }}]

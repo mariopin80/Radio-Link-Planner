@@ -1,0 +1,69 @@
+RADIO LINK PLANNER — THIRD-PARTY COMPONENTS AND DATA
+Working inventory for the next release; revision 2026-11-18.
+
+This notice identifies known third-party components and points to their
+licences. It is NOT YET a complete inventory of transitive Python/native
+dependencies. Complete the release-package audit before commercial launch.
+
+1. NTIA ITS Irregular Terrain Model (ITM), upstream NTIA/itm.
+   https://github.com/NTIA/itm
+   Licence and modification history are distributed alongside this file as
+   LICENSE.md and NOTICE.md. NTIA does not endorse Radio Link Planner.
+
+2. Py1812, by Ivica Stevanovic (eeveetza), pinned upstream implementation.
+   https://github.com/eeveetza/Py1812
+   See Py1812-NOTICE.txt for the author's permissions and the documented
+   changes to selected adapted numerical routines.
+
+3. Py2001, by Ivica Stevanovic (eeveetza), pinned upstream implementation.
+   https://github.com/eeveetza/Py2001
+   See Py2001-NOTICE.txt for the upstream permission and acknowledgement.
+
+4. MapLibre GL JS 5.24.0, BSD 3-Clause and embedded-component notices.
+   https://github.com/maplibre/maplibre-gl-js
+   Its full upstream LICENSE.txt accompanies the included map assets.
+
+5. Copernicus WorldDEM-30 (GLO-30) digital elevation data.
+   https://dataspace.copernicus.eu/explore-data/data-collections/copernicus-contributing-missions/collections-description/COP-DEM
+   Data may be downloaded by the individual user. The application must
+   provide the source credit and no-liability notice prescribed by the
+   Copernicus licence whenever data or derived results are communicated.
+   The official wording is embedded in radiolink/legal_notices.py and
+   included in Copernicus-based HTML, Markdown and PDF reports.
+
+   Required attribution for adapted GLO-30 data:
+   produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and
+   © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS
+   by the European Union and ESA; all rights reserved
+
+   Required disclaimer where Copernicus WorldDEM-30 data are distributed:
+   The organisations in charge of the Copernicus programme by law or by
+   delegation do not incur any liability for any use of the Copernicus
+   WorldDEM-30.
+
+6. OpenStreetMap: map data licensed under ODbL.
+   https://www.openstreetmap.org/copyright
+   Rendered tiles currently come from https://tile.openstreetmap.org
+   under a SEPARATE tile-use policy; attribution is shown on each map.
+   https://operations.osmfoundation.org/policies/tiles/
+   No OpenStreetMap data or tile archive is bundled in the installer.
+
+7. Python dependencies (including NumPy, Pydantic, ReportLab, Matplotlib,
+   Rasterio/GDAL/PROJ, pywebview and their transitive dependencies) are
+   governed by their individual licences. PyInstaller's bundling exception
+   permits proprietary applications; this does NOT override dependencies'
+   licences. A version-resolved SBOM and full binary-package licence review
+   remain necessary before the paid release.
+
+8. Inno Setup is used to create the Windows installer. The developer asks
+   commercial users to acquire a commercial licence, while stating that
+   purchase is not strictly required; review current upstream terms.
+   https://jrsoftware.org/inno-setup/purchase
+
+ITU-R integral digital products are intentionally excluded from the
+distributable. The user downloads them from official ITU sources into the
+user's local profile. Commercial automated-download terms remain subject to
+formal clarification with the ITU; see legal/ITU-CLARIFICATION-REQUEST.en.md.
+
+Radio Link Planner's own proprietary licence is separate from every licence
+above. No preliminary licence draft changes third-party rights.
