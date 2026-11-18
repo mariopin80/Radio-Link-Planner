@@ -6,12 +6,11 @@ from dataclasses import asdict, dataclass
 import numpy as np
 
 from .domain import Project
-from .geometry import calculate_geometry
+from .geometry import CLEARANCE_TOLERANCE_M, calculate_geometry, validate_geometry_criteria
 from .i18n import choice_label, tr
 from .terrain import TerrainProfile
 
 MIN_HEIGHT_STEP_M = 0.01
-_CLEARANCE_TOLERANCE_M = 1e-8
 
 HEIGHT_OPTIMIZATION_CRITERION = (
     "Menor aumento total nas alturas; em caso de empate, menor aumento em A."
@@ -72,10 +71,7 @@ def optimize_antenna_heights(
         raise ValueError(tr("Selecione pelo menos uma antena para elevar."))
     if not math.isfinite(step_m) or step_m < MIN_HEIGHT_STEP_M:
         raise ValueError(tr("O passo deve ser de pelo menos 0,01 m."))
-    if not 0.0 <= fresnel_percent <= 100.0:
-        raise ValueError(tr("A desobstrução de Fresnel deve estar entre 0 e 100%."))
-    if not 0.1 < effective_earth_k <= 10.0:
-        raise ValueError(tr("O fator k deve ser maior que 0,1 e menor ou igual a 10."))
+    validate_geometry_criteria(fresnel_percent, effective_earth_k)
     if len(profile.distance_km) < 3:
         raise ValueError(tr("O perfil deve ter pelo menos um ponto entre as duas estações."))
     current_a = project.terminal_a.antenna_height_m
@@ -97,7 +93,7 @@ def optimize_antenna_heights(
         clearance + (1.0 - fraction) * (minimum_a - current_a)
         + fraction * (minimum_b - current_b)
     )
-    deficit = required - minimum_clearance - _CLEARANCE_TOLERANCE_M
+    deficit = required - minimum_clearance - CLEARANCE_TOLERANCE_M
     coefficient = 1.0 - 2.0 * fraction
     near_a, near_b = coefficient > 0.0, coefficient < 0.0
     midpoint = ~(near_a | near_b)
@@ -148,12 +144,16 @@ def optimize_antenna_heights(
 
 
 def project_at_heights(
-    project: Project, height_a_m: float, height_b_m: float, effective_earth_k: float
+    project: Project, height_a_m: float, height_b_m: float, effective_earth_k: float,
+    *, fresnel_percent: float | None = None,
 ) -> Project:
+    geometry = {"effective_earth_k": effective_earth_k}
+    if fresnel_percent is not None:
+        geometry["fresnel_percent"] = fresnel_percent
     return project.model_copy(update={
         "terminal_a": project.terminal_a.model_copy(update={"antenna_height_m": height_a_m}),
         "terminal_b": project.terminal_b.model_copy(update={"antenna_height_m": height_b_m}),
-        "environment": project.environment.model_copy(update={"effective_earth_k": effective_earth_k}),
+        "environment": project.environment.model_copy(update=geometry),
     })
 
 
@@ -161,7 +161,8 @@ def apply_height_solution(
     project: Project, profile: TerrainProfile, solution: HeightSolution
 ) -> Project:
     updated = project_at_heights(
-        project, solution.proposed_a_m, solution.proposed_b_m, solution.effective_earth_k
+        project, solution.proposed_a_m, solution.proposed_b_m, solution.effective_earth_k,
+        fresnel_percent=solution.fresnel_percent,
     )
     return updated.model_copy(update={
         "metadata": {**project.metadata, "height_optimization": {

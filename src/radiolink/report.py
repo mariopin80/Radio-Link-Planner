@@ -14,9 +14,9 @@ from typing import Any
 import numpy as np
 
 from .analysis import AGREEMENT_CRITERIA, VIABILITY_CRITERIA, describe_agreement, recommendation_lines
-from .domain import Project
+from .domain import DEFAULT_FRESNEL_PERCENT, Project
 from .geodesy import great_circle_points
-from .geometry import GeometryArrays, calculate_geometry
+from .geometry import CLEARANCE_TOLERANCE_M, GeometryArrays, calculate_geometry
 from .height_optimization import height_comparison_table, height_summary_lines, project_at_heights
 from .legal_notices import (
     COPERNICUS_GLO30_DERIVED_CREDIT,
@@ -46,6 +46,19 @@ def describe_geometry_clearance(geometry: dict[str, Any]) -> str:
         )
     return (
         tr('Menor folga geométrica: {x0:.1f} m a {x1:.1f} km', x0=geometry['worst_clearance_m'], x1=distance_km)
+    )
+
+
+def describe_fresnel_clearance(geometry: dict[str, Any]) -> str:
+    percent = geometry.get("fresnel_percent", DEFAULT_FRESNEL_PERCENT)
+    obstructed = geometry.get("fresnel_obstructed_percent")
+    if obstructed is None:
+        obstructed = geometry["fresnel_60_obstructed_percent"]
+    if obstructed == 0.0:
+        return tr("Critério de Fresnel de {percent:g}% atendido em todo o perfil", percent=percent)
+    return tr(
+        "Critério de Fresnel de {percent:g}% violado em {obstructed:.3f}% das amostras",
+        percent=percent, obstructed=obstructed,
     )
 
 
@@ -116,7 +129,7 @@ def render_profile_plot(
     distance_km = arrays.distance_m / 1000.0
     ground = profile.elevation_m + profile.clutter_height_m
     optimization = result.get("height_optimization")
-    fresnel_percent = optimization["fresnel_percent"] if optimization else 60.0
+    fresnel_percent = project.environment.fresnel_percent
     fresnel_offset = fresnel_percent / 100.0 * arrays.fresnel_radius_m
     fig, axis = plt.subplots(figsize=(14, 6.8), dpi=150)
     axis.fill_between(
@@ -151,37 +164,49 @@ def render_profile_plot(
             distance_km, before.direct_ray_m_asl,
             color="#50688d", linestyle="--", label=tr("Raio antes"),
         )
+        if fresnel_percent > 0.0:
+            axis.plot(
+                distance_km, before.direct_ray_m_asl - fresnel_offset,
+                color="#50688d", linestyle=":", linewidth=1.0, label=tr("Limite de Fresnel antes"),
+            )
+    if fresnel_percent > 0.0:
         axis.plot(
-            distance_km, before.direct_ray_m_asl - fresnel_offset,
-            color="#50688d", linestyle=":", linewidth=1.0, label=tr("Limite de Fresnel antes"),
+            distance_km,
+            arrays.direct_ray_m_asl + fresnel_offset,
+            color="#7db6d8",
+            linewidth=0.9,
+            label=tr('{percent:g}% da 1ª Fresnel', percent=fresnel_percent),
         )
-    axis.plot(
-        distance_km,
-        arrays.direct_ray_m_asl + fresnel_offset,
-        color="#7db6d8",
-        linewidth=0.9,
-        label=tr('{percent:g}% da 1ª Fresnel', percent=fresnel_percent),
-    )
-    axis.plot(
-        distance_km,
-        arrays.direct_ray_m_asl - fresnel_offset,
-        color="#7db6d8",
-        linewidth=0.9,
-    )
+        axis.plot(
+            distance_km,
+            arrays.direct_ray_m_asl - fresnel_offset,
+            color="#7db6d8",
+            linewidth=0.9,
+        )
     geometry = result["geometry"]
     is_obstructed = geometry["worst_obstruction_m"] > 0.0
     marker_km = geometry["worst_obstruction_distance_km"]
-    marker_color = "#f6c85f" if is_obstructed else "#3a9d62"
-    box_color = "#fff7df" if is_obstructed else "#eaf7ef"
+    criterion_missed = is_obstructed
     annotation = (
         tr('Pior bloqueio: {x0:.1f} m', x0=geometry['worst_obstruction_m'])
         if is_obstructed
         else tr('Menor folga: {x0:.1f} m', x0=geometry['worst_clearance_m'])
     )
-    if optimization:
+    if optimization and optimization["fresnel_percent"] == fresnel_percent:
         critical = optimization["after"]
         marker_km = critical["distance_km"]
-        annotation = tr("Saldo de Fresnel {margin:+.2f} m", margin=critical["clearance_m"] - critical["required_m"])
+        margin = critical["clearance_m"] - critical["required_m"]
+        criterion_missed = margin < -CLEARANCE_TOLERANCE_M
+        annotation = tr("Saldo de Fresnel {margin:+.2f} m", margin=margin)
+    elif not is_obstructed and fresnel_percent > 0.0:
+        clearance_margin = arrays.clearance_m - fresnel_offset
+        index = 1 + int(np.argmin(clearance_margin[1:-1]))
+        margin = float(clearance_margin[index])
+        criterion_missed = margin < -CLEARANCE_TOLERANCE_M
+        marker_km = distance_km[index]
+        annotation = tr("Saldo de Fresnel {margin:+.2f} m", margin=margin)
+    marker_color = "#f6c85f" if criterion_missed else "#3a9d62"
+    box_color = "#fff7df" if criterion_missed else "#eaf7ef"
     axis.axvline(
         marker_km,
         color=marker_color,
@@ -362,9 +387,8 @@ def build_markdown_summary(project: Project, result: dict[str, Any]) -> str:
         (
             tr('- Raio máximo da primeira Fresnel: {x0:.1f} m', x0=geometry['maximum_fresnel_radius_m'])
         ),
-        (
-            tr('- Fresnel de 60% obstruída em {x0:.1f}% do percurso', x0=geometry['fresnel_60_obstructed_percent'])
-        ),
+        f"- {describe_fresnel_clearance(geometry)}",
+        f"- {tr('Fator k')} = {project.environment.effective_earth_k:.6g}",
         "",
     ]
     for direction_id, direction in result["directions"].items():

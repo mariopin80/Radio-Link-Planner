@@ -78,7 +78,10 @@ def assess(
     limiting: list[str] = []
     if geometry["worst_obstruction_m"] > 0.0:
         limiting.append("deep_terrain_obstruction")
-    if geometry["fresnel_60_obstructed_percent"] > 50.0:
+    fresnel_obstructed = geometry.get("fresnel_obstructed_percent")
+    if fresnel_obstructed is None:
+        fresnel_obstructed = geometry["fresnel_60_obstructed_percent"]
+    if fresnel_obstructed > 50.0:
         limiting.append("first_fresnel_zone_obstructed")
     if spread is not None and spread > 6.0:
         limiting.append("strong_model_divergence")

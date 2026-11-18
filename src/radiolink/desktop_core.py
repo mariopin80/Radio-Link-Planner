@@ -15,7 +15,7 @@ from .domain import Project
 from .engine import analyze_project
 from .itu_data import ensure_itu_data
 from .project_editor import write_project_json
-from .report import describe_geometry_clearance, write_outputs
+from .report import describe_fresnel_clearance, describe_geometry_clearance, write_outputs
 from .terrain import TerrainProfile
 
 APP_NAME = "Radio Link Planner"
@@ -194,9 +194,8 @@ def build_desktop_summary(outcome: AnalysisOutcome) -> str:
         "",
         tr('Distância: {x0:.3f} km', x0=geometry['profile_distance_km']),
         describe_geometry_clearance(geometry),
-        (
-            tr('Fresnel de 60% obstruída em {x0:.1f}% do percurso', x0=geometry['fresnel_60_obstructed_percent'])
-        ),
+        describe_fresnel_clearance(geometry),
+        f"{tr('Fator k')} = {project.environment.effective_earth_k:.6g}",
         "",
     ]
     classification_labels = {

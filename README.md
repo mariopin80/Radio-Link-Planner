@@ -4,7 +4,7 @@
 
 A local planning tool for **terrestrial VHF/UHF point-to-point links and coverage**. It combines terrain profiles, propagation models, a bidirectional link budget, uncertainty analysis and traceable technical reports. The repository includes a Windows desktop interface and a scientific command-line engine.
 
-**Author:** Mario Pin, PU2PTU · **Application:** 0.5.4 (pre-release)
+**Author:** Mario Pin, PU2PTU · **Application:** 0.5.5 (pre-release)
 
 ## What it can do
 
@@ -53,7 +53,7 @@ Run the two build/data scripts from a suitable development shell. `bootstrap_itu
 ### First point-to-point link
 
 1. Launch `RadioLinkPlanner.exe`, select **English** using the language flags if needed, choose **Point-to-point link** and create a new project. Enter both station coordinates directly or choose locations on the map.
-2. Set frequency, mode, polarization, desired availability, antenna heights/gains, line losses, transmit powers and receiver thresholds for both terminals.
+2. Set frequency, mode, polarization, desired availability, antenna settings and receiver thresholds. Set the required **Fresnel clearance (%)** and **k factor** for the geometric profile. Select a blue **?** for help with a technical field.
 3. Choose the output folder and Monte Carlo run count under **Analysis and results**; select **Get terrain and analyze**. The app downloads missing terrain and model data as needed, caches them, then runs the analysis.
 4. Open **Map and report** for the path, profile, Fresnel clearance, model comparison, margins and recommendations. Save the project to repeat or edit it later.
 5. Use **Optimize antenna heights** to set terminal limits, height step, target Fresnel clearance and effective Earth factor k. Preview the profile and optionally simulate propagation before and after. **Apply heights** updates the form for the next analysis.
@@ -62,8 +62,9 @@ Run the two build/data scripts from a suitable development shell. `bootstrap_itu
 
 1. Choose **Coverage map**, enter the transmitting station and reference receiver settings, and select radius **50–500 km** and a quick/recommended/detailed/custom grid.
 2. Choose an omnidirectional or directional transmitting antenna. For a directional antenna, set peak gain, −3 dB beamwidth, front-to-back ratio and pointing azimuth.
-3. Check the predicted cell count, memory and time, then start the calculation. Repeating the same settings and output folder resumes completed blocks. Changes to the link budget or antenna pattern can reuse stored propagation loss in that folder.
-4. Select **Map and report** to view the coverage, contours and technical report.
+3. To compare path geometry with the predicted margin, enable **Include layer on the map** under **Line of sight and Fresnel**.
+4. Check the predicted cell count, memory and time, then start the calculation. Repeating the same settings and output folder resumes completed blocks. Changes to the link budget or antenna pattern can reuse stored propagation loss in that folder.
+5. Select the view in **Map and report**.
 
 Large radii can take hours and use substantial storage even when the total cell count is similar. Terrain profiles are sampled nominally at 30 m regardless of map cell size. Results live under the user profile; terrain and ITU caches under `%LOCALAPPDATA%\RadioLinkPlanner\` on Windows.
 
@@ -91,7 +92,7 @@ Coverage adds `coverage_project.json`, margin/loss `.npy` grids, propagation/met
 
 In the interactive coverage report, use **Display → Margin (dB) / S-meter scale** to switch between engineering link-margin contours (0, +3, +6, +12 dB) and estimated received-power contours (S1, S3, S5, S7, S9+). The VHF/UHF S-meter convention assumes S9 = −93 dBm and 6 dB per S-unit; the actual receiver's S-meter may not be calibrated to this scale. S contours are derived from the same propagation grid, so switching scales does not recalculate coverage.
 
-Use **Export PDF with this map** in either interactive report to include the current geographic view. The browser downloads the PDF and the app stores the capture and PDF in the analysis folder. The coverage export includes the selected scale. The link export includes the Fresnel profile and available plots. Open the analysis folder to access the technical files.
+Use **Export PDF with this map** in either interactive report to include the current geographic view. The browser downloads the PDF and the app stores the capture and PDF in the analysis folder. The coverage export includes the selected map layer. The link export includes the Fresnel profile and available plots. Open the analysis folder to access the technical files.
 
 ## Scientific scope
 

@@ -8,8 +8,9 @@ import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
-from .domain import Polarization, Project, ReceiverSpec, Terminal
+from .domain import Environment, Polarization, Project, ReceiverSpec, Terminal
 from .geodesy import great_circle_distance_m
+from .geometry import validate_geometry_criteria
 from .modes import MODE_PROFILES, threshold_dbm
 
 MIN_DESKTOP_FREQUENCY_MHZ = 30.0
@@ -40,6 +41,8 @@ class ProjectEditorValues:
     terminal_a: TerminalEditorValues
     terminal_b: TerminalEditorValues
     allow_mode_change: bool = False
+    effective_earth_k: float | None = None
+    fresnel_percent: float | None = None
 
     @property
     def distance_km(self) -> float:
@@ -79,6 +82,8 @@ def editor_values_from_project(project: Project) -> ProjectEditorValues:
         terminal_a=terminal_values(project.terminal_a),
         terminal_b=terminal_values(project.terminal_b),
         allow_mode_change=project.allow_mode_change,
+        effective_earth_k=project.environment.effective_earth_k,
+        fresnel_percent=project.environment.fresnel_percent,
     )
 
 
@@ -92,6 +97,13 @@ def project_from_editor_values(
     mode = values.primary_mode.upper()
     if mode not in MODE_PROFILES:
         raise ValueError(tr('Modo desconhecido: {x0}', x0=values.primary_mode))
+    existing_environment = template.environment if template is not None else Environment()
+    geometry = {
+        key: getattr(values, key) if getattr(values, key) is not None else getattr(existing_environment, key)
+        for key in ("fresnel_percent", "effective_earth_k")
+    }
+    validate_geometry_criteria(**geometry)
+    environment = existing_environment.model_copy(update=geometry)
 
     def terminal(data: TerminalEditorValues) -> Terminal:
         return Terminal(
@@ -126,6 +138,7 @@ def project_from_editor_values(
             terrain_resolution_m=30.0,
             clutter_included=False,
             allow_mode_change=values.allow_mode_change,
+            environment=environment,
             metadata={
                 "created_with": "Radio Link Planner desktop 0.4",
                 "terrain_zone_assumption": "all_inland_land",
@@ -140,6 +153,7 @@ def project_from_editor_values(
         project.primary_mode = mode
         project.target_availability_percent = values.target_availability_percent
         project.allow_mode_change = values.allow_mode_change
+        project.environment = environment
         project.terminal_a = terminal(values.terminal_a)
         project.terminal_b = terminal(values.terminal_b)
         project.terrain_profile = terrain_profile

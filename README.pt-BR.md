@@ -4,7 +4,7 @@
 
 Ferramenta local de planejamento de **enlaces terrestres VHF/UHF ponto a ponto e cobertura**. Reúne perfis de terreno, modelos de propagação, orçamento bidirecional, análise de incertezas e relatórios técnicos rastreáveis. O repositório contém interface desktop para Windows e motor científico de linha de comando.
 
-**Autor:** Mario Pin, PU2PTU · **Aplicativo:** 0.5.4 (pré-lançamento)
+**Autor:** Mario Pin, PU2PTU · **Aplicativo:** 0.5.5 (pré-lançamento)
 
 ## O que faz
 
@@ -53,7 +53,7 @@ Execute os scripts em um terminal de desenvolvimento apropriado. `bootstrap_itu_
 ### Primeiro enlace ponto a ponto
 
 1. Abra `RadioLinkPlanner.exe`, escolha **Enlace ponto a ponto** e crie um projeto. Digite as coordenadas das duas estações ou escolha-as no mapa.
-2. Informe frequência, modo, polarização, disponibilidade, altura/ganho das antenas, perdas de linha, potências e limiares dos receptores de cada terminal.
+2. Informe frequência, modo, polarização, disponibilidade, parâmetros das antenas e limiares dos receptores. Ajuste **Fresnel livre (%)** e **Fator k** para o perfil geométrico. Clique no **?** azul para consultar a ajuda do campo técnico.
 3. Na aba **Análise e resultados**, selecione pasta de saída e número de rodadas Monte Carlo; clique **Obter terreno e analisar**. O programa baixa e guarda em cache os dados faltantes antes do cálculo.
 4. Use **Mapa e relatório** para examinar percurso, relevo, Fresnel, comparação entre modelos, margens e recomendações. Salve o projeto para repetir ou editar.
 5. Use **Otimizar altura das antenas** para definir limites por estação, passo, desobstrução de Fresnel e fator k. Compare o perfil e simule a propagação antes e depois. **Aplicar alturas** atualiza o formulário para a próxima análise.
@@ -62,8 +62,9 @@ Execute os scripts em um terminal de desenvolvimento apropriado. `bootstrap_itu_
 
 1. Escolha **Mapa de cobertura**, informe estação transmissora e receptor de referência, raio de **50–500 km** e grade rápida, recomendada, detalhada ou personalizada.
 2. Escolha antena omnidirecional ou direcional no transmissor. Para a direcional, informe ganho máximo, abertura a −3 dB, frente/costas e azimute.
-3. Confira a previsão de células, memória e tempo e inicie o cálculo. Repita os mesmos parâmetros e a pasta de saída para retomar blocos concluídos. Alterações apenas no orçamento ou no diagrama podem reaproveitar a perda calculada nessa pasta.
-4. Clique em **Mapa e relatório** para consultar a cobertura, os contornos e os resultados técnicos.
+3. Para comparar a geometria com a previsão de margem, marque **Incluir camada no mapa** em **Visada e Fresnel**.
+4. Confira a previsão de células, memória e tempo e inicie o cálculo. Repita os mesmos parâmetros e a pasta de saída para retomar blocos concluídos. Alterações apenas no orçamento ou no diagrama podem reaproveitar a perda calculada nessa pasta.
+5. Escolha a visualização em **Mapa e relatório**.
 
 Raios grandes podem levar horas e ocupar bastante disco mesmo com número parecido de células. O perfil de terreno é amostrado nominalmente a 30 m, independentemente do tamanho das células. Os resultados ficam no perfil do usuário; caches de relevo e ITU em `%LOCALAPPDATA%\RadioLinkPlanner\` no Windows.
 
@@ -89,7 +90,7 @@ A CLI aceita `--runs`, `--no-plots` e `--print-json`. `radio-link-desktop` inici
 
 Para cobertura há ainda `coverage_project.json`, grades `.npy` de margem/perda, JSON de propagação e metadados, PNG de heatmap/overlay, GeoJSON dos contornos e relatórios HTML/PDF. A demonstração é uma saída registrada; o motor atual pode produzir números diferentes conforme algoritmos e entradas evoluam.
 
-Use **Exportar PDF com este mapa** no HTML do enlace ou da cobertura para incluir a vista geográfica atual. O navegador baixa o PDF e o programa grava o PDF e a captura na pasta da análise. Na cobertura, a captura segue a escala escolhida, em dB ou em unidades S. No enlace, o PDF inclui o perfil de Fresnel e os gráficos disponíveis.
+Use **Exportar PDF com este mapa** no HTML do enlace ou da cobertura para incluir a vista geográfica atual. O navegador baixa o PDF e o programa grava o PDF e a captura na pasta da análise. Na cobertura, a captura segue a camada escolhida. No enlace, o PDF inclui o perfil de Fresnel e os gráficos disponíveis.
 
 ## Escopo científico
 

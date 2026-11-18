@@ -27,9 +27,8 @@ def check_localized_reports(output: Path) -> dict:
         transmitter_power_w=1, receiver_height_m=2, receiver_gain_dbi=2,
         receiver_line_loss_db=1, receiver_threshold_dbm=-120,
         output_directory=output / "pt/coverage", resolution_preset="custom",
-        custom_resolution_m=10_000,
+        custom_resolution_m=10_000, include_clearance=True, fresnel_percent=75, effective_earth_k=1.0,
     )
-    tiles = {}
     terrain = output / "test-terrain"
     terrain.mkdir(parents=True, exist_ok=True)
     for code in coverage_terrain_tile_codes(request):
@@ -46,10 +45,10 @@ def check_localized_reports(output: Path) -> dict:
                                    dtype="float32", crs="EPSG:4326",
                                    transform=from_origin(longitude, latitude + 1, 1 / 120, 1 / 120)) as dataset:
                     dataset.write(elevations, 1)
-                tiles[code] = path
     original = get_language()
     baseline_result = None
     baseline_grid = None
+    baseline_clearance = None
     matrix = {}
     first_coverage = None
     try:
@@ -70,15 +69,19 @@ def check_localized_reports(output: Path) -> dict:
                 current.output_directory.mkdir(parents=True, exist_ok=True)
                 for filename in ("coverage_loss_db.npy", "coverage_propagation.json"):
                     shutil.copyfile(first_coverage.paths["report_html"].parent / filename, current.output_directory / filename)
-            with patch("radiolink.coverage_grid.download_tile", side_effect=lambda code, **_: tiles[code]):
+            with patch("radiolink.coverage_grid.default_cache_directory", return_value=terrain):
                 coverage = run_coverage_analysis(current, worker_count=2)
             grid = np.load(coverage.paths["margin_grid"])
+            clearance = np.load(coverage.paths["clearance_grid"])
             if baseline_grid is None:
                 baseline_grid = grid
+                baseline_clearance = clearance
                 first_coverage = coverage
             else:
                 np.testing.assert_array_equal(grid, baseline_grid)
+                np.testing.assert_array_equal(clearance, baseline_clearance)
                 assert coverage.statistics["p1812_calls_this_run"] == 0
+            assert '<option value="clearance">' in coverage.paths["report_html"].read_text(encoding="utf-8")
             for outcome in (link, coverage):
                 report = outcome.paths["report_html"].read_text(encoding="utf-8")
                 tag = "pt-BR" if language == "pt" else language

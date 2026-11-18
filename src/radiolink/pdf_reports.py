@@ -17,7 +17,7 @@ from .legal_notices import (
     OSM_COPYRIGHT_URL,
     uses_copernicus_glo30,
 )
-from .report import describe_geometry_clearance
+from .report import describe_fresnel_clearance, describe_geometry_clearance
 from .propagation.p1812 import P1812_TIME_HELP
 
 _RED = "#c62835"
@@ -114,12 +114,12 @@ def write_link_pdf(
                     [tr('Distância'), f"{geometry['profile_distance_km']:.3f} km"],
                     [tr('Condição limitante'), describe_geometry_clearance(geometry)],
                     [
-                        tr('Fresnel de 60% obstruída'),
-                        f"{geometry['fresnel_60_obstructed_percent']:.1f}%",
+                        tr('Fresnel livre (%)'),
+                        describe_fresnel_clearance(geometry),
                     ],
                     [
                         tr('Fator k exibido no perfil'),
-                        f"{project.environment.effective_earth_k:.3f}",
+                        f"{project.environment.effective_earth_k:.6g}",
                     ],
                 ],
                 widths=(180, 305),
@@ -382,6 +382,12 @@ def write_coverage_pdf(
     ]
     if request.transmitter_pattern:
         story.append(report["Paragraph"](_escape(tr(ANTENNA_APPROXIMATION_NOTE)), styles["small"]))
+    if request.include_clearance:
+        from .coverage_report import clearance_criteria_label
+
+        story.append(
+            report["Paragraph"](_escape(clearance_criteria_label(request)), styles["small"])
+        )
     geographic_map = paths.get("geographic_map")
     heatmap = paths.get("heatmap")
     selected_map = (

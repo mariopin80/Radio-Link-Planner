@@ -10,6 +10,7 @@ from tkinter import messagebox, ttk
 
 from PIL import Image, ImageTk
 
+from .context_help import label_with_help
 from .domain import Project
 from .engine import compare_height_designs
 from .geometry import calculate_geometry
@@ -52,9 +53,13 @@ def open_height_dialog(
     fields = {}
     entries = {}
 
-    def field(key: str, label: str, number: float, row: int, column: int) -> None:
+    def field(
+        key: str, label: str, number: float, row: int, column: int, *, help_key: str | None = None,
+    ) -> None:
         fields[key] = tk.StringVar(dialog, value=str(number))
-        ttk.Label(form, text=label).grid(row=row, column=column, sticky="w", padx=(0, 4), pady=4)
+        label_with_help(form, label, help_key, label_style="TLabel", frame_style="TFrame").grid(
+            row=row, column=column, sticky="w", padx=(0, 4), pady=4,
+        )
         entry = ttk.Entry(form, width=9, textvariable=fields[key])
         entry.grid(row=row, column=column + 1, sticky="w", padx=(0, 12), pady=4)
         entries[key] = entry
@@ -65,9 +70,9 @@ def open_height_dialog(
     field("max_a", tr("Máximo A (m)"), max(a, 100.0), 1, 2)
     field("min_b", tr("Mínimo B (m)"), b, 2, 0)
     field("max_b", tr("Máximo B (m)"), max(b, 100.0), 2, 2)
-    field("fresnel", tr("Fresnel livre (%)"), 60.0, 0, 4)
-    field("step", tr("Passo (m)"), 1.0, 1, 4)
-    field("k", tr("Fator k"), project.environment.effective_earth_k, 2, 4)
+    field("fresnel", tr("Fresnel livre (%)"), project.environment.fresnel_percent, 0, 4, help_key="fresnel")
+    field("step", tr("Passo (m)"), 1.0, 1, 4, help_key="height_step")
+    field("k", tr("Fator k"), project.environment.effective_earth_k, 2, 4, help_key="earth_k")
 
     notebook = ttk.Notebook(dialog)
     notebook.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 6))
@@ -148,7 +153,10 @@ def open_height_dialog(
                 summary.configure(text=tr("Nenhuma combinação atende ao critério de Fresnel dentro dos limites e do passo informados."))
                 return
             record = asdict(solution)
-            updated = project_at_heights(project, solution.proposed_a_m, solution.proposed_b_m, solution.effective_earth_k)
+            updated = project_at_heights(
+                project, solution.proposed_a_m, solution.proposed_b_m, solution.effective_earth_k,
+                fresnel_percent=solution.fresnel_percent,
+            )
             geometry, arrays = calculate_geometry(updated, profile)
             buffer = io.BytesIO()
             render_profile_plot(updated, profile, {"geometry": geometry.to_dict(), "height_optimization": record}, arrays, buffer)
