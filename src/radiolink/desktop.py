@@ -38,6 +38,7 @@ from .desktop_core import (
 )
 from .domain import Project, ReceiverSpec
 from .map_picker import open_coordinate_picker
+from .legal_notices import COPERNICUS_LICENSE_URL, OSM_COPYRIGHT_URL
 from .modes import MODE_PROFILES, threshold_dbm
 from .project_editor import (
     ProjectEditorValues,
@@ -424,6 +425,28 @@ class RadioLinkPlannerApp:
             ttk.Label(content, text=f"{label}: {value}", style="Panel.TLabel").pack(anchor="w", pady=5)
         ttk.Label(content, text=tr("Contato"), style="Panel.TLabel").pack(anchor="w", pady=(18, 5))
         ttk.Button(content, text=CONTACT_EMAIL, command=lambda: webbrowser.open(f"mailto:{CONTACT_EMAIL}")).pack(anchor="w")
+        ttk.Label(content, text=tr("Licenças e fontes de dados"), style="Panel.TLabel").pack(anchor="w", pady=(18, 5))
+        ttk.Label(
+            content,
+            text=tr("Terreno: Copernicus GLO-30. Mapas: OpenStreetMap. Modelos: NTIA ITM, Py1812 e Py2001."),
+            style="Panel.TLabel",
+            wraplength=510,
+            justify="left",
+        ).pack(anchor="w", pady=(0, 6))
+        ttk.Button(content, text=tr("Avisos e licenças de terceiros"), command=self._open_third_party_notices).pack(anchor="w")
+        ttk.Button(content, text=tr("Licença Copernicus"), command=lambda: webbrowser.open(COPERNICUS_LICENSE_URL)).pack(anchor="w", pady=(5, 0))
+        ttk.Button(content, text=tr("Créditos OpenStreetMap"), command=lambda: webbrowser.open(OSM_COPYRIGHT_URL)).pack(anchor="w", pady=(5, 0))
+
+    def _open_third_party_notices(self) -> None:
+        root = bundle_root()
+        for candidate in (
+            root / "licenses" / "THIRD_PARTY_NOTICES.txt",
+            root / "legal" / "THIRD_PARTY_NOTICES.txt",
+        ):
+            if candidate.is_file():
+                _open_path(candidate)
+                return
+        messagebox.showerror(tr("Licenças e fontes de dados"), tr("Arquivo de licenças não encontrado."))
 
     def _show_about(self) -> None:
         window = tk.Toplevel(self.root)

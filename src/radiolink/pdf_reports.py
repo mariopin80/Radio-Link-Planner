@@ -7,6 +7,12 @@ from typing import Any
 
 from .coverage import CoverageRequest
 from .domain import Project
+from .legal_notices import (
+    COPERNICUS_GLO30_DERIVED_CREDIT,
+    COPERNICUS_GLO30_NO_LIABILITY,
+    COPERNICUS_LICENSE_URL,
+    uses_copernicus_glo30,
+)
 from .report import describe_geometry_clearance
 
 _RED = "#c62835"
@@ -219,6 +225,8 @@ def write_link_pdf(
             ),
         ]
     )
+    if uses_copernicus_glo30(project.terrain_source):
+        story.extend(_copernicus_pdf_notice(report, styles))
     _build_document(report, destination, story)
     return destination
 
@@ -333,8 +341,19 @@ def write_coverage_pdf(
             ),
         ]
     )
+    story.extend(_copernicus_pdf_notice(report, styles))
     _build_document(report, destination, story)
     return destination
+
+
+def _copernicus_pdf_notice(report: dict[str, Any], styles: dict[str, Any]) -> list[Any]:
+    return [
+        report["Spacer"](1, 10),
+        report["Paragraph"](tr('Fonte e licença do relevo'), styles["heading"]),
+        report["Paragraph"](_escape(COPERNICUS_GLO30_DERIVED_CREDIT), styles["small"]),
+        report["Paragraph"](_escape(COPERNICUS_GLO30_NO_LIABILITY), styles["small"]),
+        report["Paragraph"](_escape(COPERNICUS_LICENSE_URL), styles["small"]),
+    ]
 
 
 def _reportlab() -> dict[str, Any]:

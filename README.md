@@ -93,3 +93,9 @@ Coverage adds `coverage_project.json`, margin/loss `.npy` grids, propagation/met
 The current desktop focus is **30–3000 MHz** and **3–1000 km** terrestrial paths. Automatic terrain profiles currently assume inland land along the path and omit vegetation/buildings; coastal or over-water paths need review of `zone_code`. DEM error and height error are not sampled by the current Monte Carlo. Treat model agreement and margins as engineering estimates, then compare with measured equipment parameters and field observations. See [scientific scope](docs/scientific-scope.md) and the [reference case](tests/reference/morro_jacu_palmira/reference_notes.md).
 
 Third-party code and data retain their own notices, including [`vendor/`](vendor/) and the official ITU/Copernicus sources. No project-wide license file is present in this repository.
+
+Pre-commercialization legal review materials (including the proposed proprietary
+Community/Personal/Pro licensing structure, provisional third-party inventory,
+attribution review and draft privacy/usage terms) are in [`legal/`](legal/).
+These drafts are **not** yet a final end-user licence or an authorization to
+redistribute ITU digital products.

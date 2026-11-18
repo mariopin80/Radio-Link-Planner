@@ -20,6 +20,12 @@ from .coverage import (
     RadialCoverage,
 )
 from .geodesy import destination_point
+from .legal_notices import (
+    COPERNICUS_GLO30_DERIVED_CREDIT,
+    COPERNICUS_GLO30_NO_LIABILITY,
+    COPERNICUS_LICENSE_URL,
+    OSM_HTML_ATTRIBUTION,
+)
 from .report import _install_map_assets
 
 _MATPLOTLIB_CACHE = Path(tempfile.gettempdir()) / "radio-link-planner-matplotlib"
@@ -489,6 +495,9 @@ def _build_coverage_report(
       </table>
       {method_notes}
       <p class="note">{html.escape(tr('Vegetação, edificações e ruído local ainda não estão representados nesta versão; áreas urbanas e florestais devem ser interpretadas com essa limitação.'))}</p>
+      <p class="note">{html.escape(COPERNICUS_GLO30_DERIVED_CREDIT)}</p>
+      <p class="note">{html.escape(COPERNICUS_GLO30_NO_LIABILITY)}
+        <a href="{html.escape(COPERNICUS_LICENSE_URL, quote=True)}">Copernicus DEM licence</a></p>
     </section>
     <section class="card">
       <img src="coverage_heatmap.png" alt="{html.escape(tr('Mapa técnico de cobertura'), quote=True)}"
@@ -510,7 +519,7 @@ def _build_coverage_report(
             type: "raster",
             tiles: ["https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png"],
             tileSize: 256,
-            attribution: "© OpenStreetMap contributors"
+            attribution: {json.dumps(OSM_HTML_ATTRIBUTION, ensure_ascii=False)}
           }}
         }},
         layers: [{{ id:"osm", type:"raster", source:"osm" }}]

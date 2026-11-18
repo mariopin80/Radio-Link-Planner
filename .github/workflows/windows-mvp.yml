@@ -74,6 +74,10 @@ jobs:
             --version-file "scripts/windows_version_info.txt" `
             --icon "assets/app-icon.ico" `
             --add-data "vendor/Py1812-NOTICE.txt;licenses" `
+            --add-data "vendor/Py2001-NOTICE.txt;licenses" `
+            --add-data "vendor/ntia-itm/LICENSE.md;licenses" `
+            --add-data "vendor/ntia-itm/NOTICE.md;licenses" `
+            --add-data "legal/THIRD_PARTY_NOTICES.txt;licenses" `
             --paths src `
             --add-data "assets;assets" `
             --add-data "examples/morro_jacu_palmira.json;examples" `
@@ -89,6 +93,18 @@ jobs:
             --copy-metadata Py1812 `
             --copy-metadata Py2001 `
             scripts/windows_gui.py
+
+      - name: Verify bundled notices
+        shell: pwsh
+        run: |
+          $names = @(
+            "Py1812-NOTICE.txt", "Py2001-NOTICE.txt",
+            "THIRD_PARTY_NOTICES.txt", "LICENSE.md", "NOTICE.md"
+          )
+          foreach ($name in $names) {
+            $found = Get-ChildItem -Path "dist/RadioLinkPlanner" -Recurse -File -Filter $name
+            if (-not $found) { throw "Missing required third-party notice: $name" }
+          }
 
       - name: Smoke-test packaged executable
         shell: pwsh

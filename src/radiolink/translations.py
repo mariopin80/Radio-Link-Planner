@@ -1,6 +1,12 @@
 """English, Spanish, French and German translations of Portuguese source messages."""
 
 MESSAGES: dict[str, tuple[str, str, str, str]] = {
+    'Licenças e fontes de dados': ('Licences and data sources', 'Licencias y fuentes de datos', 'Licences et sources de données', 'Lizenzen und Datenquellen'),
+    'Terreno: Copernicus GLO-30. Mapas: OpenStreetMap. Modelos: NTIA ITM, Py1812 e Py2001.': ('Terrain: Copernicus GLO-30. Maps: OpenStreetMap. Models: NTIA ITM, Py1812 and Py2001.', 'Terreno: Copernicus GLO-30. Mapas: OpenStreetMap. Modelos: NTIA ITM, Py1812 y Py2001.', 'Relief : Copernicus GLO-30. Cartes : OpenStreetMap. Modèles : NTIA ITM, Py1812 et Py2001.', 'Gelände: Copernicus GLO-30. Karten: OpenStreetMap. Modelle: NTIA ITM, Py1812 und Py2001.'),
+    'Avisos e licenças de terceiros': ('Third-party notices and licences', 'Avisos y licencias de terceros', 'Avis et licences de tiers', 'Hinweise und Lizenzen Dritter'),
+    'Licença Copernicus': ('Copernicus licence', 'Licencia Copernicus', 'Licence Copernicus', 'Copernicus-Lizenz'),
+    'Créditos OpenStreetMap': ('OpenStreetMap credits', 'Créditos de OpenStreetMap', 'Crédits OpenStreetMap', 'OpenStreetMap-Nachweise'),
+    'Arquivo de licenças não encontrado.': ('Licence notice file not found.', 'No se encontró el archivo de licencias.', 'Fichier des licences introuvable.', 'Lizenzhinweise nicht gefunden.'),
     'Autor': ('Author', 'Autor', 'Auteur', 'Autor'),
     'Avalie o enlace entre duas estações.': ('Assess a link between two stations.', 'Evalúe el enlace entre dos estaciones.', 'Évaluez la liaison entre deux stations.', 'Prüfen Sie die Verbindung zweier Stationen.'),
     'Visualize o alcance da sua estação.': ('View your station’s coverage area.', 'Visualice el alcance de su estación.', 'Visualisez la portée de votre station.', 'Zeigen Sie die Reichweite Ihrer Station.'),
@@ -15,6 +21,7 @@ MESSAGES: dict[str, tuple[str, str, str, str]] = {
     ' • {x0} bloco(s) de terreno a baixar (tempo de download à parte)': (' • {x0} terrain tile(s) to download (download time excluded)', ' • {x0} bloque(s) de terreno por descargar (tiempo de descarga aparte)', ' • {x0} tuile(s) de terrain à télécharger (durée du téléchargement exclue)', ' • {x0} Geländekachel(n) herunterzuladen (Downloadzeit nicht enthalten)'),
     '## Geometria': ('## Geometry', '## Geometría', '## Géométrie', '## Geometrie'),
     '## Rastreabilidade': ('## Traceability', '## Trazabilidad', '## Traçabilité', '## Nachvollziehbarkeit'),
+    '## Fonte e licença do relevo': ('## Terrain source and licence', '## Fuente y licencia del terreno', '## Source et licence du relief', '## Geländedatenquelle und Lizenz'),
     '### Comparação coerente em {x0:.0f}%': ('### Consistent comparison at {x0:.0f}%', '### Comparación coherente al {x0:.0f}%', '### Comparaison cohérente à {x0:.0f}%', '### Vergleich bei einheitlichen {x0:.0f}%'),
     '### Incertezas declaradas': ('### Declared uncertainties', '### Incertidumbres declaradas', '### Incertitudes déclarées', '### Angegebene Unsicherheiten'),
     '### Ponto de projeto: {x0:.0f}%': ('### Design point: {x0:.0f}%', '### Punto de diseño: {x0:.0f}%', '### Point de dimensionnement : {x0:.0f}%', '### Auslegungspunkt: {x0:.0f}%'),
@@ -334,6 +341,7 @@ MESSAGES: dict[str, tuple[str, str, str, str]] = {
     'Raio: {x0} km • célula: {x1} m • perfil de terreno: {x2:g} m': ('Radius: {x0} km • cell: {x1} m • terrain profile: {x2:g} m', 'Radio: {x0} km • celda: {x1} m • perfil del terreno: {x2:g} m', 'Rayon : {x0} km • cellule : {x1} m • profil du terrain : {x2:g} m', 'Radius: {x0} km • Zelle: {x1} m • Geländeprofil: {x2:g} m'),
     'Rastreabilidade': ('Traceability', 'Trazabilidad', 'Traçabilité', 'Nachvollziehbarkeit'),
     'Rastreabilidade do cálculo': ('Calculation traceability', 'Trazabilidad del cálculo', 'Traçabilité du calcul', 'Nachvollziehbarkeit der Berechnung'),
+    'Fonte e licença do relevo': ('Terrain source and licence', 'Fuente y licencia del terreno', 'Source et licence du relief', 'Geländedatenquelle und Lizenz'),
     'Receptor de referência': ('Reference receiver', 'Receptor de referencia', 'Récepteur de référence', 'Referenzempfänger'),
     'Recomendada': ('Recommended', 'Recomendada', 'Recommandée', 'Empfohlen'),
     'Relatório de cobertura • {x0:.3f} MHz • P.1812 a {x1:g}% do tempo': ('Coverage report • {x0:.3f} MHz • P.1812 at {x1:g}% of time', 'Informe de cobertura • {x0:.3f} MHz • P.1812 al {x1:g}% del tiempo', 'Rapport de couverture • {x0:.3f} MHz • P.1812 à {x1:g}% du temps', 'Abdeckungsbericht • {x0:.3f} MHz • P.1812 für {x1:g}% der Zeit'),

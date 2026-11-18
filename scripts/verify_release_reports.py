@@ -22,6 +22,8 @@ def verify(directory: Path) -> None:
             text = "\n".join(page.extract_text() for page in reader.pages)
             assert tr("Configuração") in text, (language, key, "untranslated heading")
             assert "\u25a0" not in text, (language, key, "missing glyph")
+            assert "Copernicus WorldDEM-30" in text, (language, key, "missing DEM credit")
+            assert "Airbus Defence and Space" in text, (language, key, "missing DEM rights holder")
             if key == "coverage_pdf":
                 assert re.search(re.escape(tr("Células calculadas")) + r"\s+" + str(values["coverage_cells"]) + r"\b", text), (language, "incorrect cell count in PDF")
             else:
@@ -29,6 +31,8 @@ def verify(directory: Path) -> None:
                     assert model in text, (language, model)
         for report in (directory / language).rglob("*.html"):
             body = report.read_text(encoding="utf-8")
+            assert "https://www.openstreetmap.org/copyright" in body, (language, report, "missing OSM attribution link")
+            assert "Copernicus WorldDEM-30" in body, (language, report, "missing DEM credit")
             for index, script in enumerate(re.findall(r"<script>(.*?)</script>", body, re.S)):
                 path = report.with_name(f"verified-script-{index}.js")
                 path.write_text(script, encoding="utf-8")
