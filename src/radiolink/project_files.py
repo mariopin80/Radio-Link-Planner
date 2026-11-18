@@ -7,9 +7,15 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from .antenna import COVERAGE_ANTENNA_DEFAULTS
+from .domain import DEFAULT_EFFECTIVE_EARTH_K, DEFAULT_FRESNEL_PERCENT
 
 COVERAGE_PROJECT_TYPE = "radio-link-planner-coverage"
 COVERAGE_PROJECT_SCHEMA = "1.2"
+COVERAGE_GEOMETRY_DEFAULTS = {
+    "include_clearance": "0",
+    "fresnel_percent": str(DEFAULT_FRESNEL_PERCENT),
+    "effective_earth_k": str(DEFAULT_EFFECTIVE_EARTH_K),
+}
 COVERAGE_PROJECT_KEYS = frozenset(
     {
         "name",
@@ -53,6 +59,9 @@ def write_coverage_project(
         key: str(values.get(key, default))
         for key, default in COVERAGE_ANTENNA_DEFAULTS.items()
     })
+    saved_values.update({
+        key: str(values[key]) for key in COVERAGE_GEOMETRY_DEFAULTS if key in values
+    })
     payload = {
         "project_type": COVERAGE_PROJECT_TYPE,
         "schema_version": COVERAGE_PROJECT_SCHEMA,
@@ -94,5 +103,8 @@ def read_coverage_project(path: str | Path) -> dict[str, str]:
             key: str(values.get(key, default))
             for key, default in COVERAGE_ANTENNA_DEFAULTS.items()
         })
+    loaded.update({
+        key: str(values[key]) for key in COVERAGE_GEOMETRY_DEFAULTS if key in values
+    })
     return loaded
 

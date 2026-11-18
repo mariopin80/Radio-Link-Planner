@@ -15,6 +15,8 @@ import numpy as np
 from .antenna import DirectionalAntenna
 from .copernicus import sample_elevations
 from .domain import (
+    DEFAULT_EFFECTIVE_EARTH_K,
+    DEFAULT_FRESNEL_PERCENT,
     Direction,
     ModelSelection,
     Polarization,
@@ -23,6 +25,7 @@ from .domain import (
     Terminal,
 )
 from .geodesy import destination_points
+from .geometry import validate_geometry_criteria
 from .itu_data import ensure_itu_data
 from .link_budget import watts_to_dbm
 from .modes import MODE_PROFILES
@@ -109,6 +112,9 @@ class CoverageRequest:
     custom_resolution_m: int | None = None
     terrain_step_m: float = DEFAULT_TERRAIN_STEP_M
     transmitter_pattern: DirectionalAntenna | None = None
+    include_clearance: bool = False
+    fresnel_percent: float = DEFAULT_FRESNEL_PERCENT
+    effective_earth_k: float = DEFAULT_EFFECTIVE_EARTH_K
 
     @property
     def resolution_m(self) -> int:
@@ -119,6 +125,7 @@ class CoverageRequest:
         )
 
     def validate(self) -> None:
+        validate_geometry_criteria(self.fresnel_percent, self.effective_earth_k)
         if not self.name.strip():
             raise ValueError(tr('Informe um nome para a cobertura.'))
         if not -80.0 <= self.latitude_deg <= 80.0:

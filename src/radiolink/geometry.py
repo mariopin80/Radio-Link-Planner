@@ -1,15 +1,32 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from enum import IntEnum
 
 import numpy as np
 
-from .domain import Project
+from .domain import MAX_EFFECTIVE_EARTH_K, MIN_EFFECTIVE_EARTH_K, Project
 from .geodesy import EARTH_MEAN_RADIUS_M, great_circle_distance_m, initial_bearing_deg
+from .i18n import tr
 from .terrain import TerrainProfile
 
 
 SPEED_OF_LIGHT_M_S = 299_792_458.0
+CLEARANCE_TOLERANCE_M = 1e-8
+
+
+class ClearanceClass(IntEnum):
+    NO_PATH = 0
+    FRESNEL_CLEAR = 1
+    LINE_OF_SIGHT = 2
+    OBSTRUCTED = 3
+
+
+def validate_geometry_criteria(fresnel_percent: float, effective_earth_k: float) -> None:
+    if not 0.0 <= fresnel_percent <= 100.0:
+        raise ValueError(tr("A desobstrução de Fresnel deve estar entre 0 e 100%."))
+    if not MIN_EFFECTIVE_EARTH_K < effective_earth_k <= MAX_EFFECTIVE_EARTH_K:
+        raise ValueError(tr("O fator k deve ser maior que 0,1 e menor ou igual a 10."))
 
 
 @dataclass(frozen=True)
@@ -29,6 +46,9 @@ class GeometryResult:
     fresnel_60_obstructed_percent: float
     horizon_from_a_km: float
     horizon_from_b_km: float
+    fresnel_percent: float
+    effective_earth_k: float
+    fresnel_obstructed_percent: float
 
     def to_dict(self) -> dict[str, float]:
         return asdict(self)
@@ -42,6 +62,35 @@ class GeometryArrays:
     earth_bulge_m: np.ndarray
     fresnel_radius_m: np.ndarray
     clearance_m: np.ndarray
+
+
+def profile_geometry(
+    distance_m: np.ndarray,
+    terrain_m: np.ndarray,
+    start_height_m: float,
+    end_height_m: float,
+    wavelength_m: float,
+    effective_radius_m: float,
+) -> GeometryArrays:
+    total_m = float(distance_m[-1])
+    distance_product = distance_m * (total_m - distance_m)
+    earth_bulge = distance_product / (2.0 * effective_radius_m)
+    direct_ray = start_height_m + (end_height_m - start_height_m) * distance_m / total_m
+    apparent_terrain = terrain_m + earth_bulge
+    fresnel = np.sqrt(wavelength_m * distance_product / total_m)
+    return GeometryArrays(
+        distance_m, direct_ray, apparent_terrain, earth_bulge, fresnel,
+        direct_ray - apparent_terrain,
+    )
+
+
+def profile_clearance_class(arrays: GeometryArrays, fresnel_percent: float) -> ClearanceClass:
+    clearance = arrays.clearance_m[1:-1] + CLEARANCE_TOLERANCE_M
+    if np.any(clearance < 0.0):
+        return ClearanceClass.OBSTRUCTED
+    if np.any(clearance < (fresnel_percent / 100.0) * arrays.fresnel_radius_m[1:-1]):
+        return ClearanceClass.LINE_OF_SIGHT
+    return ClearanceClass.FRESNEL_CLEAR
 
 
 def calculate_geometry(
@@ -67,34 +116,29 @@ def calculate_geometry(
     effective_radius_m = (
         EARTH_MEAN_RADIUS_M * project.environment.effective_earth_k
     )
-    earth_bulge = profile_m * (total_m - profile_m) / (2.0 * effective_radius_m)
     start_asl = float(profile.elevation_m[0] + terminal_a.antenna_height_m)
     end_asl = float(profile.elevation_m[-1] + terminal_b.antenna_height_m)
-    direct_ray = start_asl + (end_asl - start_asl) * profile_m / total_m
-    apparent_terrain = (
-        profile.elevation_m + profile.clutter_height_m + earth_bulge
-    )
-    clearance = direct_ray - apparent_terrain
-
+    terrain_m = profile.elevation_m + profile.clutter_height_m
     wavelength = SPEED_OF_LIGHT_M_S / (project.frequency_mhz * 1e6)
-    fresnel = np.sqrt(
-        wavelength * profile_m * (total_m - profile_m) / total_m
+    arrays = profile_geometry(
+        profile_m, terrain_m, start_asl, end_asl, wavelength, effective_radius_m,
     )
-    interior = np.arange(1, len(profile.distance_km) - 1)
-    worst_index = int(interior[np.argmin(clearance[interior])])
+    clearance = arrays.clearance_m
+    fresnel = arrays.fresnel_radius_m
+    worst_index = 1 + int(np.argmin(clearance[1:-1]))
+    fresnel_percent = project.environment.fresnel_percent
+    required_clearance = (fresnel_percent / 100.0) * fresnel[1:-1]
 
     horizon_a_index = _horizon_index(
         distance_m=profile_m,
-        terrain_m=profile.elevation_m + profile.clutter_height_m,
+        terrain_m=terrain_m,
         terminal_height_asl_m=start_asl,
         effective_radius_m=effective_radius_m,
     )
     reverse_distance = total_m - profile_m[::-1]
     horizon_b_reverse_index = _horizon_index(
         distance_m=reverse_distance,
-        terrain_m=(
-            profile.elevation_m[::-1] + profile.clutter_height_m[::-1]
-        ),
+        terrain_m=terrain_m[::-1],
         terminal_height_asl_m=end_asl,
         effective_radius_m=effective_radius_m,
     )
@@ -117,7 +161,7 @@ def calculate_geometry(
             terminal_a.longitude_deg,
         ),
         wavelength_m=wavelength,
-        maximum_earth_bulge_m=float(np.max(earth_bulge)),
+        maximum_earth_bulge_m=float(np.max(arrays.earth_bulge_m)),
         maximum_fresnel_radius_m=float(np.max(fresnel)),
         worst_clearance_m=float(clearance[worst_index]),
         worst_obstruction_m=float(max(0.0, -clearance[worst_index])),
@@ -128,14 +172,11 @@ def calculate_geometry(
         ),
         horizon_from_a_km=float(profile.distance_km[horizon_a_index]),
         horizon_from_b_km=float(horizon_b_distance_from_b_m / 1000.0),
-    )
-    arrays = GeometryArrays(
-        distance_m=profile_m,
-        direct_ray_m_asl=direct_ray,
-        apparent_terrain_m_asl=apparent_terrain,
-        earth_bulge_m=earth_bulge,
-        fresnel_radius_m=fresnel,
-        clearance_m=clearance,
+        fresnel_percent=fresnel_percent,
+        effective_earth_k=project.environment.effective_earth_k,
+        fresnel_obstructed_percent=float(
+            100.0 * np.mean(clearance[1:-1] + CLEARANCE_TOLERANCE_M < required_clearance)
+        ),
     )
     return result, arrays
 

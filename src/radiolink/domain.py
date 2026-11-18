@@ -7,6 +7,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+DEFAULT_EFFECTIVE_EARTH_K = 4.0 / 3.0
+DEFAULT_FRESNEL_PERCENT = 60.0
+MIN_EFFECTIVE_EARTH_K = 0.1
+MAX_EFFECTIVE_EARTH_K = 10.0
+
 
 class Polarization(str, Enum):
     HORIZONTAL = "horizontal"
@@ -47,7 +52,10 @@ class Terminal(BaseModel):
 class Environment(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    effective_earth_k: float = Field(default=4.0 / 3.0, gt=0.1, le=10.0)
+    effective_earth_k: float = Field(
+        default=DEFAULT_EFFECTIVE_EARTH_K, gt=MIN_EFFECTIVE_EARTH_K, le=MAX_EFFECTIVE_EARTH_K
+    )
+    fresnel_percent: float = Field(default=DEFAULT_FRESNEL_PERCENT, ge=0.0, le=100.0)
     itm_climate: int = Field(default=2, ge=1, le=7)
     surface_refractivity_n: float = Field(default=301.0, ge=250.0, le=400.0)
     ground_permittivity: float = Field(default=15.0, gt=1.0, le=100.0)

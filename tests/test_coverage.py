@@ -44,6 +44,7 @@ from radiolink.coverage_report import (
     _render_s_contours,
 )
 from radiolink.geodesy import destination_point, great_circle_distance_m
+from radiolink.geometry import ClearanceClass
 from radiolink.map_picker import build_picker_html
 from radiolink.report_server import start_report_server
 
@@ -88,6 +89,62 @@ def _radial(
         margin_db=np.asarray(margin, dtype=float),
         evaluated_point_count=count,
     )
+
+
+def test_clearance_layer_changes_without_changing_propagation(tmp_path, monkeypatch):
+    request = _request(
+        tmp_path, resolution_preset="custom", custom_resolution_m=10_000,
+        transmitter_height_m=100.0, receiver_height_m=100.0, include_clearance=True,
+    )
+    elevations_sampled = []
+
+    def sample(latitudes, longitudes, **kwargs):
+        elevations_sampled.append(len(latitudes))
+        elevations = np.full(len(latitudes), 650.0)
+        peak = 120.0 if latitudes[-1] < request.latitude_deg - 0.02 else (
+            70.0 if longitudes[-1] > request.longitude_deg + 0.02 else 0.0
+        )
+        elevations[len(elevations) // 2] += peak
+        return elevations
+
+    def model_loss(*args):
+        return 110.0
+
+    monkeypatch.setattr(coverage_grid, "coverage_terrain_tile_codes", lambda _: ())
+    monkeypatch.setattr(coverage_grid, "load_digital_product_module", lambda *args: object())
+    monkeypatch.setattr(coverage_grid, "ensure_itu_data", lambda **kwargs: None)
+    monkeypatch.setattr(coverage_grid, "optimize_p1812", lambda model: model)
+    monkeypatch.setattr(coverage_grid, "sample_elevations", sample)
+    monkeypatch.setattr(coverage_grid, "_p1812_loss_for_profile", model_loss)
+    monkeypatch.setattr(coverage_grid, "_record_performance", lambda **kwargs: None)
+    first = run_coverage_analysis(request, worker_count=1)
+    margin = np.load(first.paths["margin_grid"])
+    loss = np.load(first.paths["loss_grid"])
+    classes = np.load(first.paths["clearance_grid"])
+    assert len(elevations_sampled) == coverage_circle_cell_count(50, 10_000) - 1
+    assert classes[4, 5] == ClearanceClass.FRESNEL_CLEAR
+    assert classes[5, 6] == ClearanceClass.LINE_OF_SIGHT
+    assert classes[6, 5] == ClearanceClass.OBSTRUCTED
+    assert classes[5, 5] == ClearanceClass.NO_PATH
+    assert margin[6, 5] > 0.0
+    markup = first.paths["report_html"].read_text(encoding="utf-8")
+    assert '<option value="clearance">Visada e Fresnel</option>' in markup
+    assert "Fresnel exigida 60%" in markup
+    assert first.paths["clearance_map_overlay"].is_file()
+
+    def fail_if_called(*args, **kwargs):
+        pytest.fail("changing geometry recalculated model loss")
+
+    monkeypatch.setattr(coverage_grid, "_p1812_loss_for_profile", fail_if_called)
+    monkeypatch.setattr(coverage_grid, "ensure_itu_data", fail_if_called)
+    updated = run_coverage_analysis(replace(request, fresnel_percent=0.0, effective_earth_k=0.25), worker_count=1)
+    assert updated.statistics["p1812_calls_this_run"] == 0
+    np.testing.assert_array_equal(np.load(updated.paths["margin_grid"]), margin)
+    np.testing.assert_array_equal(np.load(updated.paths["loss_grid"]), loss)
+    changed = np.load(updated.paths["clearance_grid"])
+    assert changed[5, 6] == ClearanceClass.FRESNEL_CLEAR
+    assert changed[0, 5] == ClearanceClass.OBSTRUCTED
+    assert ClearanceClass.LINE_OF_SIGHT not in changed
 
 
 def test_radius_resolution_policy_matches_product_scope() -> None:

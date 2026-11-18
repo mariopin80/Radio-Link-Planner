@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import numpy as np
 
 from radiolink.geometry import calculate_geometry
 
@@ -30,3 +31,19 @@ def test_reverse_profile_is_reciprocal(reference_profile) -> None:
     )
     assert reverse.elevation_m[0] == reference_profile.elevation_m[-1]
     assert reverse.elevation_m[-1] == reference_profile.elevation_m[0]
+
+
+def test_selected_fresnel_compares_only_interior_samples(reference_project, reference_profile):
+    project = reference_project.model_copy(deep=True)
+    default, _ = calculate_geometry(project, reference_profile)
+    project.environment.effective_earth_k = 1.0
+    project.environment.fresnel_percent = 0.0
+    direct, arrays = calculate_geometry(project, reference_profile)
+    assert direct.maximum_earth_bulge_m > default.maximum_earth_bulge_m
+    assert direct.fresnel_obstructed_percent == pytest.approx(
+        100.0 * np.mean(arrays.clearance_m[1:-1] < 0.0)
+    )
+    project.environment.fresnel_percent = 80.0
+    fresnel, _ = calculate_geometry(project, reference_profile)
+    assert fresnel.fresnel_percent == 80.0
+    assert fresnel.fresnel_obstructed_percent > direct.fresnel_obstructed_percent

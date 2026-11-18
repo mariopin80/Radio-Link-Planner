@@ -14,6 +14,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from .antenna import COVERAGE_ANTENNA_DEFAULTS, DirectionalAntenna
+from .context_help import label_with_help
 from .coverage import (
     COVERAGE_RESOLUTION_M,
     CoverageCancelled,
@@ -38,7 +39,7 @@ from .desktop_core import (
     default_output_directory,
     run_form_analysis,
 )
-from .domain import Project, ReceiverSpec
+from .domain import DEFAULT_EFFECTIVE_EARTH_K, DEFAULT_FRESNEL_PERCENT, Project, ReceiverSpec
 from .height_optimization import apply_height_solution
 from .map_picker import open_coordinate_picker
 from .map_export import COVERAGE_MAP_PDF, LINK_MAP_PDF
@@ -52,8 +53,7 @@ from .project_editor import (
     project_slug,
     write_project_json,
 )
-from .project_files import read_coverage_project, write_coverage_project
-from .propagation.p1812 import P1812_TIME_HELP
+from .project_files import COVERAGE_GEOMETRY_DEFAULTS, read_coverage_project, write_coverage_project
 from .report_server import open_report_in_browser
 from .terrain import TerrainProfile
 from .version import __version__, RELEASE_MONTH, DEVELOPER, CALLSIGN, CONTACT_EMAIL
@@ -86,6 +86,8 @@ class RadioLinkPlannerApp:
         self.mode_var = tk.StringVar()
         self.polarization_var = tk.StringVar()
         self.availability_var = tk.StringVar()
+        self.fresnel_var = tk.StringVar(value=str(DEFAULT_FRESNEL_PERCENT))
+        self.earth_k_var = tk.StringVar(value=str(DEFAULT_EFFECTIVE_EARTH_K))
         self.allow_mode_change_var = tk.BooleanVar()
         self.terminal_vars = {
             "a": self._new_terminal_vars(),
@@ -127,7 +129,7 @@ class RadioLinkPlannerApp:
         }
         self.coverage_vars.update({
             key: tk.StringVar(value=choice_label(default) if key == "tx_pattern" else default)
-            for key, default in COVERAGE_ANTENNA_DEFAULTS.items()
+            for key, default in {**COVERAGE_ANTENNA_DEFAULTS, **COVERAGE_GEOMETRY_DEFAULTS}.items()
         })
         self.coverage_resolution_var = tk.StringVar()
         self.coverage_progress_var = tk.StringVar(
@@ -714,7 +716,7 @@ class RadioLinkPlannerApp:
         self.mode_combo.grid(row=1, column=1, sticky="ew", pady=5)
         self.mode_combo.bind("<<ComboboxSelected>>", self._mode_changed)
         self._register(self.mode_combo)
-        ttk.Label(general, text=tr('Polarização'), style="Panel.TLabel").grid(
+        label_with_help(general, tr('Polarização'), "polarization").grid(
             row=1, column=2, sticky="w", padx=(20, 8), pady=5
         )
         polarization_combo = ttk.Combobox(
@@ -726,7 +728,7 @@ class RadioLinkPlannerApp:
         )
         polarization_combo.grid(row=1, column=3, sticky="ew", pady=5)
         self._register(polarization_combo)
-        ttk.Label(general, text=tr('Meta (%)'), style="Panel.TLabel").grid(
+        label_with_help(general, tr('Meta (%)'), "availability").grid(
             row=1, column=4, sticky="w", padx=(20, 8), pady=5
         )
         availability_entry = ttk.Entry(
@@ -734,11 +736,19 @@ class RadioLinkPlannerApp:
         )
         availability_entry.grid(row=1, column=5, sticky="ew", pady=5)
         self._register(availability_entry)
+        self._form_field(
+            general, row=2, label=tr("Fresnel livre (%)"), variable=self.fresnel_var,
+            label_column=0, entry_column=1, help_key="fresnel",
+        )
+        self._form_field(
+            general, row=2, label=tr("Fator k"), variable=self.earth_k_var,
+            label_column=2, entry_column=3, left_padding=20, help_key="earth_k",
+        )
         mode_change = ttk.Checkbutton(
             general, text=tr("Aceito avaliar SSB como alternativa à FM"),
             variable=self.allow_mode_change_var,
         )
-        mode_change.grid(row=2, column=0, columnspan=6, sticky="w", pady=(4, 0))
+        mode_change.grid(row=3, column=0, columnspan=6, sticky="w", pady=(4, 0))
         self._register(mode_change)
 
         terminals = ttk.Frame(tab, style="Panel.TFrame")
@@ -833,7 +843,7 @@ class RadioLinkPlannerApp:
             (tr('Sensibilidade RX (dBm)'), "sensitivity"),
         )
         for row, (label, key) in enumerate(fields):
-            ttk.Label(panel, text=label, style="Panel.TLabel").grid(
+            label_with_help(panel, label, "sensitivity" if key == "sensitivity" else None).grid(
                 row=row, column=0, sticky="w", padx=(0, 10), pady=4
             )
             entry = ttk.Entry(panel, textvariable=variables[key])
@@ -943,7 +953,7 @@ class RadioLinkPlannerApp:
         general.grid(row=0, column=0, sticky="ew", pady=(0, 12))
         for column in (1, 3, 5):
             general.columnconfigure(column, weight=1)
-        self._coverage_field(
+        self._form_field(
             general,
             row=0,
             label=tr('Nome da cobertura'),
@@ -952,7 +962,7 @@ class RadioLinkPlannerApp:
             entry_column=1,
             columnspan=3,
         )
-        self._coverage_field(
+        self._form_field(
             general,
             row=0,
             label=tr('Frequência (MHz)'),
@@ -973,7 +983,7 @@ class RadioLinkPlannerApp:
         mode_combo.grid(row=1, column=1, sticky="ew", pady=5)
         mode_combo.bind("<<ComboboxSelected>>", self._coverage_mode_changed)
         self._register(mode_combo)
-        ttk.Label(general, text=tr('Polarização'), style="Panel.TLabel").grid(
+        label_with_help(general, tr('Polarização'), "polarization").grid(
             row=1, column=2, sticky="w", padx=(20, 8), pady=5
         )
         polarization_combo = ttk.Combobox(
@@ -984,24 +994,15 @@ class RadioLinkPlannerApp:
         )
         polarization_combo.grid(row=1, column=3, sticky="ew", pady=5)
         self._register(polarization_combo)
-        ttk.Label(general, text=tr('Tempo P.1812 (%)'), style="Panel.TLabel").grid(
+        label_with_help(general, tr('Tempo P.1812 (%)'), "p1812_time").grid(
             row=1, column=4, sticky="w", padx=(20, 8), pady=5
         )
-        time_controls = ttk.Frame(general, style="Panel.TFrame")
-        time_controls.grid(row=1, column=5, sticky="ew", pady=5)
-        time_controls.columnconfigure(0, weight=1)
         time_field = ttk.Spinbox(
-            time_controls, from_=1, to=50, increment=1, width=7,
+            general, from_=1, to=50, increment=1, width=7,
             textvariable=variables["time_percentage"],
         )
-        time_field.grid(row=0, column=0, sticky="ew")
+        time_field.grid(row=1, column=5, sticky="ew", pady=5)
         self._register(time_field)
-        time_help = ttk.Button(
-            time_controls, text=tr("Ajuda"), width=7,
-            command=lambda: messagebox.showinfo(tr("Tempo P.1812 (%)"), tr(P1812_TIME_HELP), parent=self.root),
-        )
-        time_help.grid(row=0, column=1, padx=(6, 0))
-        self._register(time_help)
 
         location = ttk.LabelFrame(
             tab,
@@ -1012,7 +1013,7 @@ class RadioLinkPlannerApp:
         location.grid(row=1, column=0, sticky="ew", pady=(0, 12))
         for column in (1, 3, 5):
             location.columnconfigure(column, weight=1)
-        self._coverage_field(
+        self._form_field(
             location,
             row=0,
             label=tr('Latitude (°)'),
@@ -1020,7 +1021,7 @@ class RadioLinkPlannerApp:
             label_column=0,
             entry_column=1,
         )
-        self._coverage_field(
+        self._form_field(
             location,
             row=0,
             label=tr('Longitude (°)'),
@@ -1054,11 +1055,9 @@ class RadioLinkPlannerApp:
             text=tr('Raio (km)'),
             style="Hint.TLabel",
         ).grid(row=1, column=5, sticky="w")
-        ttk.Label(
-            location,
-            text=tr('Resolução'),
-            style="Panel.TLabel",
-        ).grid(row=1, column=0, sticky="w", padx=(0, 8), pady=(8, 5))
+        label_with_help(location, tr('Resolução'), "resolution").grid(
+            row=1, column=0, sticky="w", padx=(0, 8), pady=(8, 5),
+        )
         resolution_combo = ttk.Combobox(
             location,
             textvariable=variables["resolution_preset"],
@@ -1073,11 +1072,7 @@ class RadioLinkPlannerApp:
             pady=(8, 5),
         )
         self._register(resolution_combo)
-        ttk.Label(
-            location,
-            text=tr('Personalizada (m)'),
-            style="Panel.TLabel",
-        ).grid(
+        label_with_help(location, tr('Personalizada (m)'), "resolution").grid(
             row=1,
             column=2,
             sticky="w",
@@ -1139,7 +1134,7 @@ class RadioLinkPlannerApp:
             self._coverage_panel_field(
                 transmitter, row, label, variables[key]
             )
-        ttk.Label(transmitter, text=tr("Antena transmissora"), style="Panel.TLabel").grid(
+        label_with_help(transmitter, tr("Antena transmissora"), "antenna_pattern").grid(
             row=3, column=0, sticky="w", padx=(0, 8), pady=5,
         )
         antenna_combo = ttk.Combobox(
@@ -1154,12 +1149,12 @@ class RadioLinkPlannerApp:
         self.directional_controls = ttk.Frame(transmitter, style="Panel.TFrame")
         self.directional_controls.columnconfigure(1, weight=1)
         self.directional_controls.grid(row=5, column=0, columnspan=2, sticky="ew")
-        for row, (label, key) in enumerate((
-            (tr("Abertura a −3 dB (°)"), "tx_hpbw"),
-            (tr("Relação frente/costas (dB)"), "tx_front_to_back"),
-            (tr("Azimute de apontamento (°)"), "tx_azimuth"),
+        for row, (label, key, help_key) in enumerate((
+            (tr("Abertura a −3 dB (°)"), "tx_hpbw", "beamwidth"),
+            (tr("Relação frente/costas (dB)"), "tx_front_to_back", "front_to_back"),
+            (tr("Azimute de apontamento (°)"), "tx_azimuth", "azimuth"),
         )):
-            self._coverage_panel_field(self.directional_controls, row, label, variables[key])
+            self._coverage_panel_field(self.directional_controls, row, label, variables[key], help_key=help_key)
         self._coverage_pattern_changed()
         for row, (label, key) in enumerate(
             (
@@ -1169,7 +1164,10 @@ class RadioLinkPlannerApp:
                 (tr('Sensibilidade RX (dBm)'), "rx_sensitivity"),
             )
         ):
-            self._coverage_panel_field(receiver, row, label, variables[key])
+            self._coverage_panel_field(
+                receiver, row, label, variables[key],
+                help_key="sensitivity" if key == "rx_sensitivity" else None,
+            )
         ttk.Label(
             receiver,
             text=(
@@ -1179,8 +1177,28 @@ class RadioLinkPlannerApp:
             wraplength=420,
         ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
+        geometry = ttk.LabelFrame(
+            tab, text=tr("Visada e Fresnel"), style="Panel.TLabelframe", padding=12,
+        )
+        geometry.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        geometry.columnconfigure(1, weight=1)
+        geometry.columnconfigure(3, weight=1)
+        include_clearance = ttk.Checkbutton(
+            geometry, text=tr("Incluir camada no mapa"), variable=variables["include_clearance"],
+            onvalue="1", offvalue="0",
+        )
+        include_clearance.grid(row=0, column=0, columnspan=4, sticky="w")
+        self._register(include_clearance)
+        self._form_field(
+            geometry, row=1, label=tr("Fresnel livre (%)"), variable=variables["fresnel_percent"],
+            label_column=0, entry_column=1, help_key="fresnel",
+        )
+        self._form_field(
+            geometry, row=1, label=tr("Fator k"), variable=variables["effective_earth_k"],
+            label_column=2, entry_column=3, left_padding=16, help_key="earth_k",
+        )
         output = ttk.Frame(tab, style="Panel.TFrame")
-        output.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        output.grid(row=4, column=0, sticky="ew", pady=(12, 0))
         output.columnconfigure(1, weight=1)
         ttk.Label(output, text=tr('Pasta de saída'), style="Panel.TLabel").grid(
             row=0, column=0, sticky="w", padx=(0, 10)
@@ -1197,7 +1215,7 @@ class RadioLinkPlannerApp:
         self._register(output_button)
 
         project_actions = ttk.Frame(tab, style="Panel.TFrame")
-        project_actions.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+        project_actions.grid(row=5, column=0, sticky="ew", pady=(12, 0))
         project_actions.columnconfigure(3, weight=1)
         new_button = ttk.Button(
             project_actions,
@@ -1222,7 +1240,7 @@ class RadioLinkPlannerApp:
         self._register(save_button)
         self._coverage_radius_changed()
 
-    def _coverage_field(
+    def _form_field(
         self,
         parent: ttk.Frame,
         *,
@@ -1233,8 +1251,9 @@ class RadioLinkPlannerApp:
         entry_column: int,
         columnspan: int = 1,
         left_padding: int = 0,
+        help_key: str | None = None,
     ) -> None:
-        ttk.Label(parent, text=label, style="Panel.TLabel").grid(
+        label_with_help(parent, label, help_key).grid(
             row=row,
             column=label_column,
             sticky="w",
@@ -1257,8 +1276,10 @@ class RadioLinkPlannerApp:
         row: int,
         label: str,
         variable: tk.StringVar,
-    ) -> ttk.Label:
-        field_label = ttk.Label(parent, text=label, style="Panel.TLabel")
+        *,
+        help_key: str | None = None,
+    ) -> ttk.Label | ttk.Frame:
+        field_label = label_with_help(parent, label, help_key)
         field_label.grid(
             row=row, column=0, sticky="w", padx=(0, 10), pady=5
         )
@@ -1375,7 +1396,7 @@ class RadioLinkPlannerApp:
         )
         self.runs_combo.grid(row=0, column=0, sticky="w")
         self._register(self.runs_combo)
-        ttk.Label(options, text=tr('execuções'), style="Panel.TLabel").grid(
+        label_with_help(options, tr('execuções'), "runs").grid(
             row=0, column=1, sticky="w", padx=(6, 22)
         )
         self.plots_check = ttk.Checkbutton(
@@ -1597,6 +1618,8 @@ class RadioLinkPlannerApp:
         self.mode_var.set("FM")
         self.polarization_var.set(choice_label("vertical"))
         self.availability_var.set("70")
+        self.fresnel_var.set(str(DEFAULT_FRESNEL_PERCENT))
+        self.earth_k_var.set(str(DEFAULT_EFFECTIVE_EARTH_K))
         self.allow_mode_change_var.set(False)
         defaults = {
             "a": (tr('Estação A'), "10", "2", "1", "50", "-120"),
@@ -1727,6 +1750,7 @@ class RadioLinkPlannerApp:
                 / "Minha-cobertura"
             ),
             **COVERAGE_ANTENNA_DEFAULTS,
+            **COVERAGE_GEOMETRY_DEFAULTS,
         }
         for key, value in defaults.items():
             self.coverage_vars[key].set(choice_label(value) if key == "tx_pattern" else value)
@@ -1788,7 +1812,11 @@ class RadioLinkPlannerApp:
         if not selected:
             return
         try:
-            values = {**COVERAGE_ANTENNA_DEFAULTS, **read_coverage_project(selected)}
+            values = {
+                **COVERAGE_ANTENNA_DEFAULTS,
+                **COVERAGE_GEOMETRY_DEFAULTS,
+                **read_coverage_project(selected),
+            }
             for key, choices in (
                 ("polarization", ("vertical", "horizontal")),
                 ("resolution_preset", ("quick", "recommended", "detailed", "custom")),
@@ -1820,6 +1848,8 @@ class RadioLinkPlannerApp:
         self.availability_var.set(
             f"{values.target_availability_percent:.3f}".rstrip("0").rstrip(".")
         )
+        self.fresnel_var.set(str(values.fresnel_percent))
+        self.earth_k_var.set(str(values.effective_earth_k))
         self._apply_terminal_values("a", values.terminal_a)
         self._apply_terminal_values("b", values.terminal_b)
 
@@ -1899,6 +1929,8 @@ class RadioLinkPlannerApp:
             terminal_a=terminal("a", "A"),
             terminal_b=terminal("b", "B"),
             allow_mode_change=self.allow_mode_change_var.get(),
+            fresnel_percent=self._parse_float(self.fresnel_var.get(), tr("Fresnel livre (%)")),
+            effective_earth_k=self._parse_float(self.earth_k_var.get(), tr("Fator k")),
         )
 
     @staticmethod
@@ -2036,6 +2068,9 @@ class RadioLinkPlannerApp:
             resolution_preset=preset,
             custom_resolution_m=custom_resolution,
             transmitter_pattern=pattern,
+            include_clearance=values["include_clearance"].get() == "1",
+            fresnel_percent=self._parse_float(values["fresnel_percent"].get(), tr("Fresnel livre (%)")),
+            effective_earth_k=self._parse_float(values["effective_earth_k"].get(), tr("Fator k")),
         )
         request.validate()
         return request
@@ -2391,6 +2426,8 @@ class RadioLinkPlannerApp:
             self.loaded_terrain_path = outcome.paths["terrain_profile"]
             self.terminal_vars["a"]["height"].set(str(solution.proposed_a_m))
             self.terminal_vars["b"]["height"].set(str(solution.proposed_b_m))
+            self.fresnel_var.set(str(solution.fresnel_percent))
+            self.earth_k_var.set(str(solution.effective_earth_k))
             self.notebook.select(self.editor_tab)
             self.status_var.set(tr("Alturas aplicadas ao formulário. Execute Analisar para atualizar os resultados."))
 

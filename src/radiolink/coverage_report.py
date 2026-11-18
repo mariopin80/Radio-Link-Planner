@@ -21,6 +21,7 @@ from .coverage import (
     RadialCoverage,
 )
 from .geodesy import destination_point
+from .geometry import ClearanceClass
 from .legal_notices import (
     COPERNICUS_GLO30_DERIVED_CREDIT,
     COPERNICUS_GLO30_NO_LIABILITY,
@@ -44,6 +45,18 @@ S_CONTOUR_LEVELS_DBM = (
     ("S7", -105.0),
     ("S9+", -93.0),
 )
+CLEARANCE_STYLES = (
+    (ClearanceClass.FRESNEL_CLEAR, "#117a68", "Fresnel atende ao critério"),
+    (ClearanceClass.LINE_OF_SIGHT, "#e5a52a", "Visada com folga insuficiente"),
+    (ClearanceClass.OBSTRUCTED, "#8b386e", "Visada direta bloqueada"),
+)
+
+
+def clearance_criteria_label(request: CoverageRequest) -> str:
+    return tr(
+        "Fresnel exigida {percent:g}% · k = {k:.6g}",
+        percent=request.fresnel_percent, k=request.effective_earth_k,
+    )
 
 
 def write_coverage_outputs(
@@ -55,6 +68,7 @@ def write_coverage_outputs(
     progress: ProgressCallback | None = None,
     radials: tuple[RadialCoverage, ...] | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    clearance_grid: np.ndarray | None = None,
 ) -> tuple[dict[str, Path], dict[str, Any]]:
     output_directory.mkdir(parents=True, exist_ok=True)
     overlay_path = output_directory / "coverage_overlay.png"
@@ -86,6 +100,14 @@ def write_coverage_outputs(
         s_overlay_path,
         scale="s",
     )
+    clearance_path = output_directory / "coverage_overlay_clearance.png"
+    clearance_tiles = None
+    if clearance_grid is not None:
+        _check_cancelled(cancel_check)
+        classes, _ = _sample_grid_for_rendering(clearance_grid, request.radius_km, request.resolution_m)
+        clearance_tiles = _render_overlay(
+            request, classes, axis_km, clearance_path, scale="clearance",
+        )
     _check_cancelled(cancel_check)
     _notify(progress, tr('Cobertura: heatmap interativo renderizado.'))
     contour_geojson = _render_heatmap_and_contours(
@@ -117,6 +139,7 @@ def write_coverage_outputs(
             overlay_tiles=overlay_tiles,
             s_contour_geojson=s_contour_geojson,
             s_overlay_tiles=s_overlay_tiles,
+            clearance_tiles=clearance_tiles,
             map_assets=map_assets,
             radials=radials,
         ),
@@ -130,6 +153,8 @@ def write_coverage_outputs(
         "contours": contours_path,
         "s_contours": s_contours_path,
     }
+    if clearance_tiles:
+        paths["clearance_map_overlay"] = clearance_path
     from .pdf_reports import write_coverage_pdf
 
     paths["report_pdf"] = write_coverage_pdf(
@@ -184,20 +209,25 @@ def _render_overlay(
     scale: str = "margin",
 ) -> list[dict[str, Any]]:
     import matplotlib.pyplot as plt
-    from matplotlib.colors import Normalize
+    from matplotlib.colors import Normalize, to_rgba
 
-    colormap = _coverage_colormap()
-    if scale == "margin":
-        render_values = grid
-        minimum, maximum = -12.0, 18.0
-    elif scale == "s":
-        render_values = grid + request.receiver_threshold_dbm
-        minimum, maximum = -141.0, -93.0
+    if scale == "clearance":
+        palette = np.zeros((max(ClearanceClass) + 1, 4))
+        for code, color, _ in CLEARANCE_STYLES:
+            palette[code] = to_rgba(color)
+        rgba = palette[grid.astype(np.uint8, copy=False)]
     else:
-        raise ValueError(f"unsupported coverage scale: {scale}")
-    normalization = Normalize(vmin=minimum, vmax=maximum, clip=True)
-    rgba = colormap(normalization(np.nan_to_num(render_values, nan=minimum)))
-    rgba[..., 3] = np.where(np.isfinite(grid), 0.78, 0.0)
+        if scale == "margin":
+            render_values = grid
+            minimum, maximum = -12.0, 18.0
+        elif scale == "s":
+            render_values = grid + request.receiver_threshold_dbm
+            minimum, maximum = -141.0, -93.0
+        else:
+            raise ValueError(f"unsupported coverage scale: {scale}")
+        normalization = Normalize(vmin=minimum, vmax=maximum, clip=True)
+        rgba = _coverage_colormap()(normalization(np.nan_to_num(render_values, nan=minimum)))
+        rgba[..., 3] = np.where(np.isfinite(grid), 0.78, 0.0)
     plt.imsave(path, rgba, origin="upper")
     tile_count = 1 if request.radius_km <= 100 else (
         2 if request.radius_km <= 300 else 4
@@ -211,7 +241,7 @@ def _render_overlay(
             row_stop = int(boundaries[row + 1])
             column_start = int(boundaries[column])
             column_stop = int(boundaries[column + 1])
-            suffix = "_s" if scale == "s" else ""
+            suffix = "" if scale == "margin" else "_" + scale
             filename = f"coverage_overlay{suffix}_r{row}_c{column}.png"
             tile_path = path.parent / filename
             plt.imsave(
@@ -435,6 +465,7 @@ def _build_coverage_report(
     radials: tuple[RadialCoverage, ...] | None = None,
     s_contour_geojson: dict[str, Any] | None = None,
     s_overlay_tiles: list[dict[str, Any]] | None = None,
+    clearance_tiles: list[dict[str, Any]] | None = None,
 ) -> str:
     map_css, map_js = map_assets
     bounds = _coverage_bounds(request)
@@ -461,6 +492,25 @@ def _build_coverage_report(
     embedded_s_overlay_tiles = json.dumps(
         s_overlay_tiles or [], separators=(",", ":"),
     )
+    clearance_option = clearance_legend = clearance_note = ""
+    clearance_labels = None
+    if clearance_tiles:
+        title = tr("Visada e Fresnel")
+        criteria = clearance_criteria_label(request)
+        entries = [(color, tr(label)) for _, color, label in CLEARANCE_STYLES]
+        clearance_labels = {"title": title, "criteria": criteria, "entries": entries}
+        clearance_option = f'<option value="clearance">{html.escape(title)}</option>'
+        swatches = "".join(
+            f'<div><span class="legend-swatch" style="background:{color}"></span>{html.escape(label)}</div>'
+            for color, label in entries
+        )
+        clearance_legend = (
+            f'<div class="legend" id="clearance-legend" hidden><strong>{html.escape(title)}</strong>'
+            f'<div>{html.escape(criteria)}</div><div class="legend-classes">{swatches}</div></div>'
+        )
+        clearance_note = (
+            f'<p class="note">{html.escape(tr("Visada e Fresnel avalia a geometria de cada percurso. A margem da P.1812 inclui efeitos como a difração e pode ser positiva mesmo com visada bloqueada."))}</p>'
+        )
     raster_cells = grid_metadata["valid_circle_cells"]
     failed_cells = int(grid_metadata.get("failed_cells", 0))
     resume_count = int(grid_metadata.get("resume_count", 0))
@@ -547,6 +597,9 @@ def _build_coverage_report(
       background:linear-gradient(90deg,#65121b,#c62828,#ef6c00,#ffd54f,
                                  #9ccc65,#2e7d32,#0b5969); }}
     .legend-ticks {{ display:flex; justify-content:space-between; color:#34383e; }}
+    .legend-classes {{ margin-top:6px; }}
+    .legend-classes div {{ display:flex; align-items:center; gap:6px; margin-top:3px; }}
+    .legend-swatch {{ width:12px; height:10px; border-radius:2px; flex:none; }}
     .map-wrap {{ position:relative; }}
     .map-actions {{ display:flex; flex-wrap:wrap; align-items:center;
                     justify-content:space-between; gap:12px; margin-bottom:12px; }}
@@ -586,12 +639,14 @@ def _build_coverage_report(
           <select id="coverage-scale">
             <option value="margin">{html.escape(tr('Margem (dB)'))}</option>
             <option value="s">{html.escape(tr('Escala S'))}</option>
+            {clearance_option}
           </select>
         </label>
         <button type="button" id="export-map-pdf" disabled>{html.escape(tr('Exportar PDF com este mapa'))}</button>
       </div>
       <div class="export-status" id="export-status" role="status" aria-live="polite"></div>
       <p class="note">{html.escape(tr('Escala S estimada para VHF/UHF: S9 = −93 dBm e 6 dB por unidade S. O indicador real do receptor pode ser diferente.'))}</p>
+      {clearance_note}
       <div id="coverage-map" aria-label="{html.escape(tr('Mapa de cobertura'), quote=True)}"></div>
       <div class="legend" id="coverage-legend">
         <strong id="legend-title">{html.escape(tr('Margem do enlace'))}</strong>
@@ -600,6 +655,7 @@ def _build_coverage_report(
           <span>+6</span><span>+12</span><span>{html.escape(tr('+18 dB'))}</span></div>
         <div style="margin-top:7px" id="legend-contours">{html.escape(tr('Contornos: 0, +3, +6 e +12 dB'))}</div>
       </div>
+      {clearance_legend}
     </section>
     <section class="card">
       <div class="stats">
@@ -648,6 +704,8 @@ def _build_coverage_report(
   <script>
     const overlayTiles = {embedded_overlay_tiles};
     const sOverlayTiles = {embedded_s_overlay_tiles};
+    const overlayGroups = {{margin:overlayTiles, s:sOverlayTiles, clearance:{json.dumps(clearance_tiles or [])}}};
+    const clearanceLabels = {json.dumps(clearance_labels, ensure_ascii=False)};
     const coverageBounds = {json.dumps(bounds)};
     const contourData = {embedded_contours};
     const sContourData = {embedded_s_contours};
@@ -693,7 +751,7 @@ def _build_coverage_report(
           id:"coverage-image-" + mode + "-" + index,
           type:"raster", source:sourceId,
           layout:{{visibility:mode === "margin" ? "visible" : "none"}},
-          paint:{{"raster-opacity":0.78,"raster-resampling":"linear"}}
+          paint:{{"raster-opacity":0.78,"raster-resampling":mode === "clearance" ? "nearest" : "linear"}}
         }});
       }});
     }}
@@ -728,17 +786,24 @@ def _build_coverage_report(
       }});
     }}
     function updateScale() {{
-      for (const mode of ["margin", "s"]) {{
+      for (const [mode, tiles] of Object.entries(overlayGroups)) {{
         const visibility = mode === scaleSelect.value ? "visible" : "none";
-        const tiles = mode === "margin" ? overlayTiles : sOverlayTiles;
         tiles.forEach((_,index) => {{
           map.setLayoutProperty("coverage-image-" + mode + "-" + index,
                                 "visibility", visibility);
         }});
+      }}
+      for (const mode of ["margin", "s"]) {{
+        const visibility = mode === scaleSelect.value ? "visible" : "none";
         for (const layer of ["contour-lines-", "contour-labels-"]) {{
           map.setLayoutProperty(layer + mode, "visibility", visibility);
         }}
       }}
+      const showClearance = scaleSelect.value === "clearance";
+      document.getElementById("coverage-legend").hidden = showClearance;
+      const clearanceLegend = document.getElementById("clearance-legend");
+      if (clearanceLegend) clearanceLegend.hidden = !showClearance;
+      if (showClearance) return;
       const label = legendLabels[scaleSelect.value];
       document.getElementById("legend-title").textContent = label.title;
       document.getElementById("legend-ticks").replaceChildren(
@@ -752,8 +817,7 @@ def _build_coverage_report(
     }}
     let layersReady = false;
     map.on("load", () => {{
-      addOverlayGroup(overlayTiles, "margin");
-      addOverlayGroup(sOverlayTiles, "s");
+      for (const [mode, tiles] of Object.entries(overlayGroups)) addOverlayGroup(tiles, mode);
       addContourGroup(contourData, "margin");
       addContourGroup(sContourData, "s");
       if (antennaBeam) {{
@@ -778,21 +842,36 @@ def _build_coverage_report(
         .setPopup(new maplibregl.Popup().setText({json.dumps(tr("Transmissor"))}))
         .addTo(map);
       layersReady = true;
+      updateScale();
     }});
     scaleSelect.addEventListener("change", () => {{
       if (layersReady) updateScale();
     }});
 
     function drawCoverageLegend(ctx, cssWidth, cssHeight) {{
-      const label = legendLabels[scaleSelect.value];
+      const showClearance = scaleSelect.value === "clearance";
       const legendWidth = Math.min(300, cssWidth-24);
-      const legendHeight = 91;
+      const legendHeight = showClearance ? 111 : 91;
       const legendX = 14;
       const legendY = cssHeight-legendHeight-28;
       ctx.fillStyle = "rgba(255,255,255,0.94)";
       ctx.fillRect(legendX,legendY,legendWidth,legendHeight);
       ctx.fillStyle = "#17191d";
       ctx.font = "bold 12px Arial, sans-serif";
+      if (showClearance && clearanceLabels) {{
+        ctx.fillText(clearanceLabels.title,legendX+10,legendY+17,legendWidth-20);
+        ctx.font = "11px Arial, sans-serif";
+        ctx.fillText(clearanceLabels.criteria,legendX+10,legendY+34,legendWidth-20);
+        clearanceLabels.entries.forEach(([color, text], index) => {{
+          const y = legendY+54+17*index;
+          ctx.fillStyle = color;
+          ctx.fillRect(legendX+10,y-9,12,10);
+          ctx.fillStyle = "#34383e";
+          ctx.fillText(text,legendX+28,y,legendWidth-38);
+        }});
+        return;
+      }}
+      const label = legendLabels[scaleSelect.value];
       ctx.fillText(label.title,legendX+10,legendY+17,legendWidth-20);
       const gradient = ctx.createLinearGradient(legendX+10,0,legendX+legendWidth-10,0);
       palette.forEach((color,index) => gradient.addColorStop(index/(palette.length-1),color));

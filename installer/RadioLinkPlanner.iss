@@ -1,5 +1,5 @@
 #define MyAppName "Radio Link Planner"
-#define MyAppVersion "0.5.4"
+#define MyAppVersion "0.5.5"
 #define MyAppPublisher "Mario Pin - PU2PTU"
 #define MyAppExeName "RadioLinkPlanner.exe"
 #define MyAppIconName "RadioLinkPlanner-" + MyAppVersion + ".ico"
@@ -11,11 +11,11 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-VersionInfoVersion=0.5.4.0
+VersionInfoVersion=0.5.5.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=Instalador do {#MyAppName}
 VersionInfoProductName={#MyAppName}
-VersionInfoProductVersion=0.5.4.0
+VersionInfoProductVersion=0.5.5.0
 DefaultDirName={autopf}\Radio Link Planner
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
@@ -23,7 +23,7 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\installer-output
-OutputBaseFilename=RadioLinkPlanner-0.5.4-Windows-x64-Setup
+OutputBaseFilename=RadioLinkPlanner-0.5.5-Windows-x64-Setup
 Compression=lzma2/max
 SolidCompression=yes
 SetupIconFile=..\assets\app-icon.ico

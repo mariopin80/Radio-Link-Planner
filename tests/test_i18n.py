@@ -105,10 +105,10 @@ def test_translated_html_preserves_user_names_and_styles(reference_project, refe
 def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeypatch):
     import tkinter as tk
 
+    from radiolink.context_help import FIELD_HELP
     from radiolink.coverage import CoverageProgress
     from radiolink.desktop import RadioLinkPlannerApp
     from radiolink.project_files import read_coverage_project
-    from radiolink.propagation.p1812 import P1812_TIME_HELP
     from radiolink.release_checks import check_home_layout
     from radiolink.version import __version__, CONTACT_EMAIL, CALLSIGN, DEVELOPER
 
@@ -119,7 +119,23 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
     monkeypatch.setattr("radiolink.desktop.filedialog.asksaveasfilename", lambda **_: str(filename))
     monkeypatch.setattr("radiolink.desktop.filedialog.askopenfilename", lambda **_: str(filename))
     help_messages = []
-    monkeypatch.setattr("radiolink.desktop.messagebox.showinfo", lambda title, message, **_: help_messages.append(message))
+    monkeypatch.setattr("radiolink.desktop.messagebox.showinfo", lambda title, message, **_: help_messages.append((title, message)))
+
+    def descendants(widget):
+        for child in widget.winfo_children():
+            yield child
+            yield from descendants(child)
+
+    def verify_help_icons(widget, expected_keys):
+        expected = [tuple(map(tr, FIELD_HELP[key])) for key in expected_keys]
+        buttons = [item for item in descendants(widget) if isinstance(item, tk.Button)]
+        assert len(buttons) == len(expected)
+        help_messages.clear()
+        for button in buttons:
+            assert button.cget("image")
+            assert button.winfo_reqwidth() <= round(root.winfo_fpixels("0.2i")) + 2
+            button.invoke()
+        assert sorted(help_messages) == sorted(expected)
     try:
         for language in LANGUAGES:
             app._change_language(language, persist=False)
@@ -131,6 +147,8 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
             assert app.optimize_height_button.instate(["disabled"])
             assert not hasattr(app, "pdf_button")
             assert app.notebook.tab(app.about_tab, "text") == tr("Sobre")
+            verify_help_icons(root, ("polarization", "availability", "fresnel", "earth_k",
+                                     "sensitivity", "sensitivity", "runs"))
             def all_text(widget):
                 result = []
                 if "text" in widget.keys():
@@ -145,10 +163,9 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
             app._open_mode("coverage")
             assert app.report_button.cget("text") == tr("Mapa e relatório")
             assert not hasattr(app, "profile_button")
-            help_button = next(widget for widget in app.form_widgets
-                               if "text" in widget.keys() and widget.cget("text") == tr("Ajuda"))
-            help_button.invoke()
-            assert help_messages[-1] == tr(P1812_TIME_HELP)
+            verify_help_icons(root, ("polarization", "p1812_time", "resolution", "resolution",
+                                     "antenna_pattern", "beamwidth", "front_to_back", "azimuth",
+                                     "sensitivity", "fresnel", "earth_k"))
             assert app.coverage_vars["time_percentage"].get() == "50"
             app.coverage_vars["tx_pattern"].set(choice_label("directional"))
             app.coverage_vars["tx_azimuth"].set("359")
@@ -157,22 +174,34 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
             app.coverage_vars["resolution_preset"].set(choice_label("custom"))
             app.coverage_vars["custom_resolution"].set("1000")
             app.coverage_vars["polarization"].set(choice_label("horizontal"))
+            app.coverage_vars["include_clearance"].set("1")
+            app.coverage_vars["fresnel_percent"].set("80")
+            app.coverage_vars["effective_earth_k"].set("1.0")
             app._save_coverage_project()
             saved = read_coverage_project(filename)
             assert saved["resolution_preset"] == "custom"
             assert saved["polarization"] == "horizontal"
             assert saved["tx_pattern"] == "directional" and saved["tx_azimuth"] == "359"
+            assert saved["include_clearance"] == "1" and saved["fresnel_percent"] == "80"
+            app._new_coverage()
+            app._select_coverage_project()
+            request = app._collect_coverage_request(for_estimate=True)
+            assert (request.include_clearance, request.fresnel_percent, request.effective_earth_k) == (True, 80.0, 1.0)
             # Versions 0.4.x saved Portuguese display labels; keep accepting them.
             payload = json.loads(filename.read_text())
             payload["schema_version"] = "1.0"
             payload["values"]["resolution_preset"] = "Recomendada"
             payload["values"]["polarization"] = "Vertical"
+            payload["values"].pop("include_clearance")
+            payload["values"].pop("fresnel_percent")
+            payload["values"].pop("effective_earth_k")
             filename.write_text(json.dumps(payload), encoding="utf-8")
             app._select_coverage_project()
             request = app._collect_coverage_request(for_estimate=True)
             assert request.resolution_preset == "recommended"
             assert request.polarization == "vertical"
             assert request.transmitter_pattern is None
+            assert (request.include_clearance, request.fresnel_percent, request.effective_earth_k) == (False, 60.0, 4.0 / 3.0)
             assert not app.directional_controls.winfo_manager()
             app.events.put(("coverage_progress", CoverageProgress(
                 42, "cells", tr("{x0:.0f}% — Calculando células: {x1:,} de {x2:,}", x0=42, x1=400, x2=1000),
