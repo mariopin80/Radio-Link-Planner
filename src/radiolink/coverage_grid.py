@@ -501,7 +501,9 @@ def run_direct_grid_coverage(
                         break
                     selected = np.s_[spec.row_start:spec.row_stop, spec.column_start:spec.column_stop]
                     loss_grid[selected] = cached_loss[selected]
-                    grid[selected] = _margin_from_loss(configuration, cached_loss[selected])
+                    grid[selected] = _block_margin_from_loss(
+                        request, configuration, spec, cached_loss[selected]
+                    )
                     count = int(np.count_nonzero(np.isfinite(cached_loss[selected])))
                     block_statistics[spec.block_id] = (count, 0, count, 0, 0, 0)
                     completed[spec.block_id] = True
@@ -658,17 +660,19 @@ def run_direct_grid_coverage(
                 raise RuntimeError(
                     tr('A P.1812 não produziu resultado para {x0} célula(s) do bloco {x1}. O bloco não foi marcado como concluído e poderá ser reprocessado. Detalhes: {x2}', x0=result.failed_cells, x1=result.block_id, x2=details)
                 )
-            grid[
-                result.row_start : result.row_stop,
-                result.column_start : result.column_stop,
-            ] = result.margin_db
-            grid.flush()
             selected = np.s_[result.row_start:result.row_stop, result.column_start:result.column_stop]
             if result.loss_db is None:
                 # Compatibility for injected/testing block evaluators.
                 loss_grid[selected] = _margin_from_loss(configuration, 0.0) - result.margin_db.astype(float)
             else:
                 loss_grid[selected] = result.loss_db
+            if request.transmitter_pattern is None:
+                grid[selected] = result.margin_db
+            else:
+                grid[selected] = _block_margin_from_loss(
+                    request, configuration, blocks[result.block_id], loss_grid[selected]
+                )
+            grid.flush()
             loss_grid.flush()
             block_statistics[result.block_id] = (
                 result.calculated_cells,
@@ -863,6 +867,10 @@ def run_direct_grid_coverage(
             **grid_metadata,
             **report_statistics,
             "time_percentage": request.time_percentage,
+            "transmitter_gain_dbi": request.transmitter_gain_dbi,
+            "transmitter_pattern": (
+                asdict(request.transmitter_pattern) if request.transmitter_pattern else None
+            ),
             "total_elapsed_seconds": time.monotonic() - tracker.started,
             "request_fingerprint": fingerprint,
             "completed_at_utc": datetime.now(UTC).isoformat(),
@@ -1262,6 +1270,24 @@ def _margin_from_loss(
     return received_power_dbm - configuration.receiver_threshold_dbm
 
 
+def _block_margin_from_loss(
+    request: CoverageRequest,
+    configuration: _WorkerConfiguration,
+    spec: GridBlockSpec,
+    loss: np.ndarray,
+) -> np.ndarray:
+    margin = _margin_from_loss(configuration, loss)
+    pattern = request.transmitter_pattern
+    if pattern is None:
+        return margin
+    centre = (configuration.dimension - 1) / 2.0
+    rows, columns = np.ogrid[spec.row_start:spec.row_stop, spec.column_start:spec.column_stop]
+    east, north = columns - centre, centre - rows
+    bearing = np.degrees(np.arctan2(east, north))
+    bearing = np.where((east == 0.0) & (north == 0.0), pattern.azimuth_deg, bearing)
+    return margin - pattern.attenuation_db(bearing)
+
+
 def _worker_configuration(
     request: CoverageRequest,
     dimension: int,
@@ -1552,6 +1578,9 @@ def _request_payload(
     include_output_directory: bool,
 ) -> dict[str, Any]:
     data = asdict(request)
+    if request.transmitter_pattern is None:
+        # Existing omni projects can resume their pre-0.5.4 checkpoints.
+        data.pop("transmitter_pattern")
     if include_output_directory:
         data["output_directory"] = str(request.output_directory)
     else:

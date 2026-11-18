@@ -14,6 +14,12 @@ from .base import (
 )
 from .p1812_fast import optimize_p1812
 
+P1812_TIME_HELP = (
+    "Na P.1812, p é o percentual de tempo em que a perda básica prevista não é excedida. "
+    "1% representa condições favoráveis; 50% é a mediana e o padrão. "
+    "A recomendação cobre 1–50%; a disponibilidade do enlace exige avaliação própria."
+)
+
 
 class P1812Model:
     model_id = "p1812"

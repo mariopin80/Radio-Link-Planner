@@ -47,7 +47,8 @@ def test_complete_catalog_and_preserved_numeric_formatting():
 @pytest.mark.parametrize("language", LANGUAGES)
 def test_choices_keep_machine_ids_across_languages(language):
     set_language(language)
-    for choices in (("quick", "recommended", "detailed", "custom"), ("vertical", "horizontal")):
+    for choices in (("quick", "recommended", "detailed", "custom"), ("vertical", "horizontal"),
+                    ("omni", "directional"), ("elevate_a", "elevate_b", "elevate_both")):
         for value in choices:
             label = choice_label(value)
             assert choice_id(label, choices) == value
@@ -107,6 +108,7 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
     from radiolink.coverage import CoverageProgress
     from radiolink.desktop import RadioLinkPlannerApp
     from radiolink.project_files import read_coverage_project
+    from radiolink.propagation.p1812 import P1812_TIME_HELP
     from radiolink.release_checks import check_home_layout
     from radiolink.version import __version__, CONTACT_EMAIL, CALLSIGN, DEVELOPER
 
@@ -116,6 +118,8 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
     filename = tmp_path / "coverage.rlp"
     monkeypatch.setattr("radiolink.desktop.filedialog.asksaveasfilename", lambda **_: str(filename))
     monkeypatch.setattr("radiolink.desktop.filedialog.askopenfilename", lambda **_: str(filename))
+    help_messages = []
+    monkeypatch.setattr("radiolink.desktop.messagebox.showinfo", lambda title, message, **_: help_messages.append(message))
     try:
         for language in LANGUAGES:
             app._change_language(language, persist=False)
@@ -124,6 +128,8 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
             check_home_layout(root, tmp_path / "interface")
             app._open_mode("link")
             assert app._collect_editor_values().polarization == "vertical"
+            assert app.optimize_height_button.instate(["disabled"])
+            assert not hasattr(app, "pdf_button")
             assert app.notebook.tab(app.about_tab, "text") == tr("Sobre")
             def all_text(widget):
                 result = []
@@ -137,6 +143,17 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
                 assert value in about
             app._show_start_screen()
             app._open_mode("coverage")
+            assert app.report_button.cget("text") == tr("Mapa e relatório")
+            assert not hasattr(app, "profile_button")
+            help_button = next(widget for widget in app.form_widgets
+                               if "text" in widget.keys() and widget.cget("text") == tr("Ajuda"))
+            help_button.invoke()
+            assert help_messages[-1] == tr(P1812_TIME_HELP)
+            assert app.coverage_vars["time_percentage"].get() == "50"
+            app.coverage_vars["tx_pattern"].set(choice_label("directional"))
+            app.coverage_vars["tx_azimuth"].set("359")
+            assert app.directional_controls.winfo_manager() == "grid"
+            assert app._collect_coverage_request(for_estimate=True).transmitter_pattern.azimuth_deg == 359
             app.coverage_vars["resolution_preset"].set(choice_label("custom"))
             app.coverage_vars["custom_resolution"].set("1000")
             app.coverage_vars["polarization"].set(choice_label("horizontal"))
@@ -144,6 +161,7 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
             saved = read_coverage_project(filename)
             assert saved["resolution_preset"] == "custom"
             assert saved["polarization"] == "horizontal"
+            assert saved["tx_pattern"] == "directional" and saved["tx_azimuth"] == "359"
             # Versions 0.4.x saved Portuguese display labels; keep accepting them.
             payload = json.loads(filename.read_text())
             payload["schema_version"] = "1.0"
@@ -154,6 +172,8 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
             request = app._collect_coverage_request(for_estimate=True)
             assert request.resolution_preset == "recommended"
             assert request.polarization == "vertical"
+            assert request.transmitter_pattern is None
+            assert not app.directional_controls.winfo_manager()
             app.events.put(("coverage_progress", CoverageProgress(
                 42, "cells", tr("{x0:.0f}% — Calculando células: {x1:,} de {x2:,}", x0=42, x1=400, x2=1000),
                 400, 1000, 60, 90,

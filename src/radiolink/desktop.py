@@ -5,6 +5,7 @@ import os
 import queue
 import subprocess
 import sys
+import tempfile
 import threading
 import tkinter as tk
 import traceback
@@ -12,6 +13,7 @@ import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+from .antenna import COVERAGE_ANTENNA_DEFAULTS, DirectionalAntenna
 from .coverage import (
     COVERAGE_RESOLUTION_M,
     CoverageCancelled,
@@ -37,7 +39,9 @@ from .desktop_core import (
     run_form_analysis,
 )
 from .domain import Project, ReceiverSpec
+from .height_optimization import apply_height_solution
 from .map_picker import open_coordinate_picker
+from .map_export import COVERAGE_MAP_PDF, LINK_MAP_PDF
 from .legal_notices import COPERNICUS_LICENSE_URL, OSM_COPYRIGHT_URL
 from .modes import MODE_PROFILES, threshold_dbm
 from .project_editor import (
@@ -49,7 +53,9 @@ from .project_editor import (
     write_project_json,
 )
 from .project_files import read_coverage_project, write_coverage_project
+from .propagation.p1812 import P1812_TIME_HELP
 from .report_server import open_report_in_browser
+from .terrain import TerrainProfile
 from .version import __version__, RELEASE_MONTH, DEVELOPER, CALLSIGN, CONTACT_EMAIL
 from .i18n import LANGUAGES, tr, choice_id, choice_label, get_language, load_language, set_language, validation_message
 
@@ -80,6 +86,7 @@ class RadioLinkPlannerApp:
         self.mode_var = tk.StringVar()
         self.polarization_var = tk.StringVar()
         self.availability_var = tk.StringVar()
+        self.allow_mode_change_var = tk.BooleanVar()
         self.terminal_vars = {
             "a": self._new_terminal_vars(),
             "b": self._new_terminal_vars(),
@@ -118,6 +125,10 @@ class RadioLinkPlannerApp:
                 )
             ),
         }
+        self.coverage_vars.update({
+            key: tk.StringVar(value=choice_label(default) if key == "tx_pattern" else default)
+            for key, default in COVERAGE_ANTENNA_DEFAULTS.items()
+        })
         self.coverage_resolution_var = tk.StringVar()
         self.coverage_progress_var = tk.StringVar(
             value=tr('Aguardando o início do cálculo.')
@@ -128,6 +139,7 @@ class RadioLinkPlannerApp:
         self._install_coordinate_traces()
         for variable in self.coverage_vars.values():
             variable.trace_add("write", self._coverage_radius_changed)
+        self.coverage_vars["tx_pattern"].trace_add("write", self._coverage_pattern_changed)
         self._coverage_radius_changed()
         self._show_start_screen()
         self.root.after(100, self._poll_events)
@@ -406,11 +418,13 @@ class RadioLinkPlannerApp:
         polarization = choice_id(self.polarization_var.get(), ("vertical", "horizontal")) if self.polarization_var.get() else None
         coverage_polarization = choice_id(self.coverage_vars["polarization"].get(), ("vertical", "horizontal"))
         resolution = choice_id(self.coverage_vars["resolution_preset"].get(), ("quick", "recommended", "detailed", "custom"))
+        pattern = choice_id(self.coverage_vars["tx_pattern"].get(), ("omni", "directional"))
         set_language(language, persist=persist)
         if polarization:
             self.polarization_var.set(choice_label(polarization))
         self.coverage_vars["polarization"].set(choice_label(coverage_polarization))
         self.coverage_vars["resolution_preset"].set(choice_label(resolution))
+        self.coverage_vars["tx_pattern"].set(choice_label(pattern))
         self._coordinates_changed()
         self._coverage_radius_changed()
         self._show_start_screen()
@@ -720,6 +734,12 @@ class RadioLinkPlannerApp:
         )
         availability_entry.grid(row=1, column=5, sticky="ew", pady=5)
         self._register(availability_entry)
+        mode_change = ttk.Checkbutton(
+            general, text=tr("Aceito avaliar SSB como alternativa à FM"),
+            variable=self.allow_mode_change_var,
+        )
+        mode_change.grid(row=2, column=0, columnspan=6, sticky="w", pady=(4, 0))
+        self._register(mode_change)
 
         terminals = ttk.Frame(tab, style="Panel.TFrame")
         terminals.grid(row=1, column=0, sticky="nsew")
@@ -967,14 +987,21 @@ class RadioLinkPlannerApp:
         ttk.Label(general, text=tr('Tempo P.1812 (%)'), style="Panel.TLabel").grid(
             row=1, column=4, sticky="w", padx=(20, 8), pady=5
         )
-        time_combo = ttk.Combobox(
-            general,
+        time_controls = ttk.Frame(general, style="Panel.TFrame")
+        time_controls.grid(row=1, column=5, sticky="ew", pady=5)
+        time_controls.columnconfigure(0, weight=1)
+        time_field = ttk.Spinbox(
+            time_controls, from_=1, to=50, increment=1, width=7,
             textvariable=variables["time_percentage"],
-            values=("1", "10", "20", "50"),
-            state="readonly",
         )
-        time_combo.grid(row=1, column=5, sticky="ew", pady=5)
-        self._register(time_combo)
+        time_field.grid(row=0, column=0, sticky="ew")
+        self._register(time_field)
+        time_help = ttk.Button(
+            time_controls, text=tr("Ajuda"), width=7,
+            command=lambda: messagebox.showinfo(tr("Tempo P.1812 (%)"), tr(P1812_TIME_HELP), parent=self.root),
+        )
+        time_help.grid(row=0, column=1, padx=(6, 0))
+        self._register(time_help)
 
         location = ttk.LabelFrame(
             tab,
@@ -1105,7 +1132,6 @@ class RadioLinkPlannerApp:
         for row, (label, key) in enumerate(
             (
                 (tr('Altura da antena (m)'), "tx_height"),
-                (tr('Ganho da antena (dBi)'), "tx_gain"),
                 (tr('Perda no cabo (dB)'), "tx_line_loss"),
                 (tr('Potência TX (W)'), "tx_power"),
             )
@@ -1113,6 +1139,28 @@ class RadioLinkPlannerApp:
             self._coverage_panel_field(
                 transmitter, row, label, variables[key]
             )
+        ttk.Label(transmitter, text=tr("Antena transmissora"), style="Panel.TLabel").grid(
+            row=3, column=0, sticky="w", padx=(0, 8), pady=5,
+        )
+        antenna_combo = ttk.Combobox(
+            transmitter, textvariable=variables["tx_pattern"],
+            values=(choice_label("omni"), choice_label("directional")), state="readonly",
+        )
+        antenna_combo.grid(row=3, column=1, sticky="ew", pady=5)
+        self._register(antenna_combo)
+        self.coverage_gain_label = self._coverage_panel_field(
+            transmitter, 4, tr("Ganho da antena (dBi)"), variables["tx_gain"],
+        )
+        self.directional_controls = ttk.Frame(transmitter, style="Panel.TFrame")
+        self.directional_controls.columnconfigure(1, weight=1)
+        self.directional_controls.grid(row=5, column=0, columnspan=2, sticky="ew")
+        for row, (label, key) in enumerate((
+            (tr("Abertura a −3 dB (°)"), "tx_hpbw"),
+            (tr("Relação frente/costas (dB)"), "tx_front_to_back"),
+            (tr("Azimute de apontamento (°)"), "tx_azimuth"),
+        )):
+            self._coverage_panel_field(self.directional_controls, row, label, variables[key])
+        self._coverage_pattern_changed()
         for row, (label, key) in enumerate(
             (
                 (tr('Altura da antena (m)'), "rx_height"),
@@ -1209,13 +1257,28 @@ class RadioLinkPlannerApp:
         row: int,
         label: str,
         variable: tk.StringVar,
-    ) -> None:
-        ttk.Label(parent, text=label, style="Panel.TLabel").grid(
+    ) -> ttk.Label:
+        field_label = ttk.Label(parent, text=label, style="Panel.TLabel")
+        field_label.grid(
             row=row, column=0, sticky="w", padx=(0, 10), pady=5
         )
         entry = ttk.Entry(parent, textvariable=variable)
         entry.grid(row=row, column=1, sticky="ew", pady=5)
         self._register(entry)
+        return field_label
+
+    def _coverage_pattern_changed(self, *_: object) -> None:
+        controls = getattr(self, "directional_controls", None)
+        if controls is None or not controls.winfo_exists():
+            return
+        directional = self.coverage_vars["tx_pattern"].get() == choice_label("directional")
+        if directional:
+            controls.grid()
+        else:
+            controls.grid_remove()
+        self.coverage_gain_label.configure(
+            text=tr("Ganho máximo (dBi)") if directional else tr("Ganho da antena (dBi)")
+        )
 
     def _build_coverage_results_tab(self) -> None:
         tab = self.results_tab
@@ -1231,32 +1294,18 @@ class RadioLinkPlannerApp:
         actions.grid(row=0, column=1, sticky="e")
         self.report_button = ttk.Button(
             actions,
-            text=tr('Abrir mapa interativo'),
+            text=tr('Mapa e relatório'),
             command=self._open_report,
             state="disabled",
         )
         self.report_button.grid(row=0, column=0, padx=(0, 6))
-        self.pdf_button = ttk.Button(
-            actions,
-            text=tr('Abrir relatório PDF'),
-            command=self._open_pdf_report,
-            state="disabled",
-        )
-        self.pdf_button.grid(row=0, column=1, padx=6)
-        self.profile_button = ttk.Button(
-            actions,
-            text=tr('Abrir mapa técnico'),
-            command=self._open_heatmap,
-            state="disabled",
-        )
-        self.profile_button.grid(row=0, column=2, padx=6)
         self.folder_button = ttk.Button(
             actions,
             text=tr('Abrir pasta'),
             command=self._open_output_directory,
             state="disabled",
         )
-        self.folder_button.grid(row=0, column=3, padx=(6, 0))
+        self.folder_button.grid(row=0, column=1, padx=(6, 0))
 
         body = ttk.Frame(tab, style="Panel.TFrame")
         body.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
@@ -1352,27 +1401,20 @@ class RadioLinkPlannerApp:
             state="disabled",
         )
         self.report_button.grid(row=0, column=0, padx=(0, 6))
-        self.pdf_button = ttk.Button(
+        self.optimize_height_button = ttk.Button(
             actions,
-            text=tr('Abrir relatório PDF'),
-            command=self._open_pdf_report,
+            text=tr('Otimizar altura das antenas'),
+            command=self._open_height_optimizer,
             state="disabled",
         )
-        self.pdf_button.grid(row=0, column=1, padx=6)
-        self.profile_button = ttk.Button(
-            actions,
-            text=tr('Abrir perfil'),
-            command=self._open_profile,
-            state="disabled",
-        )
-        self.profile_button.grid(row=0, column=2, padx=6)
+        self.optimize_height_button.grid(row=0, column=1, padx=6)
         self.folder_button = ttk.Button(
             actions,
             text=tr('Abrir pasta'),
             command=self._open_output_directory,
             state="disabled",
         )
-        self.folder_button.grid(row=0, column=3, padx=(6, 0))
+        self.folder_button.grid(row=0, column=2, padx=(6, 0))
 
         body = ttk.Frame(tab, style="Panel.TFrame")
         body.grid(row=2, column=0, sticky="nsew", pady=(10, 0))
@@ -1555,6 +1597,7 @@ class RadioLinkPlannerApp:
         self.mode_var.set("FM")
         self.polarization_var.set(choice_label("vertical"))
         self.availability_var.set("70")
+        self.allow_mode_change_var.set(False)
         defaults = {
             "a": (tr('Estação A'), "10", "2", "1", "50", "-120"),
             "b": (tr('Estação B'), "10", "2", "1", "50", "-120"),
@@ -1581,6 +1624,10 @@ class RadioLinkPlannerApp:
             project = project_from_editor_values(
                 values,
                 template=self.loaded_project,
+                terrain_profile=(
+                    str(self.loaded_terrain_path)
+                    if self._can_reuse_loaded_terrain() else "terrain_profile.csv"
+                ),
             )
         except Exception as exc:  # noqa: BLE001 - form validation boundary
             messagebox.showerror(
@@ -1679,9 +1726,10 @@ class RadioLinkPlannerApp:
                 / "Resultados"
                 / "Minha-cobertura"
             ),
+            **COVERAGE_ANTENNA_DEFAULTS,
         }
         for key, value in defaults.items():
-            self.coverage_vars[key].set(value)
+            self.coverage_vars[key].set(choice_label(value) if key == "tx_pattern" else value)
         self.coverage_project_path = None
         self.last_coverage = None
         self._disable_result_actions()
@@ -1717,6 +1765,7 @@ class RadioLinkPlannerApp:
         }
         values["polarization"] = choice_id(values["polarization"], ("vertical", "horizontal"))
         values["resolution_preset"] = choice_id(values["resolution_preset"], ("quick", "recommended", "detailed", "custom"))
+        values["tx_pattern"] = choice_id(values["tx_pattern"], ("omni", "directional"))
         try:
             destination = write_coverage_project(values, selected)
         except Exception as exc:  # noqa: BLE001 - filesystem boundary
@@ -1739,7 +1788,13 @@ class RadioLinkPlannerApp:
         if not selected:
             return
         try:
-            values = read_coverage_project(selected)
+            values = {**COVERAGE_ANTENNA_DEFAULTS, **read_coverage_project(selected)}
+            for key, choices in (
+                ("polarization", ("vertical", "horizontal")),
+                ("resolution_preset", ("quick", "recommended", "detailed", "custom")),
+                ("tx_pattern", ("omni", "directional")),
+            ):
+                values[key] = choice_label(choice_id(values[key], choices))
         except Exception as exc:  # noqa: BLE001 - invalid project boundary
             messagebox.showerror(
                 APP_NAME,
@@ -1747,9 +1802,6 @@ class RadioLinkPlannerApp:
             )
             return
         for key, value in values.items():
-            if key in ("polarization", "resolution_preset"):
-                choices = ("vertical", "horizontal") if key == "polarization" else ("quick", "recommended", "detailed", "custom")
-                value = choice_label(choice_id(value, choices))
             self.coverage_vars[key].set(value)
         self.coverage_project_path = Path(selected).resolve()
         self.last_coverage = None
@@ -1763,6 +1815,7 @@ class RadioLinkPlannerApp:
         self.name_var.set(values.name)
         self.frequency_var.set(f"{values.frequency_mhz:.6f}".rstrip("0").rstrip("."))
         self.mode_var.set(values.primary_mode)
+        self.allow_mode_change_var.set(values.allow_mode_change)
         self.polarization_var.set(choice_label(values.polarization))
         self.availability_var.set(
             f"{values.target_availability_percent:.3f}".rstrip("0").rstrip(".")
@@ -1777,7 +1830,7 @@ class RadioLinkPlannerApp:
         variables["name"].set(values.name)
         variables['latitude'].set(f"{values.latitude_deg:.8f}")
         variables['longitude'].set(f"{values.longitude_deg:.8f}")
-        variables["height"].set(self._format_number(values.antenna_height_m))
+        variables["height"].set(str(values.antenna_height_m))
         variables["gain"].set(self._format_number(values.antenna_gain_dbi))
         variables["line_loss"].set(self._format_number(values.line_loss_db))
         variables["power"].set(self._format_number(values.tx_power_w))
@@ -1845,6 +1898,7 @@ class RadioLinkPlannerApp:
             ),
             terminal_a=terminal("a", "A"),
             terminal_b=terminal("b", "B"),
+            allow_mode_change=self.allow_mode_change_var.get(),
         )
 
     @staticmethod
@@ -1918,6 +1972,13 @@ class RadioLinkPlannerApp:
         custom_resolution = None
         if preset == "custom":
             custom_resolution = int(values["custom_resolution"].get())
+        pattern = None
+        if choice_id(values["tx_pattern"].get(), ("omni", "directional")) == "directional":
+            pattern = DirectionalAntenna(
+                hpbw_deg=self._parse_float(values["tx_hpbw"].get(), tr("Abertura a −3 dB (°)")),
+                front_to_back_db=self._parse_float(values["tx_front_to_back"].get(), tr("Relação frente/costas (dB)")),
+                azimuth_deg=self._parse_float(values["tx_azimuth"].get(), tr("Azimute de apontamento (°)")),
+            )
         request = CoverageRequest(
             name=values["name"].get().strip(),
             latitude_deg=self._parse_float(
@@ -1974,6 +2035,7 @@ class RadioLinkPlannerApp:
             ),
             resolution_preset=preset,
             custom_resolution_m=custom_resolution,
+            transmitter_pattern=pattern,
         )
         request.validate()
         return request
@@ -2148,20 +2210,9 @@ class RadioLinkPlannerApp:
             self._set_result_text(build_desktop_summary(payload))
             self.status_var.set(tr('Análise concluída: mapa, perfil e relatório gerados.'))
             self.report_button.configure(state="normal")
-            self.pdf_button.configure(
-                state=(
-                    "normal"
-                    if payload.paths.get("report_pdf", Path()).is_file()
-                    else "disabled"
-                )
-            )
             self.folder_button.configure(state="normal")
-            self.profile_button.configure(
-                state=(
-                    "normal"
-                    if payload.paths.get("profile_plot", Path()).is_file()
-                    else "disabled"
-                )
+            self.optimize_height_button.configure(
+                state="normal" if terrain_path and terrain_path.is_file() else "disabled",
             )
             return
         if event == "coverage_success":
@@ -2173,14 +2224,6 @@ class RadioLinkPlannerApp:
                 tr('Cobertura concluída: mapa de calor e contornos gerados.')
             )
             self.report_button.configure(state="normal")
-            self.pdf_button.configure(
-                state=(
-                    "normal"
-                    if payload.paths.get("report_pdf", Path()).is_file()
-                    else "disabled"
-                )
-            )
-            self.profile_button.configure(state="normal")
             self.folder_button.configure(state="normal")
             return
         if event == "coverage_cancelled":
@@ -2243,9 +2286,9 @@ class RadioLinkPlannerApp:
 
     def _disable_result_actions(self) -> None:
         self.report_button.configure(state="disabled")
-        self.pdf_button.configure(state="disabled")
-        self.profile_button.configure(state="disabled")
         self.folder_button.configure(state="disabled")
+        if self.current_mode == "link":
+            self.optimize_height_button.configure(state="disabled")
 
     def _set_result_text(self, value: str) -> None:
         self.result_text.configure(state="normal")
@@ -2318,28 +2361,40 @@ class RadioLinkPlannerApp:
                 ),
             )
         elif self.last_outcome:
-            open_report_in_browser(self.last_outcome.paths["report_html"])
+            outcome = self.last_outcome
+            open_report_in_browser(
+                outcome.paths["report_html"],
+                on_export_link_pdf=lambda screenshot: _export_link_map_pdf(outcome, screenshot),
+            )
 
-    def _open_profile(self) -> None:
-        if self.last_outcome and "profile_plot" in self.last_outcome.paths:
-            _open_path(self.last_outcome.paths["profile_plot"])
+    def _open_height_optimizer(self) -> None:
+        from .height_dialog import open_height_dialog
 
-    def _open_pdf_report(self) -> None:
-        if self.current_mode == "coverage" and self.last_coverage:
-            report = self.last_coverage.paths.get("report_pdf_map")
-            if report and report.is_file():
-                _open_path(report)
-            else:
-                self._open_report()
-                self.status_var.set(tr('No mapa interativo, clique em “Exportar PDF com este mapa”.'))
-        elif self.last_outcome:
-            report = self.last_outcome.paths.get("report_pdf")
-            if report:
-                _open_path(report)
+        outcome = self.last_outcome
+        if outcome is None:
+            return
+        try:
+            project = project_from_editor_values(self._collect_editor_values(), template=self.loaded_project)
+            a, b = outcome.project.terminal_a, outcome.project.terminal_b
+            previous = (a.latitude_deg, a.longitude_deg, b.latitude_deg, b.longitude_deg)
+            if any(abs(current - old) > 1e-8 for current, old in zip(self._coordinate_tuple(), previous)):
+                raise ValueError(tr("Analise o enlace com as coordenadas atuais para obter o perfil."))
+            profile = TerrainProfile.from_csv(outcome.paths["terrain_profile"])
+            if profile.fingerprint() != outcome.result["traceability"]["terrain_sha256"]:
+                raise ValueError(tr("O perfil foi alterado. Execute a análise novamente."))
+        except (OSError, ValueError, KeyError) as exc:
+            messagebox.showerror(APP_NAME, validation_message(exc), parent=self.root)
+            return
 
-    def _open_heatmap(self) -> None:
-        if self.last_coverage:
-            _open_path(self.last_coverage.paths["heatmap"])
+        def apply(solution) -> None:
+            self.loaded_project = apply_height_solution(project, profile, solution)
+            self.loaded_terrain_path = outcome.paths["terrain_profile"]
+            self.terminal_vars["a"]["height"].set(str(solution.proposed_a_m))
+            self.terminal_vars["b"]["height"].set(str(solution.proposed_b_m))
+            self.notebook.select(self.editor_tab)
+            self.status_var.set(tr("Alturas aplicadas ao formulário. Execute Analisar para atualizar os resultados."))
+
+        open_height_dialog(self.root, project, profile, apply)
 
     def _open_output_directory(self) -> None:
         if self.current_mode == "coverage" and self.last_coverage:
@@ -2354,13 +2409,47 @@ def _export_coverage_map_pdf(outcome: CoverageOutcome, screenshot: bytes) -> Pat
 
     output_directory = outcome.paths["report_html"].parent
     screenshot_path = output_directory / "coverage_map_geographic.png"
-    screenshot_path.write_bytes(screenshot)
-    report_path = write_coverage_pdf(
-        request=outcome.request,
-        statistics=outcome.statistics,
-        paths={**outcome.paths, "geographic_map": screenshot_path},
-        output_path=output_directory / "relatorio_cobertura_com_mapa.pdf",
-    )
+    report_path = output_directory / COVERAGE_MAP_PDF
+    with tempfile.TemporaryDirectory(dir=output_directory) as folder:
+        temporary = Path(folder)
+        image = temporary / screenshot_path.name
+        image.write_bytes(screenshot)
+        pdf = write_coverage_pdf(
+            request=outcome.request, statistics=outcome.statistics,
+            paths={**outcome.paths, "geographic_map": image},
+            output_path=temporary / report_path.name,
+        )
+        pdf.replace(report_path)
+        image.replace(screenshot_path)
+    outcome.paths["geographic_map"] = screenshot_path
+    outcome.paths["report_pdf_map"] = report_path
+    return report_path
+
+
+def _export_link_map_pdf(outcome: AnalysisOutcome, screenshot: bytes) -> Path:
+    from .geometry import calculate_geometry
+    from .pdf_reports import write_link_pdf
+    from .report import render_profile_plot
+
+    output = outcome.paths["report_html"].parent
+    screenshot_path = output / "link_map_geographic.png"
+    report_path = output / LINK_MAP_PDF
+    with tempfile.TemporaryDirectory(dir=output) as folder:
+        temporary = Path(folder)
+        image = temporary / screenshot_path.name
+        image.write_bytes(screenshot)
+        paths = {**outcome.paths, "geographic_map": image}
+        if "profile_plot" not in paths and "terrain_profile" in paths:
+            profile = TerrainProfile.from_csv(paths["terrain_profile"])
+            _, arrays = calculate_geometry(outcome.project, profile)
+            paths["profile_plot"] = temporary / "profile.png"
+            render_profile_plot(outcome.project, profile, outcome.result, arrays, paths["profile_plot"])
+        pdf = write_link_pdf(
+            project=outcome.project, result=outcome.result, paths=paths,
+            output_path=temporary / report_path.name,
+        )
+        pdf.replace(report_path)
+        image.replace(screenshot_path)
     outcome.paths["geographic_map"] = screenshot_path
     outcome.paths["report_pdf_map"] = report_path
     return report_path

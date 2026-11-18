@@ -114,8 +114,27 @@ contra valores ponto a ponto, Radio Mobile e medições de campo.
   entre -3 e 3 dB;
 - **improvável**: todos apresentam margem negativa relevante.
 
-A confiança é reduzida quando há forte divergência entre modelos, ausência de
-clutter, ruído local não medido ou dados de terreno insuficientes.
+A concordância é alta quando a dispersão entre perdas é de até 3 dB,
+média acima de 3 dB até 6 dB e baixa acima de 6 dB. São necessárias duas
+perdas válidas na comparação. Vegetação, edificações, ruído local e erros
+do DEM entram como incertezas declaradas.
+
+## Altura e diretividade
+
+A otimização de altura busca o menor aumento total nas alturas, na grade
+definida pelo passo e pelos limites de cada estação. Em caso de empate,
+escolhe o menor aumento em A. O critério é a folga em cada amostra interior
+do perfil, medida em relação à fração escolhida da primeira zona de Fresnel,
+com o fator k selecionado. A simulação recalcula as perdas com as duas
+configurações de altura.
+
+Na cobertura direcional são usados dois trechos de cosseno em escala dB.
+A atenuação começa em 0 dB no azimute de apontamento, alcança 3 dB a meia
+abertura e termina no valor frente/costas a 180°. O modelo aceita aberturas
+entre 0° e 360° (limites excluídos) e frente/costas de 3 a 60 dB.
+Esses parâmetros descrevem uma aproximação horizontal. O programa aplica
+a diretividade à margem e à potência recebida em cada célula, preservando
+a perda física calculada. Na célula central, o programa usa o ganho máximo.
 
 ## Limiares de modos
 

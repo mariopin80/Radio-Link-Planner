@@ -125,6 +125,7 @@ class Project(BaseModel):
     terrain_source: str = "user-supplied"
     terrain_resolution_m: float | None = Field(default=None, gt=0.0)
     clutter_included: bool = False
+    allow_mode_change: bool = False
     environment: Environment = Field(default_factory=Environment)
     models: ModelSelection = Field(default_factory=ModelSelection)
     monte_carlo: MonteCarloSpec = Field(default_factory=MonteCarloSpec)
