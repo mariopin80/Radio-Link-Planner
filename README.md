@@ -4,7 +4,7 @@
 
 A local planning tool for **terrestrial VHF/UHF point-to-point links and coverage**. It combines terrain profiles, propagation models, a bidirectional link budget, uncertainty analysis and traceable technical reports. The repository includes a Windows desktop interface and a scientific command-line engine.
 
-**Author:** Mario Pin, PU2PTU · **Application:** 0.5.5 (pre-release)
+**Author:** Mario Pin, PU2PTU · **Application:** 0.5.6 (pre-release)
 
 ## What it can do
 
@@ -64,7 +64,7 @@ Run the two build/data scripts from a suitable development shell. `bootstrap_itu
 2. Choose an omnidirectional or directional transmitting antenna. For a directional antenna, set peak gain, −3 dB beamwidth, front-to-back ratio and pointing azimuth.
 3. To compare path geometry with the predicted margin, enable **Include layer on the map** under **Line of sight and Fresnel**.
 4. Check the predicted cell count, memory and time, then start the calculation. Repeating the same settings and output folder resumes completed blocks. Changes to the link budget or antenna pattern can reuse stored propagation loss in that folder.
-5. Select the view in **Map and report**.
+5. Open **Map and report** and click a cell in any view to see its margin, estimated S reading, line of sight, distance, and azimuth.
 
 Large radii can take hours and use substantial storage even when the total cell count is similar. Terrain profiles are sampled nominally at 30 m regardless of map cell size. Results live under the user profile; terrain and ITU caches under `%LOCALAPPDATA%\RadioLinkPlanner\` on Windows.
 

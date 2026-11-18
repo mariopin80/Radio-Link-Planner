@@ -2388,12 +2388,15 @@ class RadioLinkPlannerApp:
 
     def _open_report(self) -> None:
         if self.current_mode == "coverage" and self.last_coverage:
-            outcome = self.last_coverage
+            from .coverage_report import coverage_cell_at
+
+            coverage = self.last_coverage
             open_report_in_browser(
-                outcome.paths["report_html"],
+                coverage.paths["report_html"],
                 on_export_coverage_pdf=lambda screenshot: _export_coverage_map_pdf(
-                    outcome, screenshot,
+                    coverage, screenshot,
                 ),
+                on_query_coverage_cell=lambda lat, lon: coverage_cell_at(coverage, lat, lon),
             )
         elif self.last_outcome:
             outcome = self.last_outcome

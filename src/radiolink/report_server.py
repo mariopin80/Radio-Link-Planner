@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import mimetypes
 import io
+import json
 import secrets
 import threading
 import webbrowser
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from PIL import Image, UnidentifiedImageError
 
@@ -18,6 +19,7 @@ from .map_export import COVERAGE_MAP_PDF, LINK_MAP_PDF
 DEFAULT_REPORT_SERVER_TIMEOUT_SECONDS = 60 * 60
 MAX_SCREENSHOT_BYTES = 20 * 1024 * 1024
 _export_lock = threading.Lock()
+CoverageCellQuery = Callable[[float, float], dict[str, float | int | str | None] | None]
 
 
 def start_report_server(
@@ -26,6 +28,7 @@ def start_report_server(
     timeout_seconds: float = DEFAULT_REPORT_SERVER_TIMEOUT_SECONDS,
     on_export_coverage_pdf: Callable[[bytes], Path] | None = None,
     on_export_link_pdf: Callable[[bytes], Path] | None = None,
+    on_query_coverage_cell: CoverageCellQuery | None = None,
 ) -> tuple[ThreadingHTTPServer, str]:
     """Serve one report directory on localhost and return its private URL."""
     report = Path(report_path).expanduser().resolve()
@@ -51,6 +54,9 @@ def start_report_server(
                 self._send_error(403, b"Forbidden")
                 return
             relative_text = unquote(parsed.path[len(prefix) :])
+            if relative_text == "_coverage_cell" and on_query_coverage_cell is not None:
+                self._query_coverage_cell(parsed.query, on_query_coverage_cell)
+                return
             candidate = (root / relative_text).resolve()
             try:
                 candidate.relative_to(root)
@@ -65,6 +71,30 @@ def start_report_server(
                 or "application/octet-stream"
             )
             self._send(200, content_type, candidate.read_bytes())
+
+        def _query_coverage_cell(self, query: str, callback: CoverageCellQuery) -> None:
+            try:
+                params = parse_qs(query, strict_parsing=True, max_num_fields=2)
+                latitude = float(params["lat"][0])
+                longitude = float(params["lon"][0])
+                if not (-90.0 <= latitude <= 90.0 and -180.0 <= longitude <= 180.0):
+                    raise ValueError("coordinates out of range")
+            except (KeyError, ValueError):
+                self._send_error(400, b"Invalid coordinates")
+                return
+            try:
+                if report.stat().st_mtime_ns != report_modified:
+                    self._send_error(409, b"Report has changed")
+                    return
+                result = callback(latitude, longitude)
+                if report.stat().st_mtime_ns != report_modified:
+                    self._send_error(409, b"Report has changed")
+                    return
+                body = json.dumps(result, allow_nan=False).encode("utf-8")
+            except (OSError, ValueError):
+                self._send_error(500, b"Could not read coverage cell")
+                return
+            self._send(200, "application/json", body, no_store=True)
 
         def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
             callback, filename = exports.get(urlparse(self.path).path, (None, None))
@@ -131,11 +161,12 @@ def start_report_server(
         def _send(
             self, status: int, content_type: str, body: bytes,
             *, attachment: str | None = None,
+            no_store: bool = False,
         ) -> None:
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store" if attachment else "private, max-age=60")
+            self.send_header("Cache-Control", "no-store" if attachment or no_store else "private, max-age=60")
             if attachment:
                 self.send_header("Content-Disposition", f'attachment; filename="{attachment}"')
             self.send_header(
@@ -172,6 +203,7 @@ def open_report_in_browser(
     timeout_seconds: float = DEFAULT_REPORT_SERVER_TIMEOUT_SECONDS,
     on_export_coverage_pdf: Callable[[bytes], Path] | None = None,
     on_export_link_pdf: Callable[[bytes], Path] | None = None,
+    on_query_coverage_cell: CoverageCellQuery | None = None,
 ) -> ThreadingHTTPServer:
     """Open a generated report through localhost instead of ``file://``."""
     server, report_url = start_report_server(
@@ -179,6 +211,7 @@ def open_report_in_browser(
         timeout_seconds=timeout_seconds,
         on_export_coverage_pdf=on_export_coverage_pdf,
         on_export_link_pdf=on_export_link_pdf,
+        on_query_coverage_cell=on_query_coverage_cell,
     )
     webbrowser.open(report_url)
     return server

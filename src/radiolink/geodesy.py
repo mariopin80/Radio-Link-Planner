@@ -22,7 +22,7 @@ def great_circle_distance_m(
         math.sin(dlat / 2.0) ** 2
         + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2.0) ** 2
     )
-    return 2.0 * EARTH_MEAN_RADIUS_M * math.asin(math.sqrt(a))
+    return 2.0 * EARTH_MEAN_RADIUS_M * math.asin(math.sqrt(min(a, 1.0)))
 
 
 def initial_bearing_deg(
