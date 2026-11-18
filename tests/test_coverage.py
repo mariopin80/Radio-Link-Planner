@@ -9,12 +9,14 @@ import threading
 import urllib.error
 import urllib.parse
 import urllib.request
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
 import pytest
 from PIL import Image
 
+from radiolink.antenna import DirectionalAntenna
 from radiolink.coverage import (
     COVERAGE_RESOLUTION_M,
     COVERAGE_RESOLUTION_PRESETS,
@@ -114,6 +116,29 @@ def test_radius_resolution_policy_matches_product_scope() -> None:
     )
     with pytest.raises(ValueError, match="unsupported"):
         coverage_resolution_m(250)
+
+
+def test_directional_pattern_respects_boresight_half_power_and_rear():
+    pattern = DirectionalAntenna(60, 18, 359)
+    np.testing.assert_allclose(pattern.attenuation_db(np.array([359, 329, 29, 179])), [0, 3, 3, 18])
+    assert pattern.attenuation_db(359.999) == pytest.approx(pattern.attenuation_db(0.001), abs=1e-4)
+    assert DirectionalAntenna(60, 18, 360).azimuth_deg == 0
+
+
+@pytest.mark.parametrize("params", [(0, 16, 0), (360, 16, 0), (60, -1, 0), (60, 16, 361)])
+def test_directional_pattern_rejects_invalid_inputs(params):
+    with pytest.raises(ValueError):
+        DirectionalAntenna(*params)
+
+
+@pytest.mark.parametrize("time, valid", [(0.9, False), (1, True), (12.5, True), (50, True), (100, False)])
+def test_p1812_time_limits(tmp_path, time, valid):
+    request = _request(tmp_path, time_percentage=time)
+    if valid:
+        request.validate()
+    else:
+        with pytest.raises(ValueError, match="1 e 50%"):
+            request.validate()
 
 
 def test_direct_grid_count_stays_near_one_million_cells() -> None:
@@ -510,6 +535,28 @@ def test_coverage_pipeline_records_direct_cells_without_interpolation(
     assert {"prepare", "cells", "render", "complete"} <= {
         state.phase for state in progress_states
     }
+    baseline_margin = np.load(outcome.paths["margin_grid"])
+    baseline_loss = np.load(outcome.paths["loss_grid"])
+    np.testing.assert_array_equal(baseline_margin[np.isfinite(baseline_margin)], 12.0)
+
+    north = replace(request, transmitter_pattern=DirectionalAntenna(60, 18, 0))
+    east = replace(request, transmitter_pattern=DirectionalAntenna(60, 18, 90))
+    directional_fresh = run_coverage_analysis(replace(north, output_directory=tmp_path / "fresh"), worker_count=1)
+    expected_north = np.load(directional_fresh.paths["margin_grid"])
+    assert expected_north[1, 5] == 12 and expected_north[9, 5] == -6
+    for pattern_request in (north, east, request):
+        updated = run_coverage_analysis(pattern_request, worker_count=1)
+        assert updated.statistics["p1812_calls_this_run"] == 0
+        assert updated.statistics["reused_propagation_cells"] == expected
+        np.testing.assert_array_equal(np.load(updated.paths["loss_grid"]), baseline_loss)
+        directional_margin = np.load(updated.paths["margin_grid"])
+        if pattern_request is north:
+            np.testing.assert_array_equal(directional_margin, expected_north)
+            assert updated.statistics["transmitter_pattern"]["azimuth_deg"] == 0
+        elif pattern_request is east:
+            assert directional_margin[5, 9] == 12 and directional_margin[5, 1] == -6
+        else:
+            np.testing.assert_array_equal(directional_margin, baseline_margin)
 
 
 def test_estimate_warns_for_a_detailed_large_radius(tmp_path: Path) -> None:

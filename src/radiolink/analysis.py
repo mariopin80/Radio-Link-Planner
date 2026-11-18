@@ -1,17 +1,31 @@
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass
 
 from .domain import Direction, Project
+from .i18n import choice_label, tr
 from .link_budget import LinkBudget
 from .modes import threshold_dbm
+
+
+AGREEMENT_CRITERIA = (
+    "Dispersão entre a maior e a menor perda: alta até 3 dB, média acima de 3 até 6 dB, "
+    "baixa acima de 6 dB. É uma comparação numérica entre modelos."
+)
+VIABILITY_CRITERIA = (
+    "Margem de projeto: robusto quando todas são ≥10 dB; viável quando todas são ≥3 dB; "
+    "marginal quando ao menos uma é ≥−3 dB; improvável abaixo disso; indeterminado sem margem aplicável."
+)
 
 
 @dataclass(frozen=True)
 class TechnicalAssessment:
     classification: str
-    confidence: str
+    model_agreement: str
     model_spread_db: float | None
+    model_loss_extremes: tuple[tuple[str, float], ...]
+    closest_model_pair: tuple[tuple[str, float], ...]
     limiting_factors: tuple[str, ...]
     uncertainties: tuple[str, ...]
     recommendations: tuple[dict, ...]
@@ -28,15 +42,19 @@ def assess(
     project: Project,
     direction: Direction,
     design_budgets: list[LinkBudget],
-    comparison_losses: list[float],
+    comparison_losses: dict[str, float],
     geometry: dict,
 ) -> TechnicalAssessment:
-    margins = [item.fade_margin_db for item in design_budgets]
-    spread = (
-        max(comparison_losses) - min(comparison_losses)
-        if len(comparison_losses) >= 2
-        else None
+    margins = [item.fade_margin_db for item in design_budgets if math.isfinite(item.fade_margin_db)]
+    available = sorted(
+        ((model, loss) for model, loss in comparison_losses.items() if math.isfinite(loss)),
+        key=lambda item: item[1],
     )
+    extremes = (available[0], available[-1]) if len(available) >= 2 else ()
+    spread = extremes[1][1] - extremes[0][1] if extremes else None
+    closest = ()
+    if len(available) >= 3:
+        closest = min(zip(available, available[1:]), key=lambda pair: pair[1][1] - pair[0][1])
     if margins and min(margins) >= 10.0:
         classification = "robust"
     elif margins and min(margins) >= 3.0:
@@ -48,13 +66,14 @@ def assess(
     else:
         classification = "indeterminate"
 
-    confidence = "high"
-    if spread is not None and spread > 6.0:
-        confidence = "low"
-    elif spread is not None and spread > 3.0:
-        confidence = "medium"
-    if not project.clutter_included:
-        confidence = _downgrade(confidence)
+    if spread is None:
+        agreement = "insufficient"
+    elif spread > 6.0:
+        agreement = "low"
+    elif spread > 3.0:
+        agreement = "medium"
+    else:
+        agreement = "high"
 
     limiting: list[str] = []
     if geometry["worst_obstruction_m"] > 0.0:
@@ -84,68 +103,105 @@ def assess(
             "percurso; enlaces costeiros ou sobre água exigem revisão da "
             "classificação mar/terra"
         )
-    recommendations = _recommendations(project, direction)
+    recommendations = _recommendations(project, direction, classification, margins, limiting)
     return TechnicalAssessment(
         classification=classification,
-        confidence=confidence,
+        model_agreement=agreement,
         model_spread_db=spread,
+        model_loss_extremes=extremes,
+        closest_model_pair=closest,
         limiting_factors=tuple(limiting),
         uncertainties=tuple(uncertainties),
         recommendations=tuple(recommendations),
     )
 
 
-def _recommendations(project: Project, direction: Direction) -> list[dict]:
+def _recommendations(
+    project: Project, direction: Direction, classification: str,
+    margins: list[float], limiting: list[str],
+) -> list[dict]:
+    if classification in {"robust", "indeterminate"}:
+        return []
     transmitter, receiver = direction.terminals(project)
     items: list[dict] = []
-    if transmitter.antenna_gain_dbi < 9.0:
-        items.append(
-            {
-                "action": (
-                    f"aumentar o ganho da antena de {transmitter.name} para 9 dBi"
-                ),
-                "estimated_margin_improvement_db": 9.0
-                - transmitter.antenna_gain_dbi,
-                "basis": "ganho direto no orçamento do enlace",
-            }
-        )
-    if receiver.antenna_gain_dbi < 9.0:
-        items.append(
-            {
-                "action": (
-                    f"aumentar o ganho da antena de {receiver.name} para 9 dBi"
-                ),
-                "estimated_margin_improvement_db": 9.0
-                - receiver.antenna_gain_dbi,
-                "basis": "ganho direto no orçamento do enlace",
-            }
-        )
     cable_improvement = max(0.0, transmitter.line_loss_db - 0.5) + max(
         0.0, receiver.line_loss_db - 0.5
     )
     if cable_improvement > 0.0:
         items.append(
             {
-                "action": "reduzir cada perda de linha para aproximadamente 0,5 dB",
+                "action": "reduzir para 0,5 dB as perdas de linha que excedem esse valor",
                 "estimated_margin_improvement_db": cable_improvement,
-                "basis": "redução direta no orçamento do enlace",
+                "basis": "estimativa se os cabos e conectores atingirem a perda indicada",
             }
         )
     fm_threshold, _ = threshold_dbm(receiver.receiver, "FM")
     ssb_threshold, _ = threshold_dbm(receiver.receiver, "SSB")
-    if project.primary_mode.upper() == "FM" and ssb_threshold < fm_threshold:
+    if (
+        project.allow_mode_change and project.primary_mode.upper() == "FM"
+        and ssb_threshold < fm_threshold
+    ):
         items.append(
             {
                 "action": "usar SSB quando isso for operacionalmente aceitável",
                 "estimated_margin_improvement_db": fm_threshold - ssb_threshold,
-                "basis": "modelo de ruído configurado para o receptor",
+                "basis": "diferença entre os limiares do receptor; a potência recebida é a mesma",
             }
         )
-    items.sort(
-        key=lambda item: item["estimated_margin_improvement_db"], reverse=True
-    )
+    if classification in {"marginal", "improbable"}:
+        additional_margin = 3.0 - min(margins)
+        items.append({
+            "action": "avaliar ganho líquido combinado de antenas para atingir 3 dB de margem",
+            "estimated_margin_improvement_db": additional_margin,
+            "basis": "ganho adicional necessário no pior modelo; validar as antenas e o apontamento",
+        })
+        if {"deep_terrain_obstruction", "first_fresnel_zone_obstructed"}.intersection(limiting):
+            items.insert(0, {
+                "action": "avaliar a elevação das antenas com a ferramenta de otimização de altura",
+                "basis": "obstrução do percurso; simular novamente para estimar a variação da margem",
+            })
     return items
 
 
-def _downgrade(value: str) -> str:
-    return {"high": "medium", "medium": "low", "low": "low"}[value]
+def describe_agreement(assessment: dict) -> str:
+    if assessment.get("model_spread_db") is None or not assessment.get("model_loss_extremes"):
+        return tr("Concordância entre modelos: dados insuficientes (são necessárias duas perdas válidas).")
+    (lowest_model, lowest_loss), (highest_model, highest_loss) = assessment["model_loss_extremes"]
+    description = tr(
+        "Concordância entre modelos: {level} • dispersão {spread:.2f} dB "
+        "({low_model} {low_loss:.2f} dB ↔ {high_model} {high_loss:.2f} dB).",
+        level=choice_label(assessment["model_agreement"]), spread=assessment["model_spread_db"],
+        low_model=lowest_model.upper(), low_loss=lowest_loss,
+        high_model=highest_model.upper(), high_loss=highest_loss,
+    )
+    if assessment["model_agreement"] == "low" and assessment.get("closest_model_pair"):
+        (first, first_loss), (second, second_loss) = assessment["closest_model_pair"]
+        description += " " + tr(
+            "{first} e {second} estão a {difference:.2f} dB entre si.",
+            first=first.upper(), second=second.upper(), difference=second_loss - first_loss,
+        )
+    return description
+
+
+def recommendation_lines(assessment: dict) -> list[str]:
+    classification = assessment["classification"]
+    if classification == "robust":
+        return [tr("A margem calculada é suficiente. A análise dispensa mudanças de equipamento.")]
+    if classification == "indeterminate":
+        return [tr("Confirme os dados e obtenha uma margem de projeto para orientar as recomendações.")]
+    items = assessment["recommendations"]
+    lines = []
+    if classification == "viable":
+        lines.append(
+            tr("Opções para aumentar a reserva operacional.") if items else
+            tr("Os resultados indicam reserva operacional; mantenha a configuração nas condições analisadas.")
+        )
+    for item in items:
+        action = tr(item["action"])
+        basis = tr(item["basis"])
+        gain = item.get("estimated_margin_improvement_db")
+        if gain is None:
+            lines.append(f"{action} ({basis}).")
+        else:
+            lines.append(f"{action} (+{gain:.1f} dB, {basis}).")
+    return lines

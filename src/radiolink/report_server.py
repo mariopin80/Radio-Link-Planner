@@ -12,8 +12,12 @@ from urllib.parse import quote, unquote, urlparse
 
 from PIL import Image, UnidentifiedImageError
 
+from .i18n import get_language, report_language
+from .map_export import COVERAGE_MAP_PDF, LINK_MAP_PDF
+
 DEFAULT_REPORT_SERVER_TIMEOUT_SECONDS = 60 * 60
 MAX_SCREENSHOT_BYTES = 20 * 1024 * 1024
+_export_lock = threading.Lock()
 
 
 def start_report_server(
@@ -21,6 +25,7 @@ def start_report_server(
     *,
     timeout_seconds: float = DEFAULT_REPORT_SERVER_TIMEOUT_SECONDS,
     on_export_coverage_pdf: Callable[[bytes], Path] | None = None,
+    on_export_link_pdf: Callable[[bytes], Path] | None = None,
 ) -> tuple[ThreadingHTTPServer, str]:
     """Serve one report directory on localhost and return its private URL."""
     report = Path(report_path).expanduser().resolve()
@@ -32,7 +37,12 @@ def start_report_server(
     root = report.parent
     token = secrets.token_urlsafe(24)
     prefix = f"/{token}/"
-    export_lock = threading.Lock()
+    report_modified = report.stat().st_mtime_ns
+    language = get_language()
+    exports = {
+        prefix + "_export_coverage_pdf": (on_export_coverage_pdf, COVERAGE_MAP_PDF),
+        prefix + "_export_link_pdf": (on_export_link_pdf, LINK_MAP_PDF),
+    }
 
     class ReportHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
@@ -57,10 +67,8 @@ def start_report_server(
             self._send(200, content_type, candidate.read_bytes())
 
         def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
-            if (
-                urlparse(self.path).path != prefix + "_export_coverage_pdf"
-                or on_export_coverage_pdf is None
-            ):
+            callback, filename = exports.get(urlparse(self.path).path, (None, None))
+            if callback is None:
                 self._send_error(404, b"Not found")
                 return
             host, port = self.server.server_address
@@ -92,23 +100,26 @@ def start_report_server(
                     ):
                         raise ValueError("invalid screenshot dimensions")
                     picture.verify()
-            except (UnidentifiedImageError, OSError, ValueError):
+            except (UnidentifiedImageError, Image.DecompressionBombError, OSError, ValueError):
                 self._send_error(422, b"Invalid PNG screenshot")
                 return
 
             try:
-                with export_lock:
-                    pdf_path = on_export_coverage_pdf(screenshot)
+                with _export_lock, report_language(language):
+                    if report.stat().st_mtime_ns != report_modified:
+                        self._send_error(409, b"Report has changed")
+                        return
+                    pdf_path = callback(screenshot)
                     pdf_bytes = Path(pdf_path).read_bytes()
             except (OSError, ValueError):
-                self._send_error(500, b"Could not create coverage PDF")
+                self._send_error(500, b"Could not create report PDF")
                 return
             if not pdf_bytes.startswith(b"%PDF-"):
                 self._send_error(500, b"Invalid generated PDF")
                 return
             self._send(
                 200, "application/pdf", pdf_bytes,
-                attachment="relatorio_cobertura_com_mapa.pdf",
+                attachment=filename,
             )
 
         def log_message(self, format: str, *args: object) -> None:
@@ -160,12 +171,14 @@ def open_report_in_browser(
     *,
     timeout_seconds: float = DEFAULT_REPORT_SERVER_TIMEOUT_SECONDS,
     on_export_coverage_pdf: Callable[[bytes], Path] | None = None,
+    on_export_link_pdf: Callable[[bytes], Path] | None = None,
 ) -> ThreadingHTTPServer:
     """Open a generated report through localhost instead of ``file://``."""
     server, report_url = start_report_server(
         report_path,
         timeout_seconds=timeout_seconds,
         on_export_coverage_pdf=on_export_coverage_pdf,
+        on_export_link_pdf=on_export_link_pdf,
     )
     webbrowser.open(report_url)
     return server

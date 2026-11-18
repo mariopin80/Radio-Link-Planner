@@ -5,8 +5,11 @@ from .i18n import tr, choice_label
 from pathlib import Path
 from typing import Any
 
+from .analysis import AGREEMENT_CRITERIA, VIABILITY_CRITERIA, describe_agreement, recommendation_lines
+from .antenna import ANTENNA_APPROXIMATION_NOTE, antenna_report_rows
 from .coverage import CoverageRequest
 from .domain import Project
+from .height_optimization import height_comparison_table, height_summary_lines
 from .legal_notices import (
     COPERNICUS_GLO30_DERIVED_CREDIT,
     COPERNICUS_GLO30_NO_LIABILITY,
@@ -15,6 +18,7 @@ from .legal_notices import (
     uses_copernicus_glo30,
 )
 from .report import describe_geometry_clearance
+from .propagation.p1812 import P1812_TIME_HELP
 
 _RED = "#c62835"
 _DARK = "#20252b"
@@ -94,6 +98,7 @@ def write_link_pdf(
                     f"{project.terminal_a.tx_power_w:g} W",
                     f"{project.terminal_b.tx_power_w:g} W",
                 ],
+                [tr("Polarização"), choice_label(project.polarization.value), choice_label(project.polarization.value)],
             ],
             widths=(105, 190, 190),
         ),
@@ -124,7 +129,8 @@ def write_link_pdf(
             report["Paragraph"](tr('Resultados por direção'), styles["heading"]),
         ]
     )
-    for direction in result["directions"].values():
+    optimization = result.get("height_optimization")
+    for direction_id, direction in result["directions"].items():
         story.append(
             report["Paragraph"](
                 (
@@ -135,14 +141,20 @@ def write_link_pdf(
             )
         )
         assessment = direction.get("assessment", {})
-        story.append(
-            report["Paragraph"](
-                (
-                    tr('Classificação: <b>{x0}</b> • confiança do diagnóstico: {x1}', x0=_escape(choice_label(str(assessment.get('classification', '—'))).upper()), x1=_escape(choice_label(str(assessment.get('confidence', '—')))))
-                ),
-                styles["body"],
-            )
-        )
+        story.extend([
+            report["Paragraph"](_escape(tr("Viabilidade: {classification}", classification=choice_label(assessment["classification"]))), styles["body"]),
+            report["Paragraph"](_escape(describe_agreement(assessment)), styles["body"]),
+        ])
+        comparison_rows = [[tr("Modelo"), tr("Perda"), tr("Tempo (%)")]]
+        for model in direction.get("comparison_models", ()):
+            comparison_rows.append([
+                model["model_id"].upper(),
+                _number(model["loss_db"], " dB") if model["status"] == "ok" else choice_label(model["status"]),
+                f"{direction['comparison_percent']:g}",
+            ])
+        if len(comparison_rows) > 1:
+            story.append(_table(report, comparison_rows, widths=(120, 150, 105)))
+            story.append(report["Spacer"](1, 7))
         budgets = {
             item["model_id"]: item
             for item in direction.get("link_budgets", ())
@@ -151,13 +163,14 @@ def write_link_pdf(
             item["model_id"]: item
             for item in direction.get("monte_carlo", ())
         }
-        rows = [[tr('Modelo'), tr('Perda'), tr('Potência RX'), tr('Margem'), "Monte Carlo"]]
+        rows = [[tr('Modelo'), tr('Tempo (%)'), tr('Perda'), tr('Potência RX'), tr('Margem'), "Monte Carlo"]]
         for model in direction.get("design_models", ()):
             model_id = model.get("model_id", "—")
             if model.get("status") != "ok":
                 rows.append(
                     [
                         str(model_id).upper(),
+                        "—",
                         choice_label(str(model.get("status", "unavailable"))),
                         "—",
                         "—",
@@ -173,11 +186,13 @@ def write_link_pdf(
             rows.append(
                 [
                     str(model_id).upper(),
+                    _number(model.get("percentile"), "%"),
                     _number(model.get("loss_db"), " dB"),
                     _number(budget.get("received_power_dbm"), " dBm"),
                     _signed_number(budget.get("fade_margin_db"), " dB"),
                     (
                         f"{probability:.1f}%"
+                        + ("*" if simulations[model_id]["temporal_sampling"] == "conditional_fixed_quantile" else "")
                         if probability is not None
                         else "—"
                     ),
@@ -188,13 +203,35 @@ def write_link_pdf(
                 _table(
                     report,
                     rows,
-                    widths=(70, 92, 105, 92, 105),
+                    widths=(62, 74, 80, 94, 78, 97),
                 ),
                 report["Spacer"](1, 12),
             ]
         )
+        if any(item["temporal_sampling"] == "conditional_fixed_quantile" for item in simulations.values()):
+            story.append(report["Paragraph"](_escape(tr(
+                "* Monte Carlo condicional ao percentil indicado na tabela. "
+                "A disponibilidade anual exige uma distribuição temporal completa."
+            )), styles["small"]))
+        for label, details in (
+            (tr("Recomendações pertinentes"), recommendation_lines(assessment)),
+            (tr("Incertezas declaradas"), [tr(item) for item in assessment["uncertainties"]]),
+        ):
+            story.append(report["Paragraph"](label, styles["subheading"]))
+            story.extend(report["Paragraph"](_escape(line), styles["body"]) for line in details)
+        if optimization:
+            story.extend([
+                report["Paragraph"](tr("Propagação antes e depois da elevação"), styles["subheading"]),
+                _table(report, height_comparison_table(optimization["model_comparison"][direction_id]),
+                       widths=(75, 65, 170, 175)),
+            ])
+
+    if optimization:
+        story.append(report["Paragraph"](tr("Otimização da altura das antenas"), styles["heading"]))
+        story.extend(report["Paragraph"](_escape(line), styles["body"]) for line in height_summary_lines(optimization))
 
     for title, key in (
+        (tr('Mapa geográfico do enlace'), "geographic_map"),
         (tr('Perfil topográfico e zona de Fresnel'), "profile_plot"),
         (tr('Análise de Monte Carlo'), "monte_carlo_plot"),
     ):
@@ -208,10 +245,18 @@ def write_link_pdf(
                     _fit_image(report, image_path, 500, 650),
                 ]
             )
+            if key == "geographic_map":
+                story.extend(_geographic_map_credit(report, styles))
     story.extend(
         [
             report["Spacer"](1, 14),
             report["Paragraph"](tr('Rastreabilidade'), styles["heading"]),
+            report["Paragraph"](_escape(tr(VIABILITY_CRITERIA)), styles["small"]),
+            report["Paragraph"](_escape(tr(AGREEMENT_CRITERIA)), styles["small"]),
+            report["Paragraph"](
+                _escape(tr("Meta de disponibilidade do enlace: {target:g}%.", target=project.target_availability_percent)),
+                styles["small"],
+            ),
             report["Paragraph"](
                 (
                     tr("Identificador do resultado: <font name='Courier'>{x0}</font>", x0=_escape(str(result.get('result_sha256', '—'))))
@@ -226,6 +271,13 @@ def write_link_pdf(
             ),
         ]
     )
+    if project.models.p1812:
+        story.append(report["Paragraph"](_escape(tr(P1812_TIME_HELP)), styles["small"]))
+        if project.target_availability_percent > 50.0:
+            story.append(report["Paragraph"](_escape(tr(
+                "A tabela usa {percent:g}% para P.1812. A viabilidade na meta de {target:g}% usa ITM e P.2001 disponíveis.",
+                percent=project.models.comparison_percent, target=project.target_availability_percent,
+            )), styles["small"]))
     if uses_copernicus_glo30(project.terrain_source):
         story.extend(_copernicus_pdf_notice(report, styles))
     _build_document(report, destination, story)
@@ -297,9 +349,17 @@ def write_coverage_pdf(
                     tr('Altura RX'),
                     f"{request.receiver_height_m:g} m",
                 ],
+                [
+                    tr("Perda no cabo transmissor"), f"{request.transmitter_line_loss_db:g} dB",
+                    tr("Perda no cabo receptor"), f"{request.receiver_line_loss_db:g} dB",
+                ],
             ],
             widths=(100, 155, 100, 130),
         ),
+        report["Spacer"](1, 6),
+        _table(report, antenna_report_rows(request.transmitter_gain_dbi, request.transmitter_pattern),
+               widths=(245, 240), header_rows=0),
+        report["Paragraph"](_escape(tr(P1812_TIME_HELP)), styles["small"]),
         report["Spacer"](1, 14),
         report["Paragraph"](tr('Síntese da cobertura'), styles["heading"]),
         _table(
@@ -320,6 +380,8 @@ def write_coverage_pdf(
             widths=(245, 240),
         ),
     ]
+    if request.transmitter_pattern:
+        story.append(report["Paragraph"](_escape(tr(ANTENNA_APPROXIMATION_NOTE)), styles["small"]))
     geographic_map = paths.get("geographic_map")
     heatmap = paths.get("heatmap")
     selected_map = (
@@ -340,17 +402,7 @@ def write_coverage_pdf(
             ]
         )
         if selected_map == geographic_map:
-            story.extend([
-                report["Spacer"](1, 8),
-                report["Paragraph"](
-                    tr('Captura do mapa interativo no enquadramento e na escala escolhidos pelo usuário.'),
-                    styles["small"],
-                ),
-                report["Paragraph"](
-                    f'© OpenStreetMap contributors — {_escape(OSM_COPYRIGHT_URL)}',
-                    styles["small"],
-                ),
-            ])
+            story.extend(_geographic_map_credit(report, styles))
     story.extend(
         [
             report["Spacer"](1, 14),
@@ -366,6 +418,18 @@ def write_coverage_pdf(
     story.extend(_copernicus_pdf_notice(report, styles))
     _build_document(report, destination, story)
     return destination
+
+
+def _geographic_map_credit(report: dict[str, Any], styles: dict[str, Any]) -> list[Any]:
+    url = _escape(OSM_COPYRIGHT_URL)
+    return [
+        report["Spacer"](1, 8),
+        report["Paragraph"](
+            tr('Captura do mapa interativo no enquadramento e na escala escolhidos pelo usuário.'),
+            styles["small"],
+        ),
+        report["Paragraph"](f'© OpenStreetMap contributors — <a href="{url}">{url}</a>', styles["small"]),
+    ]
 
 
 def _copernicus_pdf_notice(report: dict[str, Any], styles: dict[str, Any]) -> list[Any]:

@@ -48,7 +48,9 @@ def test_desktop_summary_exposes_decision_and_report(
                     "receiver": "Palmira",
                     "assessment": {
                         "classification": "marginal",
-                        "confidence": "low",
+                        "model_agreement": "low",
+                        "model_spread_db": 8.82,
+                        "model_loss_extremes": [("itm", 113.38), ("p2001", 122.20)],
                     },
                     "design_models": [
                         {
@@ -76,7 +78,8 @@ def test_desktop_summary_exposes_decision_and_report(
         paths={"report_html": report},
     )
     summary = build_desktop_summary(outcome)
-    assert "Parecer: MARGINAL" in summary
+    assert "Viabilidade: MARGINAL" in summary
+    assert "Concordância entre modelos: baixa" in summary
     assert "ITM: perda 168.36 dB" in summary
     assert "sucesso 67.2%" in summary
     assert str(report) in summary
@@ -304,3 +307,47 @@ def test_form_pipeline_executes_all_models_and_writes_map(
     assert "maplibregl.Map" in report
     assert outcome.paths["project_json"].is_file()
     assert outcome.paths["terrain_profile"].is_file()
+def test_link_geographic_pdf_is_saved_and_downloadable(tmp_path):
+    import io
+    from urllib.parse import urljoin, urlsplit
+    from urllib.request import Request, urlopen
+
+    from PIL import Image
+    from pypdf import PdfReader
+
+    from radiolink.desktop import _export_link_map_pdf
+    from radiolink.desktop_core import AnalysisRequest, bundled_example_path, run_analysis
+    from radiolink.i18n import get_language, set_language
+    from radiolink.report_server import start_report_server
+
+    original = get_language()
+    set_language("en")
+    outcome = run_analysis(AnalysisRequest(bundled_example_path(), tmp_path, 100, make_plots=False))
+    screenshot = io.BytesIO()
+    Image.new("RGB", (800, 500), "#b0abcd").save(screenshot, "PNG")
+    server, url = start_report_server(
+        outcome.paths["report_html"], timeout_seconds=30,
+        on_export_link_pdf=lambda body: _export_link_map_pdf(outcome, body),
+    )
+    try:
+        set_language("pt")
+        origin = urlsplit(url)
+        request = Request(
+            urljoin(url, "_export_link_pdf"), data=screenshot.getvalue(),
+            headers={"Content-Type": "image/png", "Origin": f"{origin.scheme}://{origin.netloc}"},
+        )
+        with urlopen(request, timeout=10) as response:
+            assert "relatorio_enlace_com_mapa.pdf" in response.headers["Content-Disposition"]
+            assert response.read() == outcome.paths["report_pdf_map"].read_bytes()
+        assert outcome.paths["geographic_map"].read_bytes() == screenshot.getvalue()
+        document = PdfReader(outcome.paths["report_pdf_map"])
+        contents = "\n".join(page.extract_text() for page in document.pages)
+        assert all(title in contents for title in (
+            "Geographic link map", "OpenStreetMap contributors",
+            "Terrain profile and Fresnel zone", "Declared uncertainties",
+        ))
+        assert sum(len(page.images) for page in document.pages) == 2
+    finally:
+        set_language(original)
+        server.shutdown()
+        server.server_close()

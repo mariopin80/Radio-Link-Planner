@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .analysis import describe_agreement
 from .copernicus import DEFAULT_STEP_M, extract_profile
 from .domain import Project
 from .engine import analyze_project
@@ -71,15 +72,18 @@ def run_analysis(
     if request.monte_carlo_runs is not None:
         project = project.model_copy(deep=True)
         project.monte_carlo.runs = request.monte_carlo_runs
-    profile = TerrainProfile.from_csv(project.resolved_terrain_path(base_dir))
+    terrain_path = project.resolved_terrain_path(base_dir)
+    profile = TerrainProfile.from_csv(terrain_path)
     _ensure_model_data(project, progress)
-    return _analyze(
+    outcome = _analyze(
         project,
         profile,
         request.output_directory,
         make_plots=request.make_plots,
         progress=progress,
     )
+    outcome.paths["terrain_profile"] = terrain_path
+    return outcome
 
 
 def run_form_analysis(
@@ -202,19 +206,16 @@ def build_desktop_summary(outcome: AnalysisOutcome) -> str:
         "improbable": tr('IMPROVÁVEL'),
         "indeterminate": tr('INDETERMINADO'),
     }
-    confidence_labels = {"high": tr('alta'), "medium": tr('média'), "low": tr('baixa')}
     for direction in result["directions"].values():
         assessment = direction["assessment"]
         classification = classification_labels.get(
             assessment["classification"], assessment["classification"].upper()
         )
-        confidence = confidence_labels.get(
-            assessment["confidence"], assessment["confidence"]
-        )
         lines.extend(
             [
                 f"{direction['transmitter']} → {direction['receiver']}",
-                tr('Parecer: {x0} • confiança {x1}', x0=classification, x1=confidence),
+                tr('Viabilidade: {classification}', classification=classification),
+                describe_agreement(assessment),
             ]
         )
         budgets = {budget["model_id"]: budget for budget in direction["link_budgets"]}
@@ -244,9 +245,12 @@ def build_desktop_summary(outcome: AnalysisOutcome) -> str:
                     None,
                 )
                 if primary:
-                    detail += (
-                        tr(' • sucesso {x0:.1f}%', x0=primary['success_probability_percent'])
-                    )
+                    if simulation.get("temporal_sampling") == "conditional_fixed_quantile":
+                        detail += tr(
+                            " • sucesso condicional {percent:.1f}%", percent=primary["success_probability_percent"]
+                        )
+                    else:
+                        detail += tr(' • sucesso {x0:.1f}%', x0=primary['success_probability_percent'])
             lines.append(f"  {model_id.upper()}: {detail}")
         lines.append("")
     lines.extend(

@@ -12,6 +12,7 @@ from typing import Any
 
 import numpy as np
 
+from .antenna import DirectionalAntenna
 from .copernicus import sample_elevations
 from .domain import (
     Direction,
@@ -107,6 +108,7 @@ class CoverageRequest:
     resolution_preset: str = "recommended"
     custom_resolution_m: int | None = None
     terrain_step_m: float = DEFAULT_TERRAIN_STEP_M
+    transmitter_pattern: DirectionalAntenna | None = None
 
     @property
     def resolution_m(self) -> int:
@@ -409,6 +411,8 @@ def _calculate_radial(
         base_project,
         model,
     )
+    if request.transmitter_pattern:
+        margins -= request.transmitter_pattern.attenuation_db(bearing_deg)
     return RadialCoverage(
         bearing_deg=_bearing_key(bearing_deg),
         distance_m=distances,

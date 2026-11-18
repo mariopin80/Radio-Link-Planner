@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import os
 import sys
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 from .translations import MESSAGES
@@ -18,6 +20,7 @@ LANGUAGES = {
 _language = os.environ.get("RADIOLINK_LANGUAGE", "pt")
 if _language not in LANGUAGES:
     _language = "pt"
+_local_language: ContextVar[str | None] = ContextVar("report_language", default=None)
 
 CHOICES = {
     "quick": "Rápida", "recommended": "Recomendada",
@@ -26,6 +29,8 @@ CHOICES = {
     "robust": "robusto", "viable": "viável", "marginal": "marginal",
     "improbable": "improvável", "indeterminate": "indeterminado",
     "high": "alta", "medium": "média", "low": "baixa",
+    "omni": "Omnidirecional", "directional": "Direcional",
+    "elevate_a": "Somente A", "elevate_b": "Somente B", "elevate_both": "A e B",
     "ok": "OK", "unavailable": "indisponível", "error": "erro",
     "unsupported": "não suportado",
     "outside_scope": "fora do escopo",
@@ -33,11 +38,21 @@ CHOICES = {
 
 
 def get_language() -> str:
-    return _language
+    return _local_language.get() or _language
+
+
+@contextmanager
+def report_language(language: str):
+    token = _local_language.set(language)
+    try:
+        yield
+    finally:
+        _local_language.reset(token)
 
 
 def html_language() -> str:
-    return "pt-BR" if _language == "pt" else _language
+    language = get_language()
+    return "pt-BR" if language == "pt" else language
 
 
 def map_locale() -> dict[str, str]:
@@ -96,8 +111,9 @@ def load_language(path: Path | None = None) -> str:
 
 def tr(message: str, **values: object) -> str:
     translated = message
-    if _language != "pt" and message in MESSAGES:
-        translated = MESSAGES[message][("en", "es", "fr", "de").index(_language)]
+    language = get_language()
+    if language != "pt" and message in MESSAGES:
+        translated = MESSAGES[message][("en", "es", "fr", "de").index(language)]
     return translated.format(**values) if values else translated
 
 

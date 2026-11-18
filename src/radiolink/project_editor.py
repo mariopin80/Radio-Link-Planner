@@ -39,6 +39,7 @@ class ProjectEditorValues:
     target_availability_percent: float
     terminal_a: TerminalEditorValues
     terminal_b: TerminalEditorValues
+    allow_mode_change: bool = False
 
     @property
     def distance_km(self) -> float:
@@ -77,6 +78,7 @@ def editor_values_from_project(project: Project) -> ProjectEditorValues:
         target_availability_percent=project.target_availability_percent,
         terminal_a=terminal_values(project.terminal_a),
         terminal_b=terminal_values(project.terminal_b),
+        allow_mode_change=project.allow_mode_change,
     )
 
 
@@ -123,6 +125,7 @@ def project_from_editor_values(
             terrain_source='Copernicus GLO-30 automático',
             terrain_resolution_m=30.0,
             clutter_included=False,
+            allow_mode_change=values.allow_mode_change,
             metadata={
                 "created_with": "Radio Link Planner desktop 0.4",
                 "terrain_zone_assumption": "all_inland_land",
@@ -136,6 +139,7 @@ def project_from_editor_values(
         project.polarization = Polarization(values.polarization.lower())
         project.primary_mode = mode
         project.target_availability_percent = values.target_availability_percent
+        project.allow_mode_change = values.allow_mode_change
         project.terminal_a = terminal(values.terminal_a)
         project.terminal_b = terminal(values.terminal_b)
         project.terrain_profile = terrain_profile

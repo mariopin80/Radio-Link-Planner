@@ -13,6 +13,7 @@ from typing import Any
 
 import numpy as np
 
+from .antenna import ANTENNA_APPROXIMATION_NOTE, antenna_report_rows
 from .coverage import (
     CONTOUR_LEVELS_DB,
     CoverageRequest,
@@ -26,6 +27,8 @@ from .legal_notices import (
     COPERNICUS_LICENSE_URL,
     OSM_HTML_ATTRIBUTION,
 )
+from .map_export import COVERAGE_MAP_PDF, map_export_script
+from .propagation.p1812 import P1812_TIME_HELP
 from .report import _install_map_assets
 
 _MATPLOTLIB_CACHE = Path(tempfile.gettempdir()) / "radio-link-planner-matplotlib"
@@ -435,6 +438,12 @@ def _build_coverage_report(
 ) -> str:
     map_css, map_js = map_assets
     bounds = _coverage_bounds(request)
+    pattern = request.transmitter_pattern
+    antenna_rows = "".join(
+        f"<tr><th>{html.escape(key)}</th><td>{html.escape(value)}</td></tr>"
+        for key, value in antenna_report_rows(request.transmitter_gain_dbi, pattern)
+    )
+    pattern_note = f'<p class="note">{html.escape(tr(ANTENNA_APPROXIMATION_NOTE))}</p>' if pattern else ""
     embedded_contours = json.dumps(
         contour_geojson,
         ensure_ascii=False,
@@ -605,6 +614,21 @@ def _build_coverage_report(
       </div>
     </section>
     <section class="card">
+      <h2>{html.escape(tr('Configuração'))}</h2>
+      <table>
+        {antenna_rows}
+        <tr><th>{html.escape(tr('Tempo P.1812 (%)'))}</th><td>{request.time_percentage:g}%</td></tr>
+        <tr><th>{html.escape(tr('Altura TX'))}</th><td>{request.transmitter_height_m:g} m</td></tr>
+        <tr><th>{html.escape(tr('Potência TX'))}</th><td>{request.transmitter_power_w:g} W</td></tr>
+        <tr><th>{html.escape(tr('Perda no cabo transmissor'))}</th><td>{request.transmitter_line_loss_db:g} dB</td></tr>
+        <tr><th>{html.escape(tr('Altura RX'))}</th><td>{request.receiver_height_m:g} m</td></tr>
+        <tr><th>{html.escape(tr('Sensibilidade / ganho RX'))}</th><td>{request.receiver_threshold_dbm:g} dBm / {request.receiver_gain_dbi:g} dBi</td></tr>
+        <tr><th>{html.escape(tr('Perda no cabo receptor'))}</th><td>{request.receiver_line_loss_db:g} dB</td></tr>
+      </table>
+      <p class="note">{html.escape(tr(P1812_TIME_HELP))}</p>
+      {pattern_note}
+    </section>
+    <section class="card">
       <h2>{html.escape(tr('Rastreabilidade do cálculo'))}</h2>
       <table>
         {traceability_rows}
@@ -627,10 +651,9 @@ def _build_coverage_report(
     const coverageBounds = {json.dumps(bounds)};
     const contourData = {embedded_contours};
     const sContourData = {embedded_s_contours};
+    const antennaBeam = {json.dumps(_antenna_beam(request))};
     const stationCoordinates = [{request.longitude_deg}, {request.latitude_deg}];
     const scaleSelect = document.getElementById("coverage-scale");
-    const exportButton = document.getElementById("export-map-pdf");
-    const exportStatus = document.getElementById("export-status");
     const legendLabels = {{
       margin: {{title:{json.dumps(tr('Margem do enlace'))},
                 ticks:["−12", "0", "+6", "+12", "+18 dB"],
@@ -733,49 +756,34 @@ def _build_coverage_report(
       addOverlayGroup(sOverlayTiles, "s");
       addContourGroup(contourData, "margin");
       addContourGroup(sContourData, "s");
+      if (antennaBeam) {{
+        map.addSource("antenna-beam", {{type:"geojson", data:antennaBeam}});
+        map.addLayer({{
+          id:"beam-halo", type:"line", source:"antenna-beam",
+          paint:{{"line-color":"#fff","line-width":4}}
+        }});
+        map.addLayer({{
+          id:"beam-edges", type:"line", source:"antenna-beam",
+          filter:["==",["get","part"],"edges"],
+          paint:{{"line-color":"#24232b","line-width":2,"line-dasharray":[2,2]}}
+        }});
+        map.addLayer({{
+          id:"beam-axis", type:"line", source:"antenna-beam",
+          filter:["==",["get","part"],"axis"],
+          paint:{{"line-color":"#24232b","line-width":2.5}}
+        }});
+      }}
       new maplibregl.Marker({{color:"#c91f37"}})
         .setLngLat(stationCoordinates)
         .setPopup(new maplibregl.Popup().setText({json.dumps(tr("Transmissor"))}))
         .addTo(map);
       layersReady = true;
-      exportButton.disabled = location.protocol !== "http:";
     }});
     scaleSelect.addEventListener("change", () => {{
       if (layersReady) updateScale();
     }});
 
-    function captureVisibleMap() {{
-      const sourceCanvas = map.getCanvas();
-      const canvas = document.createElement("canvas");
-      canvas.width = sourceCanvas.width;
-      canvas.height = sourceCanvas.height;
-      const ctx = canvas.getContext("2d");
-      const cssWidth = sourceCanvas.clientWidth;
-      const cssHeight = sourceCanvas.clientHeight;
-      ctx.setTransform(canvas.width/cssWidth, 0, 0,
-                       canvas.height/cssHeight, 0, 0);
-      ctx.drawImage(sourceCanvas, 0, 0, cssWidth, cssHeight);
-
-      // MapLibre's station marker, legend and attribution are HTML elements.
-      // Compose them over the same rendered map canvas for the exported PDF.
-      const station = map.project(stationCoordinates);
-      ctx.save();
-      ctx.translate(station.x, station.y);
-      ctx.fillStyle = "#c91f37";
-      ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(0, 1);
-      ctx.lineTo(-10, -16);
-      ctx.arc(0, -18, 10, Math.PI, 0, false);
-      ctx.lineTo(10, -16);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = "#fff";
-      ctx.beginPath(); ctx.arc(0, -18, 3, 0, Math.PI*2); ctx.fill();
-      ctx.restore();
-
+    function drawCoverageLegend(ctx, cssWidth, cssHeight) {{
       const label = legendLabels[scaleSelect.value];
       const legendWidth = Math.min(300, cssWidth-24);
       const legendHeight = 91;
@@ -801,49 +809,10 @@ def _build_coverage_report(
       ctx.textAlign = "left";
       ctx.fillText(label.contours,legendX+10,legendY+73,legendWidth-20);
 
-      const copyright = "© OpenStreetMap contributors — openstreetmap.org/copyright";
-      ctx.font = "11px Arial, sans-serif";
-      const creditWidth = ctx.measureText(copyright).width+12;
-      ctx.fillStyle = "rgba(255,255,255,0.88)";
-      ctx.fillRect(cssWidth-creditWidth,cssHeight-19,creditWidth,19);
-      ctx.fillStyle = "#17191d";
-      ctx.fillText(copyright,cssWidth-creditWidth+6,cssHeight-6);
-      return canvas;
     }}
-
-    exportButton.addEventListener("click", async () => {{
-      exportButton.disabled = true;
-      exportStatus.textContent = {json.dumps(tr('Aguardando o mapa carregar…'))};
-      try {{
-        if (!map.loaded() || !map.areTilesLoaded()) {{
-          await new Promise(resolve => map.once("idle",resolve));
-        }}
-        const screenshot = captureVisibleMap();
-        const blob = await new Promise((resolve,reject) =>
-          screenshot.toBlob(value => value ? resolve(value)
-            : reject(new Error("PNG indisponível")), "image/png")
-        );
-        exportStatus.textContent = {json.dumps(tr('Gerando o PDF com mapa geográfico…'))};
-        const response = await fetch("_export_coverage_pdf", {{
-          method:"POST", headers:{{"Content-Type":"image/png"}}, body:blob
-        }});
-        if (!response.ok) throw new Error("HTTP " + response.status);
-        const pdf = await response.blob();
-        const url = URL.createObjectURL(pdf);
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = "relatorio_cobertura_com_mapa.pdf";
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-        exportStatus.textContent = {json.dumps(tr('PDF com mapa geográfico salvo e baixado.'))};
-      }} catch (error) {{
-        exportStatus.textContent = {json.dumps(tr('Não foi possível exportar o mapa: '))} + error.message;
-      }} finally {{
-        exportButton.disabled = false;
-      }}
-    }});
+    {map_export_script()}
+    enableMapExport(map, [{{coordinates:stationCoordinates, color:"#c91f37"}}],
+                    "_export_coverage_pdf", {json.dumps(COVERAGE_MAP_PDF)}, drawCoverageLegend);
   </script>
 </body>
 </html>
@@ -859,6 +828,31 @@ def _format_duration(seconds: float) -> str:
     if minutes:
         return f"{minutes} min {secs:02d} s"
     return f"{secs} s"
+
+
+def _antenna_beam(request: CoverageRequest) -> dict[str, Any] | None:
+    pattern = request.transmitter_pattern
+    if pattern is None:
+        return None
+    azimuth, half_width = pattern.azimuth_deg, pattern.hpbw_deg / 2.0
+    distance_m = 750.0 * request.radius_km
+    start = [request.longitude_deg, request.latitude_deg]
+
+    def point(bearing: float) -> list[float]:
+        lat, lon = destination_point(request.latitude_deg, request.longitude_deg, bearing, distance_m)
+        return [lon, lat]
+
+    arc = [point(bearing) for bearing in np.linspace(azimuth - half_width, azimuth + half_width, 73)]
+    return {
+        "type": "FeatureCollection",
+        "features": [
+            {"type": "Feature", "properties": {"part": part},
+             "geometry": {"type": "LineString", "coordinates": coordinates}}
+            for part, coordinates in (
+                ("edges", [start, *arc, start]), ("axis", [start, point(azimuth)]),
+            )
+        ],
+    }
 
 
 def _local_point_to_lon_lat(
