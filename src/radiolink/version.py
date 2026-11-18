@@ -1,4 +1,4 @@
-__version__ = "0.5.2"
+__version__ = "0.5.3rc1"
 RELEASE_MONTH = "Novembro de 2026"
 DEVELOPER = "Mario Pin"
 CALLSIGN = "PU2PTU"

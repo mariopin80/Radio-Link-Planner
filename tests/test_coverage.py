@@ -1,17 +1,26 @@
 from __future__ import annotations
 
 import importlib.util
+import io
+import re
+import shutil
+import subprocess
 import threading
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 import numpy as np
 import pytest
+from PIL import Image
 
 from radiolink.coverage import (
     COVERAGE_RESOLUTION_M,
     COVERAGE_RESOLUTION_PRESETS,
     CoverageCancelled,
     CoverageRequest,
+    CoverageOutcome,
     RadialCoverage,
     angular_refinement_candidates,
     coverage_resolution_m,
@@ -26,7 +35,12 @@ from radiolink.coverage_grid import (
     smoke_test_direct_grid_worker,
 )
 import radiolink.coverage_grid as coverage_grid
-from radiolink.coverage_report import _build_coverage_report
+from radiolink.coverage_report import (
+    S_CONTOUR_LEVELS_DBM,
+    _build_coverage_report,
+    _render_overlay,
+    _render_s_contours,
+)
 from radiolink.geodesy import destination_point, great_circle_distance_m
 from radiolink.map_picker import build_picker_html
 from radiolink.report_server import start_report_server
@@ -237,6 +251,150 @@ def test_coverage_report_fits_bounds_before_loading_overlay(
     )
     assert "2 min 05 s" in report
     assert "<th>Retomadas de checkpoint</th><td>1</td>" in report
+    assert 'id="coverage-scale"' in report
+    assert 'value="s"' in report
+    assert "Exportar PDF com este mapa" in report
+    assert "preserveDrawingBuffer:true" in report
+    assert "_export_coverage_pdf" in report
+
+
+def test_s_contours_use_absolute_received_power_and_expected_levels(
+    tmp_path: Path,
+) -> None:
+    request = _request(tmp_path, receiver_threshold_dbm=-120.0)
+    grid = np.tile(np.linspace(-35.0, 45.0, 21), (21, 1))
+    axis = np.linspace(-10.0, 10.0, 21)
+    contours = _render_s_contours(request, grid, axis)
+    labels_by_level = {
+        feature["properties"]["level_dbm"]: feature["properties"]["label"]
+        for feature in contours["features"]
+    }
+    assert labels_by_level == {level: label for label, level in S_CONTOUR_LEVELS_DBM}
+    assert labels_by_level[-93.0] == "S9+"
+    # At -120 dBm threshold, a S5 contour (-117 dBm) is a +3 dB margin.
+    shifted = _render_s_contours(
+        _request(tmp_path, receiver_threshold_dbm=-100.0), grid, axis,
+    )
+    assert {
+        feature["properties"]["label"] for feature in shifted["features"]
+    } != set(labels_by_level.values())
+
+
+def test_s_overlay_is_distinct_from_margin_overlay(tmp_path: Path) -> None:
+    request = _request(tmp_path)
+    axis = np.linspace(-1, 1, 9)
+    grid = np.full((9, 9), 0.0)
+    margin_tiles = _render_overlay(request, grid, axis, tmp_path / "margin.png")
+    s_tiles = _render_overlay(
+        request, grid, axis, tmp_path / "s.png", scale="s",
+    )
+    assert margin_tiles[0]["coordinates"] == s_tiles[0]["coordinates"]
+    assert margin_tiles[0]["url"] == "coverage_overlay_r0_c0.png"
+    assert s_tiles[0]["url"] == "coverage_overlay_s_r0_c0.png"
+    with Image.open(tmp_path / "margin.png") as margin_image:
+        with Image.open(tmp_path / "s.png") as s_image:
+            assert margin_image.getpixel((4, 4)) != s_image.getpixel((4, 4))
+
+
+def test_coverage_map_javascript_parses(tmp_path: Path) -> None:
+    if not shutil.which("node"):
+        pytest.skip("Node.js is needed to parse generated JavaScript")
+    report = _build_coverage_report(
+        request=_request(tmp_path),
+        statistics={
+            "minimum_margin_db": -10, "maximum_margin_db": 10,
+            "covered_percent": 80, "margin_3_db_percent": 70,
+            "margin_6_db_percent": 60, "margin_12_db_percent": 30,
+        },
+        grid_metadata={
+            "valid_circle_cells": 100, "model_version": "test",
+            "p1812_cells": 99, "short_range_free_space_cells": 1,
+            "terrain_profile_points": 100, "worker_count": 2,
+        },
+        contour_geojson={"type": "FeatureCollection", "features": []},
+        overlay_tiles=[],
+        s_contour_geojson={"type": "FeatureCollection", "features": []},
+        s_overlay_tiles=[],
+        map_assets=("maplibre.css", "maplibre.js"),
+    )
+    script = re.findall(r"<script>\s*([\s\S]*?)\s*</script>", report)[-1]
+    checked = subprocess.run(
+        ["node", "--check", "-"], input=script, capture_output=True,
+        text=True, check=False,
+    )
+    assert checked.returncode == 0, checked.stderr
+
+
+def test_map_screenshot_export_returns_pdf_and_checks_origin(tmp_path: Path) -> None:
+    from pypdf import PdfReader
+
+    from radiolink.desktop import _export_coverage_map_pdf
+
+    request = _request(tmp_path)
+    html_report = tmp_path / "coverage_report.html"
+    html_report.write_text("map report", encoding="utf-8")
+    statistics = {
+        "minimum_margin_db": -10, "maximum_margin_db": 20,
+        "covered_percent": 80, "margin_3_db_percent": 70,
+        "margin_6_db_percent": 60, "margin_12_db_percent": 30,
+    }
+    outcome = CoverageOutcome(
+        request=request, radials=(), paths={"report_html": html_report},
+        statistics=statistics,
+    )
+    image = Image.new("RGB", (800, 600), "#abcdea")
+    stream = io.BytesIO()
+    image.save(stream, format="PNG")
+    png = stream.getvalue()
+    server, url = start_report_server(
+        html_report, timeout_seconds=30,
+        on_export_coverage_pdf=lambda body: _export_coverage_map_pdf(outcome, body),
+    )
+    endpoint = urllib.parse.urljoin(url, "_export_coverage_pdf")
+    origin = urllib.parse.urlsplit(url)
+    expected_origin = f"{origin.scheme}://{origin.netloc}"
+    try:
+        with pytest.raises(urllib.error.HTTPError) as forbidden:
+            urllib.request.urlopen(urllib.request.Request(
+                endpoint, data=png, method="POST",
+                headers={"Content-Type": "image/png", "Origin": "https://example.org"},
+            ), timeout=5)
+        assert forbidden.value.code == 403
+
+        with pytest.raises(urllib.error.HTTPError) as invalid:
+            urllib.request.urlopen(urllib.request.Request(
+                endpoint, data=b"not a png", method="POST",
+                headers={"Content-Type": "image/png", "Origin": expected_origin},
+            ), timeout=5)
+        assert invalid.value.code == 422
+
+        with pytest.raises(urllib.error.HTTPError) as too_large:
+            urllib.request.urlopen(urllib.request.Request(
+                endpoint, data=b"x", method="POST",
+                headers={
+                    "Content-Type": "image/png", "Origin": expected_origin,
+                    "Content-Length": "20971521",
+                },
+            ), timeout=5)
+        assert too_large.value.code == 413
+
+        valid_request = urllib.request.Request(
+            endpoint, data=png, method="POST",
+            headers={"Content-Type": "image/png", "Origin": expected_origin},
+        )
+        with urllib.request.urlopen(valid_request, timeout=10) as response:
+            assert response.headers["Content-Type"] == "application/pdf"
+            assert response.read().startswith(b"%PDF-")
+
+        pdf = outcome.paths["report_pdf_map"]
+        assert pdf.is_file()
+        assert outcome.paths["geographic_map"].read_bytes() == png
+        extracted = "\n".join(page.extract_text() for page in PdfReader(pdf).pages)
+        assert "Mapa de cobertura com referências geográficas" in extracted
+        assert "OpenStreetMap contributors" in extracted
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def test_coverage_pipeline_records_direct_cells_without_interpolation(

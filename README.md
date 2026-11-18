@@ -4,7 +4,7 @@
 
 A local planning tool for **terrestrial VHF/UHF point-to-point links and coverage**. It combines terrain profiles, propagation models, a bidirectional link budget, uncertainty analysis and traceable technical reports. The repository includes a Windows desktop interface and a scientific command-line engine.
 
-**Author:** Mario Pin, PU2PTU · **Application:** 0.5.2
+**Author:** Mario Pin, PU2PTU · **Application:** 0.5.3rc1 (pre-release)
 
 ## What it can do
 
@@ -87,6 +87,10 @@ The CLI accepts `--runs`, `--no-plots` and `--print-json`. `radio-link-desktop` 
 | `profile.png`, `monte_carlo.png` | Terrain/Fresnel profile and probability comparison. |
 
 Coverage adds `coverage_project.json`, margin/loss `.npy` grids, propagation/metadata JSON, heatmap/overlay PNG, contour GeoJSON, HTML and PDF reports. The demo output is a recorded example; the current engine may generate different figures as algorithms and inputs evolve.
+
+In the interactive coverage report, use **Display → Margin (dB) / S-meter scale** to switch between engineering link-margin contours (0, +3, +6, +12 dB) and estimated received-power contours (S1, S3, S5, S7, S9+). The VHF/UHF S-meter convention assumes S9 = −93 dBm and 6 dB per S-unit; the actual receiver's S-meter may not be calibrated to this scale. S contours are derived from the same propagation grid, so switching scales does not recalculate coverage.
+
+To include the **geographic map** (with OpenStreetMap basemap, coverage, contours and attribution) in a printable PDF, open the interactive coverage report from the desktop app, choose the desired scale and zoom, then click **Export PDF with this map**. The app saves `coverage_map_geographic.png` and `relatorio_cobertura_com_mapa.pdf` beside the normal report; the browser also downloads the PDF. This deliberate export uses the tiles already loaded in the interactive viewport. The original `relatorio_cobertura.pdf` with the technical-only heatmap remains available on disk.
 
 ## Scientific scope
 
