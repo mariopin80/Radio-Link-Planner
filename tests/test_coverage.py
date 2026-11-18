@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import json
+import os
 import re
 import shutil
 import subprocess
@@ -42,6 +44,7 @@ from radiolink.coverage_report import (
     _build_coverage_report,
     _render_overlay,
     _render_s_contours,
+    coverage_cell_at,
 )
 from radiolink.geodesy import destination_point, great_circle_distance_m
 from radiolink.geometry import ClearanceClass
@@ -289,6 +292,67 @@ def test_local_report_server_serves_relative_map_assets(
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_report_cell_query_uses_native_grid_with_optional_clearance(tmp_path: Path) -> None:
+    request = _request(
+        tmp_path, latitude_deg=-23.0, longitude_deg=179.97,
+        resolution_preset="custom", custom_resolution_m=10_000,
+    )
+    resolution = request.resolution_m
+    dimension = coverage_grid_dimension(request.radius_km, resolution)
+    mid = dimension // 2
+    cell = (mid - 2, mid + 1)
+    margin_grid = np.full((dimension, dimension), np.nan, dtype=np.float32)
+    margin_grid[cell] = 9.0
+    margin_grid[mid, mid] = 28.0
+    classes = np.zeros(margin_grid.shape, dtype=np.uint8)
+    classes[cell] = ClearanceClass.OBSTRUCTED
+    paths = {
+        "report_html": tmp_path / "coverage_report.html",
+        "margin_grid": tmp_path / "coverage_margin_db.npy",
+        "clearance_grid": tmp_path / "coverage_clearance_classes.npy",
+    }
+    paths["report_html"].write_text("<html>Coverage</html>", encoding="utf-8")
+    np.save(paths["margin_grid"], margin_grid)
+    np.save(paths["clearance_grid"], classes)
+    outcome = CoverageOutcome(request, (), paths, {})
+    latitude, longitude = destination_point(-23.0, 179.97, 32.0, 22_000.0)
+    assert longitude < 0.0  # The click and station are on opposite sides of the dateline.
+    server, url = start_report_server(
+        paths["report_html"], timeout_seconds=30.0,
+        on_query_coverage_cell=lambda lat, lon: coverage_cell_at(outcome, lat, lon),
+    )
+    endpoint = urllib.parse.urljoin(url, "_coverage_cell")
+    query = endpoint + "?" + urllib.parse.urlencode({"lat": latitude, "lon": longitude})
+    try:
+        with urllib.request.urlopen(query, timeout=5.0) as response:
+            assert response.headers["Cache-Control"] == "no-store"
+            data = json.load(response)
+        assert data["margin_db"] == 9.0
+        assert data["s_estimate"] == "S6"
+        assert data["clearance"] == ClearanceClass.OBSTRUCTED
+        assert data["distance_km"] == pytest.approx(22.3606798)
+        assert data["azimuth_deg"] == pytest.approx(26.5650512)
+        with urllib.request.urlopen(f"{endpoint}?lat=-23&lon=179.97", timeout=5.0) as response:
+            center = json.load(response)
+        assert center["s_estimate"] == "S9+"
+        assert center["azimuth_deg"] is None
+        with urllib.request.urlopen(f"{endpoint}?lat=-20&lon=179.97", timeout=5.0) as response:
+            assert json.load(response) is None
+        with pytest.raises(urllib.error.HTTPError) as invalid:
+            urllib.request.urlopen(f"{endpoint}?lat=NaN&lon=0", timeout=5.0)
+        assert invalid.value.code == 400
+        report_stat = paths["report_html"].stat()
+        os.utime(paths["report_html"], ns=(report_stat.st_atime_ns, report_stat.st_mtime_ns + 10**9))
+        with pytest.raises(urllib.error.HTTPError) as stale:
+            urllib.request.urlopen(query, timeout=5.0)
+        assert stale.value.code == 409
+    finally:
+        server.shutdown()
+        server.server_close()
+    without_clearance = replace(outcome, paths={"margin_grid": paths["margin_grid"]})
+    assert coverage_cell_at(without_clearance, latitude, longitude)["clearance"] is None
 
 
 def test_coverage_report_fits_bounds_before_loading_overlay(

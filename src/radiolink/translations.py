@@ -1,6 +1,16 @@
 """English, Spanish, French and German translations of Portuguese source messages."""
 
 MESSAGES: dict[str, tuple[str, str, str, str]] = {
+    'S estimado': ('Estimated S', 'S estimado', 'S estimé', 'Geschätzter S-Wert'),
+    'Condição de visada': ('Line of sight', 'Línea de vista', 'Visibilité directe', 'Sichtverbindung'),
+    'Azimute': ('Azimuth', 'Azimut', 'Azimut', 'Azimut'),
+    'Bloqueada': ('Blocked', 'Bloqueada', 'Obstruée', 'Blockiert'),
+    'Insuficiente': ('Insufficient', 'Insuficiente', 'Insuffisante', 'Unzureichend'),
+    'Livre': ('Clear', 'Libre', 'Dégagée', 'Frei'),
+    'Clique no mapa para consultar a célula.': ('Click the map to inspect a cell.', 'Haga clic en el mapa para consultar la celda.', 'Cliquez sur la carte pour consulter une cellule.', 'Klicken Sie auf die Karte, um eine Zelle abzufragen.'),
+    'Consultando a célula…': ('Loading cell data…', 'Consultando la celda…', 'Chargement des données de la cellule…', 'Zellendaten werden geladen…'),
+    'Sem dados de cobertura neste ponto.': ('No coverage data at this point.', 'No hay datos de cobertura en este punto.', 'Aucune donnée de couverture à cet endroit.', 'An diesem Punkt liegen keine Versorgungsdaten vor.'),
+    'Abra Mapa e relatório no aplicativo para consultar as células.': ('Open Map and report in the application to inspect cells.', 'Abra Mapa e informe en la aplicación para consultar las celdas.', 'Ouvrez Carte et rapport dans l’application pour consulter les cellules.', 'Öffnen Sie Karte und Bericht in der Anwendung, um Zellen abzufragen.'),
     'Monte Carlo': ('Monte Carlo', 'Monte Carlo', 'Monte-Carlo', 'Monte-Carlo-Simulation'),
     'O bloco de cobertura não retornou a classificação de Fresnel.': ('The coverage block returned no Fresnel classification.', 'El bloque de cobertura no devolvió la clasificación de Fresnel.', 'Le bloc de couverture n’a fourni aucune classification de Fresnel.', 'Der Versorgungsblock hat keine Fresnel-Klassifikation geliefert.'),
     'Percentual de tempo em que se deseja que o enlace funcione. É uma meta de projeto. O campo Tempo P.1812 (%) descreve a estatística de perda do modelo de cobertura.': (

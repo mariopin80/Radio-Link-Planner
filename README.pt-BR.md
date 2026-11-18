@@ -4,7 +4,7 @@
 
 Ferramenta local de planejamento de **enlaces terrestres VHF/UHF ponto a ponto e cobertura**. Reúne perfis de terreno, modelos de propagação, orçamento bidirecional, análise de incertezas e relatórios técnicos rastreáveis. O repositório contém interface desktop para Windows e motor científico de linha de comando.
 
-**Autor:** Mario Pin, PU2PTU · **Aplicativo:** 0.5.5 (pré-lançamento)
+**Autor:** Mario Pin, PU2PTU · **Aplicativo:** 0.5.6 (pré-lançamento)
 
 ## O que faz
 
@@ -64,7 +64,7 @@ Execute os scripts em um terminal de desenvolvimento apropriado. `bootstrap_itu_
 2. Escolha antena omnidirecional ou direcional no transmissor. Para a direcional, informe ganho máximo, abertura a −3 dB, frente/costas e azimute.
 3. Para comparar a geometria com a previsão de margem, marque **Incluir camada no mapa** em **Visada e Fresnel**.
 4. Confira a previsão de células, memória e tempo e inicie o cálculo. Repita os mesmos parâmetros e a pasta de saída para retomar blocos concluídos. Alterações apenas no orçamento ou no diagrama podem reaproveitar a perda calculada nessa pasta.
-5. Escolha a visualização em **Mapa e relatório**.
+5. Abra **Mapa e relatório** e clique em uma célula de qualquer camada para consultar margem, S estimado, condição de visada, distância e azimute.
 
 Raios grandes podem levar horas e ocupar bastante disco mesmo com número parecido de células. O perfil de terreno é amostrado nominalmente a 30 m, independentemente do tamanho das células. Os resultados ficam no perfil do usuário; caches de relevo e ITU em `%LOCALAPPDATA%\RadioLinkPlanner\` no Windows.
 

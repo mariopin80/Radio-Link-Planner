@@ -8,6 +8,7 @@ import math
 import os
 import tempfile
 from collections.abc import Callable
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -16,11 +17,12 @@ import numpy as np
 from .antenna import ANTENNA_APPROXIMATION_NOTE, antenna_report_rows
 from .coverage import (
     CONTOUR_LEVELS_DB,
+    CoverageOutcome,
     CoverageRequest,
     ProgressCallback,
     RadialCoverage,
 )
-from .geodesy import destination_point
+from .geodesy import destination_point, great_circle_distance_m, initial_bearing_deg
 from .geometry import ClearanceClass
 from .legal_notices import (
     COPERNICUS_GLO30_DERIVED_CREDIT,
@@ -38,18 +40,75 @@ os.environ.setdefault("MPLCONFIGDIR", str(_MATPLOTLIB_CACHE))
 os.environ.setdefault("MPLBACKEND", "Agg")
 
 # IARU VHF/UHF convention: S9 = -93 dBm, 6 dB per S-unit.
+S9_DBM = -93.0
+S_UNIT_DB = 6.0
 S_CONTOUR_LEVELS_DBM = (
-    ("S1", -141.0),
-    ("S3", -129.0),
-    ("S5", -117.0),
-    ("S7", -105.0),
-    ("S9+", -93.0),
+    ("S1", S9_DBM - 8 * S_UNIT_DB),
+    ("S3", S9_DBM - 6 * S_UNIT_DB),
+    ("S5", S9_DBM - 4 * S_UNIT_DB),
+    ("S7", S9_DBM - 2 * S_UNIT_DB),
+    ("S9+", S9_DBM),
 )
 CLEARANCE_STYLES = (
     (ClearanceClass.FRESNEL_CLEAR, "#117a68", "Fresnel atende ao critério"),
     (ClearanceClass.LINE_OF_SIGHT, "#e5a52a", "Visada com folga insuficiente"),
     (ClearanceClass.OBSTRUCTED, "#8b386e", "Visada direta bloqueada"),
 )
+
+
+def coverage_cell_at(
+    outcome: CoverageOutcome, latitude_deg: float, longitude_deg: float,
+) -> dict[str, float | int | str | None] | None:
+    """Read the calculated cell containing the clicked geographic point."""
+    request = outcome.request
+    origin = (request.latitude_deg, request.longitude_deg)
+    distance_m = great_circle_distance_m(*origin, latitude_deg, longitude_deg)
+    step_m = request.resolution_m
+    if distance_m > request.radius_km * 1000.0 + step_m / math.sqrt(2.0):
+        return None
+    bearing = math.radians(initial_bearing_deg(*origin, latitude_deg, longitude_deg))
+    east = distance_m * math.sin(bearing)
+    north = distance_m * math.cos(bearing)
+
+    margins = np.load(outcome.paths["margin_grid"], mmap_mode="r", allow_pickle=False)
+    with closing(margins._mmap):
+        rows, columns = margins.shape
+        center_row, center_col = (rows - 1) / 2.0, (columns - 1) / 2.0
+        # Invert the azimuthal equidistant grid geometry used by the workers.
+        row = math.floor(center_row - north / step_m + 0.5)
+        col = math.floor(center_col + east / step_m + 0.5)
+        if not (0 <= row < rows and 0 <= col < columns):
+            return None
+        margin_db = float(margins[row, col])
+    if not math.isfinite(margin_db):
+        return None
+
+    clearance = None
+    clearance_file = outcome.paths.get("clearance_grid")
+    if clearance_file is not None and clearance_file.is_file():
+        classes = np.load(clearance_file, mmap_mode="r", allow_pickle=False)
+        with closing(classes._mmap):
+            if classes.shape != (rows, columns):
+                raise ValueError("clearance grid does not match margin grid")
+            clearance = int(classes[row, col])
+
+    east_m = (col - center_col) * step_m
+    north_m = (center_row - row) * step_m
+    center_distance_m = math.hypot(east_m, north_m)
+    received_dbm = request.receiver_threshold_dbm + margin_db
+    if received_dbm > S9_DBM:
+        s_estimate = "S9+"
+    else:
+        s_unit = math.floor(9 + (received_dbm - S9_DBM) / S_UNIT_DB)
+        s_estimate = f"S{s_unit}" if s_unit >= 1 else "< S1"
+    return {
+        "margin_db": margin_db,
+        "s_estimate": s_estimate,
+        "clearance": clearance,
+        "distance_km": center_distance_m / 1000.0,
+        "azimuth_deg": math.degrees(math.atan2(east_m, north_m)) % 360.0
+        if center_distance_m else None,
+    }
 
 
 def clearance_criteria_label(request: CoverageRequest) -> str:
@@ -222,7 +281,7 @@ def _render_overlay(
             minimum, maximum = -12.0, 18.0
         elif scale == "s":
             render_values = grid + request.receiver_threshold_dbm
-            minimum, maximum = -141.0, -93.0
+            minimum, maximum = S_CONTOUR_LEVELS_DBM[0][1], S9_DBM
         else:
             raise ValueError(f"unsupported coverage scale: {scale}")
         normalization = Normalize(vmin=minimum, vmax=maximum, clip=True)
@@ -494,6 +553,21 @@ def _build_coverage_report(
     )
     clearance_option = clearance_legend = clearance_note = ""
     clearance_labels = None
+    cell_labels = {
+        "margin": tr("Margem"),
+        "s": tr("S estimado"),
+        "clearance": tr("Condição de visada"),
+        "distance": tr("Distância"),
+        "azimuth": tr("Azimute"),
+        "classes": {
+            ClearanceClass.OBSTRUCTED: tr("Bloqueada"),
+            ClearanceClass.LINE_OF_SIGHT: tr("Insuficiente"),
+            ClearanceClass.FRESNEL_CLEAR: tr("Livre"),
+        },
+        "loading": tr("Consultando a célula…"),
+        "empty": tr("Sem dados de cobertura neste ponto."),
+        "unavailable": tr("Abra Mapa e relatório no aplicativo para consultar as células."),
+    }
     if clearance_tiles:
         title = tr("Visada e Fresnel")
         criteria = clearance_criteria_label(request)
@@ -589,6 +663,10 @@ def _build_coverage_report(
              border-radius:10px; padding:18px; margin:18px 0;
              box-shadow:0 4px 18px rgba(0,0,0,.045); }}
     #coverage-map {{ height:650px; border-radius:7px; background:#dfe4e8; }}
+    .coverage-cell {{ display:grid; grid-template-columns:auto auto; gap:4px 14px;
+                      margin:0 12px 0 0; font-size:13px; }}
+    .coverage-cell dt {{ color:var(--muted); }}
+    .coverage-cell dd {{ margin:0; font-weight:600; white-space:nowrap; }}
     .legend {{ position:absolute; z-index:2; left:14px; bottom:28px;
                background:rgba(255,255,255,.94); padding:10px 12px;
                border-radius:6px; box-shadow:0 2px 10px rgba(0,0,0,.2);
@@ -647,6 +725,7 @@ def _build_coverage_report(
       <div class="export-status" id="export-status" role="status" aria-live="polite"></div>
       <p class="note">{html.escape(tr('Escala S estimada para VHF/UHF: S9 = −93 dBm e 6 dB por unidade S. O indicador real do receptor pode ser diferente.'))}</p>
       {clearance_note}
+      <p class="note">{html.escape(tr('Clique no mapa para consultar a célula.'))}</p>
       <div id="coverage-map" aria-label="{html.escape(tr('Mapa de cobertura'), quote=True)}"></div>
       <div class="legend" id="coverage-legend">
         <strong id="legend-title">{html.escape(tr('Margem do enlace'))}</strong>
@@ -706,6 +785,7 @@ def _build_coverage_report(
     const sOverlayTiles = {embedded_s_overlay_tiles};
     const overlayGroups = {{margin:overlayTiles, s:sOverlayTiles, clearance:{json.dumps(clearance_tiles or [])}}};
     const clearanceLabels = {json.dumps(clearance_labels, ensure_ascii=False)};
+    const cellLabels = {json.dumps(cell_labels, ensure_ascii=False)};
     const coverageBounds = {json.dumps(bounds)};
     const contourData = {embedded_contours};
     const sContourData = {embedded_s_contours};
@@ -737,6 +817,58 @@ def _build_coverage_report(
           }}
         }},
         layers: [{{ id:"osm", type:"raster", source:"osm" }}]
+      }}
+    }});
+    const cellNumber = new Intl.NumberFormat(document.documentElement.lang, {{
+      minimumFractionDigits:1, maximumFractionDigits:1
+    }});
+    const marginNumber = new Intl.NumberFormat(document.documentElement.lang, {{
+      minimumFractionDigits:1, maximumFractionDigits:1, signDisplay:"exceptZero"
+    }});
+    let cellPopup;
+    map.on("click", async event => {{
+      const target = event.originalEvent?.target;
+      if (target?.closest(".maplibregl-popup, .maplibregl-ctrl")) return;
+      cellPopup?.remove();
+      if (target?.closest(".maplibregl-marker")) return;
+      const popup = new maplibregl.Popup({{closeOnClick:false, maxWidth:"320px"}})
+        .setLngLat(event.lngLat).setText(cellLabels.loading).addTo(map);
+      cellPopup = popup;
+      if (location.protocol === "file:") {{
+        popup.setText(cellLabels.unavailable);
+        return;
+      }}
+      try {{
+        const point = event.lngLat.wrap();
+        const query = new URLSearchParams({{lat:point.lat, lon:point.lng}});
+        const response = await fetch("_coverage_cell?" + query, {{cache:"no-store"}});
+        if (!response.ok) throw new Error("Coverage cell unavailable");
+        const cell = await response.json();
+        if (!popup.isOpen()) return;
+        if (cell === null) {{
+          popup.setText(cellLabels.empty);
+          return;
+        }}
+        const azimuth = cell.azimuth_deg === null ? "—"
+          : cellNumber.format((Math.round(cell.azimuth_deg * 10) % 3600) / 10) + "°";
+        const detail = document.createElement("dl");
+        detail.className = "coverage-cell";
+        for (const [label, value] of [
+          [cellLabels.margin, marginNumber.format(cell.margin_db) + " dB"],
+          [cellLabels.s, cell.s_estimate],
+          [cellLabels.clearance, cellLabels.classes[cell.clearance] ?? "—"],
+          [cellLabels.distance, cellNumber.format(cell.distance_km) + " km"],
+          [cellLabels.azimuth, azimuth],
+        ]) {{
+          const term = document.createElement("dt");
+          const description = document.createElement("dd");
+          term.textContent = label;
+          description.textContent = value;
+          detail.append(term, description);
+        }}
+        popup.setDOMContent(detail);
+      }} catch {{
+        if (popup.isOpen()) popup.setText(cellLabels.unavailable);
       }}
     }});
     map.fitBounds(coverageBounds, {{padding:45,duration:0}});

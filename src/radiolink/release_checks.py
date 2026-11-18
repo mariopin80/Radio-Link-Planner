@@ -18,7 +18,9 @@ def check_localized_reports(output: Path) -> dict:
 
     from .coverage import CoverageRequest, run_coverage_analysis
     from .coverage_grid import coverage_terrain_tile_codes
+    from .coverage_report import coverage_cell_at
     from .desktop_core import AnalysisRequest, bundled_example_path, run_analysis
+    from .geodesy import destination_point
 
     request = CoverageRequest(
         name="Coverage validation", latitude_deg=-23, longitude_deg=-47,
@@ -82,6 +84,12 @@ def check_localized_reports(output: Path) -> dict:
                 np.testing.assert_array_equal(clearance, baseline_clearance)
                 assert coverage.statistics["p1812_calls_this_run"] == 0
             assert '<option value="clearance">' in coverage.paths["report_html"].read_text(encoding="utf-8")
+            point = destination_point(current.latitude_deg, current.longitude_deg, 90.0, 10_000.0)
+            cell = coverage_cell_at(coverage, *point)
+            mid = grid.shape[0] // 2
+            assert cell["margin_db"] == grid[mid, mid + 1]
+            assert cell["clearance"] == clearance[mid, mid + 1]
+            assert cell["distance_km"] == 10.0 and cell["azimuth_deg"] == 90.0
             for outcome in (link, coverage):
                 report = outcome.paths["report_html"].read_text(encoding="utf-8")
                 tag = "pt-BR" if language == "pt" else language
