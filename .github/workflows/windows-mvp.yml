@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - ".github/workflows/windows-mvp.yml"
+      - ".github/workflows/tests.yml"
       - "assets/**"
       - "examples/**"
       - "installer/**"
