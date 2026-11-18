@@ -320,7 +320,7 @@ def test_coverage_map_javascript_parses(tmp_path: Path) -> None:
     script = re.findall(r"<script>\s*([\s\S]*?)\s*</script>", report)[-1]
     checked = subprocess.run(
         ["node", "--check", "-"], input=script, capture_output=True,
-        text=True, check=False,
+        text=True, encoding="utf-8", check=False,
     )
     assert checked.returncode == 0, checked.stderr
 
