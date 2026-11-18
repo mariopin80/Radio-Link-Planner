@@ -4,7 +4,7 @@
 
 A local planning tool for **terrestrial VHF/UHF point-to-point links and coverage**. It combines terrain profiles, propagation models, a bidirectional link budget, uncertainty analysis and traceable technical reports. The repository includes a Windows desktop interface and a scientific command-line engine.
 
-**Author:** Mario Pin, PU2PTU · **Application:** 0.5.2
+**Author:** Mario Pin, PU2PTU · **Application:** 0.5.3rc1 (pre-release)
 
 ## What it can do
 
