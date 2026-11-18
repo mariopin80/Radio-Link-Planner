@@ -2310,7 +2310,13 @@ class RadioLinkPlannerApp:
 
     def _open_report(self) -> None:
         if self.current_mode == "coverage" and self.last_coverage:
-            open_report_in_browser(self.last_coverage.paths["report_html"])
+            outcome = self.last_coverage
+            open_report_in_browser(
+                outcome.paths["report_html"],
+                on_export_coverage_pdf=lambda screenshot: _export_coverage_map_pdf(
+                    outcome, screenshot,
+                ),
+            )
         elif self.last_outcome:
             open_report_in_browser(self.last_outcome.paths["report_html"])
 
@@ -2320,9 +2326,12 @@ class RadioLinkPlannerApp:
 
     def _open_pdf_report(self) -> None:
         if self.current_mode == "coverage" and self.last_coverage:
-            report = self.last_coverage.paths.get("report_pdf")
-            if report:
+            report = self.last_coverage.paths.get("report_pdf_map")
+            if report and report.is_file():
                 _open_path(report)
+            else:
+                self._open_report()
+                self.status_var.set(tr('No mapa interativo, clique em “Exportar PDF com este mapa”.'))
         elif self.last_outcome:
             report = self.last_outcome.paths.get("report_pdf")
             if report:
@@ -2337,6 +2346,24 @@ class RadioLinkPlannerApp:
             _open_path(self.last_coverage.paths["report_html"].parent)
         elif self.last_outcome:
             _open_path(self.last_outcome.paths["report_html"].parent)
+
+
+def _export_coverage_map_pdf(outcome: CoverageOutcome, screenshot: bytes) -> Path:
+    """Keep the geographic screenshot and PDF beside this coverage analysis."""
+    from .pdf_reports import write_coverage_pdf
+
+    output_directory = outcome.paths["report_html"].parent
+    screenshot_path = output_directory / "coverage_map_geographic.png"
+    screenshot_path.write_bytes(screenshot)
+    report_path = write_coverage_pdf(
+        request=outcome.request,
+        statistics=outcome.statistics,
+        paths={**outcome.paths, "geographic_map": screenshot_path},
+        output_path=output_directory / "relatorio_cobertura_com_mapa.pdf",
+    )
+    outcome.paths["geographic_map"] = screenshot_path
+    outcome.paths["report_pdf_map"] = report_path
+    return report_path
 
 
 def _open_path(path: str | Path) -> None:

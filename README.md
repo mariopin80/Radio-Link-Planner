@@ -88,6 +88,10 @@ The CLI accepts `--runs`, `--no-plots` and `--print-json`. `radio-link-desktop` 
 
 Coverage adds `coverage_project.json`, margin/loss `.npy` grids, propagation/metadata JSON, heatmap/overlay PNG, contour GeoJSON, HTML and PDF reports. The demo output is a recorded example; the current engine may generate different figures as algorithms and inputs evolve.
 
+In the interactive coverage report, use **Display → Margin (dB) / S-meter scale** to switch between engineering link-margin contours (0, +3, +6, +12 dB) and estimated received-power contours (S1, S3, S5, S7, S9+). The VHF/UHF S-meter convention assumes S9 = −93 dBm and 6 dB per S-unit; the actual receiver's S-meter may not be calibrated to this scale. S contours are derived from the same propagation grid, so switching scales does not recalculate coverage.
+
+To include the **geographic map** (with OpenStreetMap basemap, coverage, contours and attribution) in a printable PDF, open the interactive coverage report from the desktop app, choose the desired scale and zoom, then click **Export PDF with this map**. The app saves `coverage_map_geographic.png` and `relatorio_cobertura_com_mapa.pdf` beside the normal report; the browser also downloads the PDF. This deliberate export uses the tiles already loaded in the interactive viewport. The original `relatorio_cobertura.pdf` with the technical-only heatmap remains available on disk.
+
 ## Scientific scope
 
 The current desktop focus is **30–3000 MHz** and **3–1000 km** terrestrial paths. Automatic terrain profiles currently assume inland land along the path and omit vegetation/buildings; coastal or over-water paths need review of `zone_code`. DEM error and height error are not sampled by the current Monte Carlo. Treat model agreement and margins as engineering estimates, then compare with measured equipment parameters and field observations. See [scientific scope](docs/scientific-scope.md) and the [reference case](tests/reference/morro_jacu_palmira/reference_notes.md).

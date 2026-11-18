@@ -33,6 +33,15 @@ _MATPLOTLIB_CACHE.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("MPLCONFIGDIR", str(_MATPLOTLIB_CACHE))
 os.environ.setdefault("MPLBACKEND", "Agg")
 
+# IARU VHF/UHF convention: S9 = -93 dBm, 6 dB per S-unit.
+S_CONTOUR_LEVELS_DBM = (
+    ("S1", -141.0),
+    ("S3", -129.0),
+    ("S5", -117.0),
+    ("S7", -105.0),
+    ("S9+", -93.0),
+)
+
 
 def write_coverage_outputs(
     *,
@@ -46,8 +55,10 @@ def write_coverage_outputs(
 ) -> tuple[dict[str, Path], dict[str, Any]]:
     output_directory.mkdir(parents=True, exist_ok=True)
     overlay_path = output_directory / "coverage_overlay.png"
+    s_overlay_path = output_directory / "coverage_overlay_s.png"
     heatmap_path = output_directory / "coverage_heatmap.png"
     contours_path = output_directory / "coverage_contours.geojson"
+    s_contours_path = output_directory / "coverage_contours_s.geojson"
     report_path = output_directory / "coverage_report.html"
 
     _check_cancelled(cancel_check)
@@ -65,6 +76,13 @@ def write_coverage_outputs(
         axis_km,
         overlay_path,
     )
+    s_overlay_tiles = _render_overlay(
+        request,
+        sampled,
+        axis_km,
+        s_overlay_path,
+        scale="s",
+    )
     _check_cancelled(cancel_check)
     _notify(progress, tr('Cobertura: heatmap interativo renderizado.'))
     contour_geojson = _render_heatmap_and_contours(
@@ -73,10 +91,15 @@ def write_coverage_outputs(
         axis_km,
         heatmap_path,
     )
+    s_contour_geojson = _render_s_contours(request, sampled, axis_km)
     _check_cancelled(cancel_check)
     _notify(progress, tr('Cobertura: contornos científicos gerados.'))
     contours_path.write_text(
         json.dumps(contour_geojson, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    s_contours_path.write_text(
+        json.dumps(s_contour_geojson, ensure_ascii=False, separators=(",", ":")),
         encoding="utf-8",
     )
     map_assets = _install_map_assets(output_directory)
@@ -89,6 +112,8 @@ def write_coverage_outputs(
             grid_metadata=grid_metadata,
             contour_geojson=contour_geojson,
             overlay_tiles=overlay_tiles,
+            s_contour_geojson=s_contour_geojson,
+            s_overlay_tiles=s_overlay_tiles,
             map_assets=map_assets,
             radials=radials,
         ),
@@ -98,7 +123,9 @@ def write_coverage_outputs(
         "report_html": report_path,
         "heatmap": heatmap_path,
         "map_overlay": overlay_path,
+        "s_map_overlay": s_overlay_path,
         "contours": contours_path,
+        "s_contours": s_contours_path,
     }
     from .pdf_reports import write_coverage_pdf
 
@@ -150,13 +177,23 @@ def _render_overlay(
     grid: np.ndarray,
     axis_km: np.ndarray,
     path: Path,
+    *,
+    scale: str = "margin",
 ) -> list[dict[str, Any]]:
     import matplotlib.pyplot as plt
     from matplotlib.colors import Normalize
 
     colormap = _coverage_colormap()
-    normalization = Normalize(vmin=-12.0, vmax=18.0, clip=True)
-    rgba = colormap(normalization(np.nan_to_num(grid, nan=-12.0)))
+    if scale == "margin":
+        render_values = grid
+        minimum, maximum = -12.0, 18.0
+    elif scale == "s":
+        render_values = grid + request.receiver_threshold_dbm
+        minimum, maximum = -141.0, -93.0
+    else:
+        raise ValueError(f"unsupported coverage scale: {scale}")
+    normalization = Normalize(vmin=minimum, vmax=maximum, clip=True)
+    rgba = colormap(normalization(np.nan_to_num(render_values, nan=minimum)))
     rgba[..., 3] = np.where(np.isfinite(grid), 0.78, 0.0)
     plt.imsave(path, rgba, origin="upper")
     tile_count = 1 if request.radius_km <= 100 else (
@@ -171,7 +208,8 @@ def _render_overlay(
             row_stop = int(boundaries[row + 1])
             column_start = int(boundaries[column])
             column_stop = int(boundaries[column + 1])
-            filename = f"coverage_overlay_r{row}_c{column}.png"
+            suffix = "_s" if scale == "s" else ""
+            filename = f"coverage_overlay{suffix}_r{row}_c{column}.png"
             tile_path = path.parent / filename
             plt.imsave(
                 tile_path,
@@ -287,6 +325,53 @@ def _render_heatmap_and_contours(
     }
 
 
+def _render_s_contours(
+    request: CoverageRequest,
+    grid: np.ndarray,
+    axis_km: np.ndarray,
+) -> dict[str, Any]:
+    """Return S-meter contours from received power, not link margin."""
+    import matplotlib.pyplot as plt
+
+    power_dbm = np.asarray(grid, dtype=float) + request.receiver_threshold_dbm
+    finite_values = power_dbm[np.isfinite(power_dbm)]
+    if not finite_values.size:
+        return {"type": "FeatureCollection", "features": []}
+
+    lowest, highest = float(np.min(finite_values)), float(np.max(finite_values))
+    selected = [
+        (label, level)
+        for label, level in S_CONTOUR_LEVELS_DBM
+        if lowest < level < highest
+    ]
+    if not selected:
+        return {"type": "FeatureCollection", "features": []}
+
+    x_grid, y_grid = np.meshgrid(axis_km, axis_km[::-1])
+    figure, axis = plt.subplots()
+    contours = axis.contour(
+        x_grid, y_grid, np.ma.masked_invalid(power_dbm),
+        levels=[level for _, level in selected],
+    )
+    features: list[dict[str, Any]] = []
+    for (label, level), segments in zip(selected, contours.allsegs):
+        for segment in segments:
+            if len(segment) < 2:
+                continue
+            features.append({
+                "type": "Feature",
+                "properties": {"level_dbm": level, "label": label},
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": _local_km_to_lon_lat(
+                        request.latitude_deg, request.longitude_deg, segment,
+                    ),
+                },
+            })
+    plt.close(figure)
+    return {"type": "FeatureCollection", "features": features}
+
+
 def _local_km_to_lon_lat(
     latitude_deg: float,
     longitude_deg: float,
@@ -345,6 +430,8 @@ def _build_coverage_report(
     overlay_tiles: list[dict[str, Any]],
     map_assets: tuple[str, str],
     radials: tuple[RadialCoverage, ...] | None = None,
+    s_contour_geojson: dict[str, Any] | None = None,
+    s_overlay_tiles: list[dict[str, Any]] | None = None,
 ) -> str:
     map_css, map_js = map_assets
     bounds = _coverage_bounds(request)
@@ -356,6 +443,14 @@ def _build_coverage_report(
     embedded_overlay_tiles = json.dumps(
         overlay_tiles,
         separators=(",", ":"),
+    )
+    embedded_s_contours = json.dumps(
+        s_contour_geojson or {"type": "FeatureCollection", "features": []},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).replace("</", "<\\/")
+    embedded_s_overlay_tiles = json.dumps(
+        s_overlay_tiles or [], separators=(",", ":"),
     )
     raster_cells = grid_metadata["valid_circle_cells"]
     failed_cells = int(grid_metadata.get("failed_cells", 0))
@@ -444,6 +539,16 @@ def _build_coverage_report(
                                  #9ccc65,#2e7d32,#0b5969); }}
     .legend-ticks {{ display:flex; justify-content:space-between; color:#34383e; }}
     .map-wrap {{ position:relative; }}
+    .map-actions {{ display:flex; flex-wrap:wrap; align-items:center;
+                    justify-content:space-between; gap:12px; margin-bottom:12px; }}
+    .map-actions label {{ font-weight:600; }}
+    .map-actions select {{ margin-left:8px; padding:7px 10px; border:1px solid var(--line);
+                           border-radius:6px; background:white; }}
+    .map-actions button {{ background:var(--accent); color:white; border:0;
+                           padding:9px 15px; border-radius:6px; font-weight:600;
+                           cursor:pointer; }}
+    .map-actions button:disabled {{ opacity:0.5; cursor:wait; }}
+    .export-status {{ color:var(--muted); font-size:12px; min-height:18px; }}
     .stats {{ display:grid; grid-template-columns:repeat(4,minmax(130px,1fr));
               gap:12px; }}
     .stat {{ background:#f2f3f5; border-radius:7px; padding:13px; }}
@@ -467,13 +572,24 @@ def _build_coverage_report(
   </header>
   <main>
     <section class="card map-wrap">
+      <div class="map-actions">
+        <label for="coverage-scale">{html.escape(tr('Visualização'))}
+          <select id="coverage-scale">
+            <option value="margin">{html.escape(tr('Margem (dB)'))}</option>
+            <option value="s">{html.escape(tr('Escala S'))}</option>
+          </select>
+        </label>
+        <button type="button" id="export-map-pdf" disabled>{html.escape(tr('Exportar PDF com este mapa'))}</button>
+      </div>
+      <div class="export-status" id="export-status" role="status" aria-live="polite"></div>
+      <p class="note">{html.escape(tr('Escala S estimada para VHF/UHF: S9 = −93 dBm e 6 dB por unidade S. O indicador real do receptor pode ser diferente.'))}</p>
       <div id="coverage-map" aria-label="{html.escape(tr('Mapa de cobertura'), quote=True)}"></div>
-      <div class="legend">
-        <strong>{html.escape(tr('Margem do enlace'))}</strong>
+      <div class="legend" id="coverage-legend">
+        <strong id="legend-title">{html.escape(tr('Margem do enlace'))}</strong>
         <div class="legend-gradient"></div>
-        <div class="legend-ticks"><span>−12</span><span>0</span>
+        <div class="legend-ticks" id="legend-ticks"><span>−12</span><span>0</span>
           <span>+6</span><span>+12</span><span>{html.escape(tr('+18 dB'))}</span></div>
-        <div style="margin-top:7px">{html.escape(tr('Contornos: 0, +3, +6 e +12 dB'))}</div>
+        <div style="margin-top:7px" id="legend-contours">{html.escape(tr('Contornos: 0, +3, +6 e +12 dB'))}</div>
       </div>
     </section>
     <section class="card">
@@ -507,11 +623,28 @@ def _build_coverage_report(
   <script src="{html.escape(map_js, quote=True)}"></script>
   <script>
     const overlayTiles = {embedded_overlay_tiles};
+    const sOverlayTiles = {embedded_s_overlay_tiles};
     const coverageBounds = {json.dumps(bounds)};
     const contourData = {embedded_contours};
+    const sContourData = {embedded_s_contours};
+    const stationCoordinates = [{request.longitude_deg}, {request.latitude_deg}];
+    const scaleSelect = document.getElementById("coverage-scale");
+    const exportButton = document.getElementById("export-map-pdf");
+    const exportStatus = document.getElementById("export-status");
+    const legendLabels = {{
+      margin: {{title:{json.dumps(tr('Margem do enlace'))},
+                ticks:["−12", "0", "+6", "+12", "+18 dB"],
+                contours:{json.dumps(tr('Contornos: 0, +3, +6 e +12 dB'))}}},
+      s: {{title:{json.dumps(tr('Potência recebida estimada (escala S)'))},
+          ticks:["S1", "S3", "S5", "S7", "S9+"],
+          contours:{json.dumps(tr('Contornos: S1, S3, S5, S7 e S9+'))}}}
+    }};
+    const palette = ["#65121b", "#c62828", "#ef6c00", "#ffd54f",
+                     "#9ccc65", "#2e7d32", "#0b5969"];
     const map = new maplibregl.Map({{
       locale: {json.dumps(map_locale(), ensure_ascii=False)},
       container: "coverage-map",
+      canvasContextAttributes: {{preserveDrawingBuffer:true}},
       style: {{
         version: 8,
         sources: {{
@@ -527,49 +660,189 @@ def _build_coverage_report(
     }});
     map.fitBounds(coverageBounds, {{padding:45,duration:0}});
     map.addControl(new maplibregl.NavigationControl(), "top-right");
-    map.on("load", () => {{
-      overlayTiles.forEach((tile,index) => {{
-        const sourceId = "coverage-" + index;
+    function addOverlayGroup(tiles, mode) {{
+      tiles.forEach((tile,index) => {{
+        const sourceId = "coverage-" + mode + "-" + index;
         map.addSource(sourceId, {{
           type:"image", url:tile.url, coordinates:tile.coordinates
         }});
         map.addLayer({{
-          id:"coverage-image-" + index, type:"raster", source:sourceId,
+          id:"coverage-image-" + mode + "-" + index,
+          type:"raster", source:sourceId,
+          layout:{{visibility:mode === "margin" ? "visible" : "none"}},
           paint:{{"raster-opacity":0.78,"raster-resampling":"linear"}}
         }});
       }});
-      map.addSource("contours", {{type:"geojson", data:contourData}});
+    }}
+    function addContourGroup(data, mode) {{
+      const sourceId = "contours-" + mode;
+      map.addSource(sourceId, {{type:"geojson", data:data}});
+      const matchExpression = mode === "margin"
+        ? ["match",["get","level_db"],
+           0,"#7a0012",3,"#8a5a00",6,"#1d551f",12,"#08384f","#111"]
+        : ["match",["get","level_dbm"],
+           -141,"#7a0012",-129,"#8a5a00",-117,"#1d551f",
+           -105,"#08384f",-93,"#062e3d","#111"];
       map.addLayer({{
-        id:"contour-lines", type:"line", source:"contours",
-        paint:{{
-          "line-color":[
-            "match",["get","level_db"],
-            0,"#7a0012",3,"#8a5a00",6,"#1d551f",12,"#08384f","#111"
-          ],
-          "line-width":0.7,
-          "line-opacity":0.45
-        }}
+        id:"contour-lines-" + mode, type:"line", source:sourceId,
+        layout:{{visibility:mode === "margin" ? "visible" : "none"}},
+        paint:{{"line-color":matchExpression,"line-width":1.0,"line-opacity":0.75}}
       }});
       map.addLayer({{
-        id:"contour-labels", type:"symbol", source:"contours",
+        id:"contour-labels-" + mode, type:"symbol", source:sourceId,
         layout:{{
+          visibility:mode === "margin" ? "visible" : "none",
           "symbol-placement":"line",
           "text-field":["get","label"],
-          "text-size":10,
-          "symbol-spacing":500,
+          "text-size":11,
+          "symbol-spacing":350,
           "text-allow-overlap":false
         }},
         paint:{{
-          "text-color":"#111",
-          "text-halo-color":"#fff",
-          "text-halo-width":0.8,
-          "text-opacity":0.7
+          "text-color":"#111", "text-halo-color":"#fff",
+          "text-halo-width":1.2, "text-opacity":0.9
         }}
       }});
+    }}
+    function updateScale() {{
+      for (const mode of ["margin", "s"]) {{
+        const visibility = mode === scaleSelect.value ? "visible" : "none";
+        const tiles = mode === "margin" ? overlayTiles : sOverlayTiles;
+        tiles.forEach((_,index) => {{
+          map.setLayoutProperty("coverage-image-" + mode + "-" + index,
+                                "visibility", visibility);
+        }});
+        for (const layer of ["contour-lines-", "contour-labels-"]) {{
+          map.setLayoutProperty(layer + mode, "visibility", visibility);
+        }}
+      }}
+      const label = legendLabels[scaleSelect.value];
+      document.getElementById("legend-title").textContent = label.title;
+      document.getElementById("legend-ticks").replaceChildren(
+        ...label.ticks.map(text => {{
+          const item = document.createElement("span");
+          item.textContent = text;
+          return item;
+        }})
+      );
+      document.getElementById("legend-contours").textContent = label.contours;
+    }}
+    let layersReady = false;
+    map.on("load", () => {{
+      addOverlayGroup(overlayTiles, "margin");
+      addOverlayGroup(sOverlayTiles, "s");
+      addContourGroup(contourData, "margin");
+      addContourGroup(sContourData, "s");
       new maplibregl.Marker({{color:"#c91f37"}})
-        .setLngLat([{request.longitude_deg},{request.latitude_deg}])
+        .setLngLat(stationCoordinates)
         .setPopup(new maplibregl.Popup().setText({json.dumps(tr("Transmissor"))}))
         .addTo(map);
+      layersReady = true;
+      exportButton.disabled = location.protocol !== "http:";
+    }});
+    scaleSelect.addEventListener("change", () => {{
+      if (layersReady) updateScale();
+    }});
+
+    function captureVisibleMap() {{
+      const sourceCanvas = map.getCanvas();
+      const canvas = document.createElement("canvas");
+      canvas.width = sourceCanvas.width;
+      canvas.height = sourceCanvas.height;
+      const ctx = canvas.getContext("2d");
+      const cssWidth = sourceCanvas.clientWidth;
+      const cssHeight = sourceCanvas.clientHeight;
+      ctx.setTransform(canvas.width/cssWidth, 0, 0,
+                       canvas.height/cssHeight, 0, 0);
+      ctx.drawImage(sourceCanvas, 0, 0, cssWidth, cssHeight);
+
+      // MapLibre's station marker, legend and attribution are HTML elements.
+      // Compose them over the same rendered map canvas for the exported PDF.
+      const station = map.project(stationCoordinates);
+      ctx.save();
+      ctx.translate(station.x, station.y);
+      ctx.fillStyle = "#c91f37";
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 1);
+      ctx.lineTo(-10, -16);
+      ctx.arc(0, -18, 10, Math.PI, 0, false);
+      ctx.lineTo(10, -16);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#fff";
+      ctx.beginPath(); ctx.arc(0, -18, 3, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+
+      const label = legendLabels[scaleSelect.value];
+      const legendWidth = Math.min(300, cssWidth-24);
+      const legendHeight = 91;
+      const legendX = 14;
+      const legendY = cssHeight-legendHeight-28;
+      ctx.fillStyle = "rgba(255,255,255,0.94)";
+      ctx.fillRect(legendX,legendY,legendWidth,legendHeight);
+      ctx.fillStyle = "#17191d";
+      ctx.font = "bold 12px Arial, sans-serif";
+      ctx.fillText(label.title,legendX+10,legendY+17,legendWidth-20);
+      const gradient = ctx.createLinearGradient(legendX+10,0,legendX+legendWidth-10,0);
+      palette.forEach((color,index) => gradient.addColorStop(index/(palette.length-1),color));
+      ctx.fillStyle = gradient;
+      ctx.fillRect(legendX+10,legendY+25,legendWidth-20,13);
+      ctx.fillStyle = "#34383e";
+      ctx.font = "11px Arial, sans-serif";
+      label.ticks.forEach((text,index) => {{
+        const tickX = legendX+10+(legendWidth-20)*index/(label.ticks.length-1);
+        ctx.textAlign = index === 0 ? "left" :
+                        index === label.ticks.length-1 ? "right" : "center";
+        ctx.fillText(text,tickX,legendY+52);
+      }});
+      ctx.textAlign = "left";
+      ctx.fillText(label.contours,legendX+10,legendY+73,legendWidth-20);
+
+      const copyright = "© OpenStreetMap contributors — openstreetmap.org/copyright";
+      ctx.font = "11px Arial, sans-serif";
+      const creditWidth = ctx.measureText(copyright).width+12;
+      ctx.fillStyle = "rgba(255,255,255,0.88)";
+      ctx.fillRect(cssWidth-creditWidth,cssHeight-19,creditWidth,19);
+      ctx.fillStyle = "#17191d";
+      ctx.fillText(copyright,cssWidth-creditWidth+6,cssHeight-6);
+      return canvas;
+    }}
+
+    exportButton.addEventListener("click", async () => {{
+      exportButton.disabled = true;
+      exportStatus.textContent = {json.dumps(tr('Aguardando o mapa carregar…'))};
+      try {{
+        if (!map.loaded() || !map.areTilesLoaded()) {{
+          await new Promise(resolve => map.once("idle",resolve));
+        }}
+        const screenshot = captureVisibleMap();
+        const blob = await new Promise((resolve,reject) =>
+          screenshot.toBlob(value => value ? resolve(value)
+            : reject(new Error("PNG indisponível")), "image/png")
+        );
+        exportStatus.textContent = {json.dumps(tr('Gerando o PDF com mapa geográfico…'))};
+        const response = await fetch("_export_coverage_pdf", {{
+          method:"POST", headers:{{"Content-Type":"image/png"}}, body:blob
+        }});
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        const pdf = await response.blob();
+        const url = URL.createObjectURL(pdf);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = "relatorio_cobertura_com_mapa.pdf";
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        exportStatus.textContent = {json.dumps(tr('PDF com mapa geográfico salvo e baixado.'))};
+      }} catch (error) {{
+        exportStatus.textContent = {json.dumps(tr('Não foi possível exportar o mapa: '))} + error.message;
+      }} finally {{
+        exportButton.disabled = false;
+      }}
     }});
   </script>
 </body>

@@ -11,6 +11,7 @@ from .legal_notices import (
     COPERNICUS_GLO30_DERIVED_CREDIT,
     COPERNICUS_GLO30_NO_LIABILITY,
     COPERNICUS_LICENSE_URL,
+    OSM_COPYRIGHT_URL,
     uses_copernicus_glo30,
 )
 from .report import describe_geometry_clearance
@@ -319,16 +320,37 @@ def write_coverage_pdf(
             widths=(245, 240),
         ),
     ]
+    geographic_map = paths.get("geographic_map")
     heatmap = paths.get("heatmap")
-    if heatmap and heatmap.is_file():
+    selected_map = (
+        geographic_map if geographic_map and geographic_map.is_file() else heatmap
+    )
+    if selected_map and selected_map.is_file():
         story.extend(
             [
                 report["PageBreak"](),
-                report["Paragraph"](tr('Mapa técnico de margens'), styles["heading"]),
+                report["Paragraph"](
+                    tr('Mapa de cobertura com referências geográficas')
+                    if selected_map == geographic_map
+                    else tr('Mapa técnico de margens'),
+                    styles["heading"],
+                ),
                 report["Spacer"](1, 8),
-                _fit_image(report, heatmap, 500, 650),
+                _fit_image(report, selected_map, 500, 650),
             ]
         )
+        if selected_map == geographic_map:
+            story.extend([
+                report["Spacer"](1, 8),
+                report["Paragraph"](
+                    tr('Captura do mapa interativo no enquadramento e na escala escolhidos pelo usuário.'),
+                    styles["small"],
+                ),
+                report["Paragraph"](
+                    f'© OpenStreetMap contributors — {_escape(OSM_COPYRIGHT_URL)}',
+                    styles["small"],
+                ),
+            ])
     story.extend(
         [
             report["Spacer"](1, 14),
