@@ -37,7 +37,7 @@ Os campos descrevem a instalação proposta; o programa não mede ganho da anten
 
 ## Instalação e bibliotecas
 
-Para uso comum no Windows, obtenha o **instalador x64 ou ZIP portátil**, quando disponível, em [Releases](https://github.com/mariopin80/Radio-Link-Planner/releases). O aplicativo empacotado inclui suas dependências Python; no ZIP mantenha os arquivos juntos. Não é necessário Python separado para o pacote pronto.
+Para uso comum no Windows, obtenha o **instalador Windows x64** em [Releases](https://github.com/mariopin80/Radio-Link-Planner/releases). O instalador inclui as dependências Python.
 
 Para desenvolver ou rodar pelos fontes, use **Python 3.10+** e os grupos opcionais de [`pyproject.toml`](pyproject.toml). É necessário compilador C++17 para construir a biblioteca NTIA ITM incluída (`MSVC cl` no Developer Command Prompt do Windows); Git é necessário para obter os pacotes Py1812/Py2001 fixados. Dependências básicas: **NumPy, Pydantic, ReportLab**; extras: **Matplotlib** (gráficos), **Rasterio** (terreno), **Py1812/Py2001** (modelos), **PyWebView/PyInstaller** (desktop/empacotamento) e **pytest/pypdf** (desenvolvimento). No Windows, use o Developer Command Prompt com MSVC disponível:
 

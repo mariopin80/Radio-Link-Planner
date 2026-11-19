@@ -63,7 +63,7 @@ jobs:
       - name: Run scientific test suite
         run: pytest
 
-      - name: Build portable desktop application
+      - name: Build desktop application
         shell: pwsh
         run: |
           pyinstaller `
@@ -162,13 +162,6 @@ jobs:
             $forbidden | ForEach-Object { Write-Error $_.FullName }
             throw "ITU integral digital products must not be redistributed."
           }
-
-      - name: Create portable ZIP
-        shell: pwsh
-        run: |
-          Compress-Archive `
-            -Path "dist\RadioLinkPlanner\*" `
-            -DestinationPath "RadioLinkPlanner-0.6.2-Windows-x64.zip"
 
       - name: Install Inno Setup 6
         shell: pwsh
@@ -298,7 +291,6 @@ jobs:
         shell: pwsh
         run: |
           $files = @(
-            "RadioLinkPlanner-0.6.2-Windows-x64.zip",
             "installer-output\RadioLinkPlanner-0.6.2-Windows-x64-Setup.exe"
           )
           $lines = foreach ($file in $files) {
@@ -329,7 +321,6 @@ jobs:
           }
           gh release create `
             $tag `
-            "RadioLinkPlanner-0.6.2-Windows-x64.zip" `
             "installer-output\RadioLinkPlanner-0.6.2-Windows-x64-Setup.exe" `
             "SHA256SUMS.txt" `
             --target "$env:GITHUB_SHA" `
@@ -344,7 +335,6 @@ jobs:
         with:
           name: RadioLinkPlanner-0.6.2-Windows-x64
           path: |
-            RadioLinkPlanner-0.6.2-Windows-x64.zip
             installer-output/RadioLinkPlanner-0.6.2-Windows-x64-Setup.exe
             SHA256SUMS.txt
           if-no-files-found: error

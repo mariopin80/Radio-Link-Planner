@@ -9,5 +9,4 @@ Pré-lançamento para Windows x64.
 ## Downloads
 
 - `RadioLinkPlanner-0.6.2-Windows-x64-Setup.exe` — instalador Windows
-- `RadioLinkPlanner-0.6.2-Windows-x64.zip` — versão portátil
-- `SHA256SUMS.txt` — hashes SHA-256 dos dois arquivos
+- `SHA256SUMS.txt` — hash SHA-256 do instalador
