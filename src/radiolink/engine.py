@@ -70,9 +70,12 @@ def analyze_project(
             design = _evaluate_design(model, context, comparison)
             design_evaluations.append(design)
 
-            curve = model.quantile_curve(
-                context, project.models.curve_percentiles
-            )
+            percentiles = project.models.curve_percentiles
+            if model.model_id in {"itm", "p2001"}:
+                percentiles = sorted(set(percentiles).union(
+                    (0.1, 0.5, 99.5, 99.9, project.target_availability_percent)
+                ))
+            curve = model.quantile_curve(context, percentiles)
             if curve is not None:
                 curves[model.model_id] = curve.to_dict()
 
@@ -100,6 +103,7 @@ def analyze_project(
                         fixed_loss_db=(
                             None if mc_curve is not None else design.loss_db
                         ),
+                        fixed_percentile=design.percentile,
                     )
                 )
 
@@ -134,7 +138,10 @@ def analyze_project(
             "quantile_curves": curves,
             "link_budgets": [item.to_dict() for item in budgets],
             "monte_carlo": [item.to_dict() for item in monte_carlo],
-            "assessment": assessment.to_dict(),
+            "assessment": {
+                **assessment.to_dict(),
+                "design_model_ids": [item.model_id for item in design_budgets_for_assessment],
+            },
         }
     if baseline is not None:
         result["height_optimization"] = {

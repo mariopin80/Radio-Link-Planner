@@ -10,8 +10,8 @@ from pathlib import Path
 
 from .domain import Environment, Polarization, Project, ReceiverSpec, Terminal
 from .geodesy import great_circle_distance_m
-from .geometry import validate_geometry_criteria
 from .modes import MODE_PROFILES, threshold_dbm
+from .version import __version__
 
 MIN_DESKTOP_FREQUENCY_MHZ = 30.0
 MAX_DESKTOP_FREQUENCY_MHZ = 3000.0
@@ -29,6 +29,7 @@ class TerminalEditorValues:
     line_loss_db: float
     tx_power_w: float
     receiver_threshold_dbm: float
+    receiver: ReceiverSpec | None = None
 
 
 @dataclass(frozen=True)
@@ -41,8 +42,6 @@ class ProjectEditorValues:
     terminal_a: TerminalEditorValues
     terminal_b: TerminalEditorValues
     allow_mode_change: bool = False
-    effective_earth_k: float | None = None
-    fresnel_percent: float | None = None
 
     @property
     def distance_km(self) -> float:
@@ -71,6 +70,7 @@ def editor_values_from_project(project: Project) -> ProjectEditorValues:
             line_loss_db=terminal.line_loss_db,
             tx_power_w=terminal.tx_power_w,
             receiver_threshold_dbm=receiver_threshold,
+            receiver=terminal.receiver.model_copy(deep=True),
         )
 
     return ProjectEditorValues(
@@ -82,8 +82,6 @@ def editor_values_from_project(project: Project) -> ProjectEditorValues:
         terminal_a=terminal_values(project.terminal_a),
         terminal_b=terminal_values(project.terminal_b),
         allow_mode_change=project.allow_mode_change,
-        effective_earth_k=project.environment.effective_earth_k,
-        fresnel_percent=project.environment.fresnel_percent,
     )
 
 
@@ -97,15 +95,17 @@ def project_from_editor_values(
     mode = values.primary_mode.upper()
     if mode not in MODE_PROFILES:
         raise ValueError(tr('Modo desconhecido: {x0}', x0=values.primary_mode))
-    existing_environment = template.environment if template is not None else Environment()
-    geometry = {
-        key: getattr(values, key) if getattr(values, key) is not None else getattr(existing_environment, key)
-        for key in ("fresnel_percent", "effective_earth_k")
-    }
-    validate_geometry_criteria(**geometry)
-    environment = existing_environment.model_copy(update=geometry)
+    environment = template.with_standard_geometry().environment if template is not None else Environment()
 
-    def terminal(data: TerminalEditorValues) -> Terminal:
+    def terminal(data: TerminalEditorValues, previous: Terminal | None = None) -> Terminal:
+        receiver = data.receiver or (previous.receiver if previous is not None else ReceiverSpec())
+        existing_threshold, _ = threshold_dbm(receiver, mode)
+        if data.receiver_threshold_dbm != existing_threshold:
+            receiver = receiver.model_copy(update={
+                "threshold_overrides_dbm": {
+                    **receiver.threshold_overrides_dbm, mode: data.receiver_threshold_dbm,
+                },
+            })
         return Terminal(
             name=data.name.strip(),
             latitude_deg=data.latitude_deg,
@@ -114,13 +114,7 @@ def project_from_editor_values(
             antenna_gain_dbi=data.antenna_gain_dbi,
             line_loss_db=data.line_loss_db,
             tx_power_w=data.tx_power_w,
-            receiver=ReceiverSpec(
-                noise_figure_db=6.0,
-                external_noise_db=0.0,
-                threshold_overrides_dbm={
-                    mode: data.receiver_threshold_dbm,
-                },
-            ),
+            receiver=receiver,
         )
 
     if template is None:
@@ -140,7 +134,7 @@ def project_from_editor_values(
             allow_mode_change=values.allow_mode_change,
             environment=environment,
             metadata={
-                "created_with": "Radio Link Planner desktop 0.4",
+                "created_with": f"Radio Link Planner desktop {__version__}",
                 "terrain_zone_assumption": "all_inland_land",
             },
         )
@@ -154,8 +148,8 @@ def project_from_editor_values(
         project.target_availability_percent = values.target_availability_percent
         project.allow_mode_change = values.allow_mode_change
         project.environment = environment
-        project.terminal_a = terminal(values.terminal_a)
-        project.terminal_b = terminal(values.terminal_b)
+        project.terminal_a = terminal(values.terminal_a, template.terminal_a)
+        project.terminal_b = terminal(values.terminal_b, template.terminal_b)
         project.terrain_profile = terrain_profile
     return Project.model_validate(project.model_dump(mode="json"))
 

@@ -17,8 +17,9 @@ import time
 from collections.abc import Iterator
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from dataclasses import asdict, dataclass, replace
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 
 import numpy as np
@@ -38,9 +39,7 @@ from .coverage import (
     CoverageRequest,
     CoverageStateCallback,
 )
-from .domain import DEFAULT_EFFECTIVE_EARTH_K, DEFAULT_FRESNEL_PERCENT
-from .geodesy import EARTH_MEAN_RADIUS_M, destination_point, destination_points
-from .geometry import SPEED_OF_LIGHT_M_S, profile_clearance_class, profile_geometry
+from .geodesy import destination_point, destination_points
 from .itu_data import (
     P1812_PRODUCT,
     ensure_itu_data,
@@ -49,6 +48,7 @@ from .itu_data import (
 )
 from .link_budget import watts_to_dbm
 from .propagation.p1812_fast import OPTIMIZATION_VERSION, optimize_p1812
+from .result_runs import published_paths, result_run
 from .terrain_cache import PreparedTerrainSampler, PreparedTerrainTile, prepare_terrain_tile
 
 DIRECT_GRID_ENGINE_VERSION = "2"
@@ -117,7 +117,6 @@ class GridBlockResult:
     elapsed_seconds: float
     errors: tuple[str, ...] = ()
     loss_db: np.ndarray | None = None
-    clearance_classes: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -140,10 +139,6 @@ class _WorkerConfiguration:
     receiver_line_loss_db: float
     receiver_threshold_dbm: float
     terrain_tiles: tuple[PreparedTerrainTile, ...] = ()
-    include_clearance: bool = False
-    fresnel_percent: float = DEFAULT_FRESNEL_PERCENT
-    effective_earth_k: float = DEFAULT_EFFECTIVE_EARTH_K
-    cached_loss_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -154,7 +149,6 @@ class _CheckpointPaths:
     loss: Path
     completed: Path
     block_statistics: Path
-    clearance: Path
 
 
 class _ProgressTracker:
@@ -194,7 +188,6 @@ _WORKER_CONFIGURATION: _WorkerConfiguration | None = None
 _WORKER_P1812: Any | None = None
 _WORKER_CANCEL_EVENT: Any | None = None
 _WORKER_TERRAIN: PreparedTerrainSampler | None = None
-_WORKER_CACHED_LOSS: np.memmap | None = None
 
 
 def default_worker_count() -> int:
@@ -261,9 +254,8 @@ def estimate_coverage(
     maximum_profile_points = (
         request.radius_km * 1000.0 / request.terrain_step_m + 1.0
     )
-    grid_and_render_bytes = square_cells * 4.0 * 8.0
-    if request.include_clearance:
-        grid_and_render_bytes += square_cells
+    # Budget for native contour coordinates, the loss/margin grids and rendering.
+    grid_and_render_bytes = square_cells * 48.0
     worker_profile_bytes = workers * maximum_profile_points * 8.0 * 7.0
     fixed_runtime_bytes = (250.0 + workers * 120.0) * 1024.0**2
     memory_mb = (
@@ -281,7 +273,7 @@ def estimate_coverage(
         + 1.45 * compute_seconds * fraction_remaining
     )
     reusable = valid_cells if _propagation_cache_metadata(request) is not None else 0
-    if reusable and not request.include_clearance:
+    if reusable:
         low, high = 5.0, 50.0
 
     return CoverageEstimate(
@@ -351,10 +343,6 @@ def available_memory_bytes() -> int | None:
 
 def coverage_request_fingerprint(request: CoverageRequest) -> str:
     payload = _request_payload(request, include_output_directory=False)
-    if not request.include_clearance:
-        # A margin-only checkpoint is independent of the geometric controls.
-        for key in ("include_clearance", "fresnel_percent", "effective_earth_k"):
-            payload.pop(key)
     payload["engine_version"] = DIRECT_GRID_ENGINE_VERSION
     payload["model_implementation_version"] = _p1812_version()
     encoded = json.dumps(
@@ -410,11 +398,24 @@ def _propagation_cache_metadata(request: CoverageRequest) -> dict[str, Any] | No
         metadata = json.loads((directory / "coverage_propagation.json").read_text(encoding="utf-8"))
         if metadata["fingerprint"] != propagation_fingerprint(request):
             return None
-        if not (directory / "coverage_loss_db.npy").is_file():
+        loss_path = (directory / metadata.get("loss_file", "coverage_loss_db.npy")).resolve()
+        if not loss_path.is_relative_to(directory) or not loss_path.is_file():
             return None
-        return metadata
+        return {**metadata, "loss_path": loss_path}
     except (OSError, ValueError, KeyError, TypeError):
         return None
+
+
+def _write_propagation_cache_metadata(directory: Path, metadata: dict[str, Any]) -> None:
+    temporary = None
+    try:
+        with NamedTemporaryFile(dir=directory, prefix=".propagation-", delete=False) as handle:
+            temporary = Path(handle.name)
+            handle.write((json.dumps(metadata, indent=2) + "\n").encode("utf-8"))
+        temporary.replace(directory / "coverage_propagation.json")
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def _load_propagation_cache(request: CoverageRequest) -> tuple[np.memmap, dict[str, Any]] | None:
@@ -423,7 +424,7 @@ def _load_propagation_cache(request: CoverageRequest) -> tuple[np.memmap, dict[s
         return None
     array = None
     try:
-        path = request.output_directory.expanduser().resolve() / "coverage_loss_db.npy"
+        path = metadata["loss_path"]
         if _file_sha256(path) != metadata["sha256"]:
             return None
         array = np.load(path, mmap_mode="r", allow_pickle=False)
@@ -498,7 +499,7 @@ def run_direct_grid_coverage(
         )
     )
     checkpoint = _checkpoint_paths(request, fingerprint)
-    grid, loss_grid, completed, block_statistics, clearance_grid, resumed = _open_checkpoint(
+    grid, loss_grid, completed, block_statistics, resumed = _open_checkpoint(
         request,
         fingerprint,
         blocks,
@@ -506,41 +507,30 @@ def run_direct_grid_coverage(
     )
     try:
         cached_propagation = _load_propagation_cache(request)
-        cached_loss_path = None
         reused_metadata = None
         if cached_propagation is not None:
             cached_loss, reused_metadata = cached_propagation
             configuration = _worker_configuration(request, estimate.grid_width)
             try:
+                centre = (estimate.grid_width - 1) / 2.0
                 for spec in blocks:
                     if external_cancel.is_set():
                         break
                     selected = np.s_[spec.row_start:spec.row_stop, spec.column_start:spec.column_stop]
-                    loss_grid[selected] = cached_loss[selected]
-                    if clearance_grid is not None:
-                        continue
-                    grid[selected] = _block_margin_from_loss(
-                        request, configuration, spec, cached_loss[selected]
-                    )
-                    count = int(np.count_nonzero(np.isfinite(cached_loss[selected])))
-                    block_statistics[spec.block_id] = (count, 0, count, 0, 0, 0)
+                    block_loss = cached_loss[selected]
+                    loss_grid[selected] = block_loss
+                    grid[selected] = _block_margin_from_loss(request, configuration, spec, block_loss)
+                    count = int(np.count_nonzero(np.isfinite(block_loss)))
+                    yy, xx = np.ogrid[spec.row_start:spec.row_stop, spec.column_start:spec.column_stop]
+                    short = int(np.count_nonzero(
+                        np.hypot(xx - centre, yy - centre) * request.resolution_m < MINIMUM_P1812_DISTANCE_M
+                    ))
+                    block_statistics[spec.block_id] = (count, 0, count - short, short, 0, 0)
                     completed[spec.block_id] = True
                 loss_grid.flush()
-                if clearance_grid is not None:
-                    cached_loss_path = checkpoint.loss
-                else:
-                    # The centre uses the documented short-range free-space exception.
-                    centre = (estimate.grid_width - 1) / 2.0
-                    for spec in blocks:
-                        if not completed[spec.block_id]:
-                            continue
-                        yy, xx = np.mgrid[spec.row_start:spec.row_stop, spec.column_start:spec.column_stop]
-                        short = int(np.count_nonzero(np.hypot(xx-centre, yy-centre)*request.resolution_m < MINIMUM_P1812_DISTANCE_M))
-                        block_statistics[spec.block_id, 2] -= short
-                        block_statistics[spec.block_id, 3] = short
-                    grid.flush()
-                    block_statistics.flush()
-                    completed.flush()
+                grid.flush()
+                block_statistics.flush()
+                completed.flush()
             finally:
                 _close_memmap(cached_loss)
         completed_cells = int(np.sum(block_statistics[completed, 0]))
@@ -579,18 +569,17 @@ def run_direct_grid_coverage(
         terrain_tiles: list[PreparedTerrainTile] = []
         if completed_cells < estimate.valid_circle_cells:
             try:
-                if cached_loss_path is None:
-                    ensure_itu_data(
-                        include_p1812=True,
-                        include_p2001=False,
-                        cleanup_source_maps=True,
-                        progress=lambda message: tracker.emit(
-                            2.0,
-                            "prepare",
-                            f"2% — P.1812: {message}",
-                        ),
-                        cancel_check=external_cancel.is_set,
-                    )
+                ensure_itu_data(
+                    include_p1812=True,
+                    include_p2001=False,
+                    cleanup_source_maps=True,
+                    progress=lambda message: tracker.emit(
+                        2.0,
+                        "prepare",
+                        f"2% — P.1812: {message}",
+                    ),
+                    cancel_check=external_cancel.is_set,
+                )
             except InterruptedError:
                 _raise_cancelled(
                     completed_cells,
@@ -657,9 +646,7 @@ def run_direct_grid_coverage(
             tracker.emit(
                 10.0,
                 "cells",
-                tr('10% — Reaproveitando a perda da P.1812 e calculando a folga de Fresnel.')
-                if cached_loss_path is not None
-                else tr('10% — Grade direta preparada; iniciando as células P.1812.'),
+                tr('10% — Grade direta preparada; iniciando as células P.1812.'),
                 completed=0,
                 total=estimate.valid_circle_cells,
                 remaining_seconds=estimate.estimated_seconds_high,
@@ -673,7 +660,6 @@ def run_direct_grid_coverage(
         configuration = replace(
             _worker_configuration(request, estimate.grid_width),
             terrain_tiles=tuple(terrain_tiles),
-            cached_loss_path=cached_loss_path,
         )
         # Keep neighbouring endpoints close in the queue so each worker can reuse
         # opened GeoTIFF datasets and their internal raster blocks.
@@ -692,7 +678,7 @@ def run_direct_grid_coverage(
             if result.loss_db is None:
                 # Compatibility for injected/testing block evaluators.
                 loss_grid[selected] = _margin_from_loss(configuration, 0.0) - result.margin_db.astype(float)
-            elif cached_loss_path is None:
+            else:
                 loss_grid[selected] = result.loss_db
             if request.transmitter_pattern is None:
                 grid[selected] = result.margin_db
@@ -702,11 +688,6 @@ def run_direct_grid_coverage(
                 )
             grid.flush()
             loss_grid.flush()
-            if clearance_grid is not None:
-                if result.clearance_classes is None:
-                    raise RuntimeError(tr("O bloco de cobertura não retornou a classificação de Fresnel."))
-                clearance_grid[selected] = result.clearance_classes
-                clearance_grid.flush()
             block_statistics[result.block_id] = (
                 result.calculated_cells,
                 result.profile_points,
@@ -843,9 +824,6 @@ def run_direct_grid_coverage(
             "terrain_source": "Copernicus GLO-30",
             "terrain_zone_assumption": "all_inland_land",
             "clutter_included": False,
-            "include_clearance": request.include_clearance,
-            "effective_earth_k": request.effective_earth_k,
-            "fresnel_percent": request.fresnel_percent,
         }
 
         tracker.emit(
@@ -869,85 +847,79 @@ def run_direct_grid_coverage(
             tracker.emit(percent, "render", f"{percent:.0f}% — {message}")
 
         try:
-            report_paths, report_statistics = write_coverage_outputs(
-                request=request,
-                grid=grid,
-                grid_metadata=grid_metadata,
-                output_directory=destination,
-                progress=render_progress,
-                cancel_check=external_cancel.is_set,
-                clearance_grid=clearance_grid,
-            )
+            with result_run(destination) as (staging, final):
+                report_paths, report_statistics = write_coverage_outputs(
+                    request=request,
+                    grid=grid,
+                    grid_metadata=grid_metadata,
+                    output_directory=staging,
+                    progress=render_progress,
+                    cancel_check=external_cancel.is_set,
+                )
+                project_path = staging / "coverage_project.json"
+                project_path.write_text(
+                    json.dumps(
+                        {
+                            **_request_payload(request, include_output_directory=True),
+                            "model": "ITU-R P.1812-8",
+                            "engine": "direct_metric_grid",
+                            "contour_levels_db": list(CONTOUR_LEVELS_DB),
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    ) + "\n",
+                    encoding="utf-8",
+                )
+                statistics = {
+                    **grid_metadata,
+                    **report_statistics,
+                    "time_percentage": request.time_percentage,
+                    "transmitter_gain_dbi": request.transmitter_gain_dbi,
+                    "transmitter_pattern": (
+                        asdict(request.transmitter_pattern) if request.transmitter_pattern else None
+                    ),
+                    "total_elapsed_seconds": time.monotonic() - tracker.started,
+                    "request_fingerprint": fingerprint,
+                    "completed_at_utc": datetime.now(timezone.utc).isoformat(),
+                }
+                metadata_path = staging / "coverage_metadata.json"
+                metadata_path.write_text(
+                    json.dumps(statistics, ensure_ascii=False, indent=2) + "\n", encoding="utf-8",
+                )
+
+                # Close the checkpoint handles before copying, including on Windows.
+                for array in (grid, loss_grid, completed, block_statistics):
+                    _close_memmap(array)
+                gc.collect()
+                final_grid_path = staging / "coverage_margin_db.npy"
+                final_loss_path = staging / "coverage_loss_db.npy"
+                _copy_completed_grid(checkpoint.grid, final_grid_path)
+                _copy_completed_grid(checkpoint.loss, final_loss_path)
+                cache_metadata = {
+                    "schema_version": 2,
+                    "fingerprint": propagation_fingerprint(request),
+                    "sha256": _file_sha256(final_loss_path),
+                    "loss_file": (final / final_loss_path.name).relative_to(destination).as_posix(),
+                    "source_terrain_profile_points": grid_metadata["source_terrain_profile_points"],
+                    "calculated_cells": completed_cells,
+                }
+                paths = published_paths({
+                    "project_json": project_path,
+                    "margin_grid": final_grid_path,
+                    "loss_grid": final_loss_path,
+                    "metadata": metadata_path,
+                    **report_paths,
+                }, staging, final)
+                if external_cancel.is_set():
+                    _raise_cancelled(completed_cells, estimate.valid_circle_cells, checkpoint)
         except InterruptedError:
-            _raise_cancelled(
-                completed_cells,
-                estimate.valid_circle_cells,
-                checkpoint,
-            )
-        if external_cancel.is_set():
             _raise_cancelled(completed_cells, estimate.valid_circle_cells, checkpoint)
 
-        project_path = destination / "coverage_project.json"
-        project_path.write_text(
-            json.dumps(
-                {
-                    **_request_payload(request, include_output_directory=True),
-                    "model": "ITU-R P.1812-8",
-                    "engine": "direct_metric_grid",
-                    "contour_levels_db": list(CONTOUR_LEVELS_DB),
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        statistics = {
-            **grid_metadata,
-            **report_statistics,
-            "time_percentage": request.time_percentage,
-            "transmitter_gain_dbi": request.transmitter_gain_dbi,
-            "transmitter_pattern": (
-                asdict(request.transmitter_pattern) if request.transmitter_pattern else None
-            ),
-            "total_elapsed_seconds": time.monotonic() - tracker.started,
-            "request_fingerprint": fingerprint,
-            "completed_at_utc": datetime.now(UTC).isoformat(),
-        }
-        metadata_path = destination / "coverage_metadata.json"
-        metadata_path.write_text(
-            json.dumps(statistics, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-
-        final_loss_path = destination / "coverage_loss_db.npy"
-        loss_grid.flush()
-        _close_memmap(loss_grid)
-        _copy_completed_grid(checkpoint.loss, final_loss_path)
-        cache_metadata = {
-            "schema_version": 1,
-            "fingerprint": propagation_fingerprint(request),
-            "sha256": _file_sha256(final_loss_path),
-            "source_terrain_profile_points": grid_metadata["source_terrain_profile_points"],
-            "calculated_cells": completed_cells,
-        }
-        temporary = destination / "coverage_propagation.tmp"
-        temporary.write_text(json.dumps(cache_metadata, indent=2) + "\n", encoding="utf-8")
-        os.replace(temporary, destination / "coverage_propagation.json")
-        _close_memmap(grid)
-        _close_memmap(completed)
-        _close_memmap(block_statistics)
-        # Windows can retain a file lock briefly after the memory map is closed.
-        # Do not promote the checkpoint with os.replace(): copying keeps the
-        # completed result independent of that transient lock.
-        gc.collect()
-        final_grid_path = destination / "coverage_margin_db.npy"
-        _copy_completed_grid(checkpoint.grid, final_grid_path)
-        if clearance_grid is not None:
-            _close_memmap(clearance_grid)
-            final_clearance_path = destination / "coverage_clearance_classes.npy"
-            _copy_completed_grid(checkpoint.clearance, final_clearance_path)
-            report_paths["clearance_grid"] = final_clearance_path
+        try:
+            _write_propagation_cache_metadata(destination, cache_metadata)
+        except OSError:
+            # A complete, published run remains valid if the cache index cannot be updated.
+            pass
         _remove_completed_checkpoint(checkpoint)
         tracker.emit(
             100.0,
@@ -957,13 +929,6 @@ def run_direct_grid_coverage(
             total=estimate.valid_circle_cells,
             remaining_seconds=0.0,
         )
-        paths = {
-            "project_json": project_path,
-            "margin_grid": final_grid_path,
-            "loss_grid": final_loss_path,
-            "metadata": metadata_path,
-            **report_paths,
-        }
         return CoverageOutcome(
             request=request,
             radials=(),
@@ -971,9 +936,8 @@ def run_direct_grid_coverage(
             statistics=statistics,
         )
     finally:
-        for array in (grid, loss_grid, completed, block_statistics, clearance_grid):
-            if array is not None:
-                _close_memmap(array)
+        for array in (grid, loss_grid, completed, block_statistics):
+            _close_memmap(array)
 
 
 def _run_parallel_blocks(
@@ -1033,31 +997,23 @@ def _initialize_grid_worker(
     configuration: _WorkerConfiguration,
     cancel_event: Any,
 ) -> None:
-    global _WORKER_CONFIGURATION, _WORKER_P1812, _WORKER_CANCEL_EVENT
-    global _WORKER_TERRAIN, _WORKER_CACHED_LOSS
+    global _WORKER_CONFIGURATION, _WORKER_P1812, _WORKER_CANCEL_EVENT, _WORKER_TERRAIN
     _close_worker_resources()
     _WORKER_CONFIGURATION = configuration
     _WORKER_CANCEL_EVENT = cancel_event
-    if configuration.cached_loss_path is None:
-        _WORKER_P1812 = optimize_p1812(load_digital_product_module(P1812_PRODUCT, "P1812"))
-    else:
-        _WORKER_P1812 = None
-        _WORKER_CACHED_LOSS = np.load(configuration.cached_loss_path, mmap_mode="r", allow_pickle=False)
+    _WORKER_P1812 = optimize_p1812(load_digital_product_module(P1812_PRODUCT, "P1812"))
     _WORKER_TERRAIN = PreparedTerrainSampler(configuration.terrain_tiles) if configuration.terrain_tiles else None
 
 
 def _close_worker_resources() -> None:
-    global _WORKER_TERRAIN, _WORKER_CACHED_LOSS
+    global _WORKER_TERRAIN
     if _WORKER_TERRAIN is not None:
         _WORKER_TERRAIN.close()
         _WORKER_TERRAIN = None
-    if _WORKER_CACHED_LOSS is not None:
-        _close_memmap(_WORKER_CACHED_LOSS)
-        _WORKER_CACHED_LOSS = None
 
 
 def _evaluate_grid_block(spec: GridBlockSpec) -> GridBlockResult:
-    if _WORKER_CONFIGURATION is None or (_WORKER_P1812 is None and _WORKER_CACHED_LOSS is None):
+    if _WORKER_CONFIGURATION is None or _WORKER_P1812 is None:
         raise RuntimeError("coverage worker was not initialized")
     configuration = _WORKER_CONFIGURATION
     started = time.monotonic()
@@ -1065,7 +1021,6 @@ def _evaluate_grid_block(spec: GridBlockSpec) -> GridBlockResult:
     columns = spec.column_stop - spec.column_start
     values = np.full((rows, columns), np.nan, dtype=np.float32)
     losses = np.full((rows, columns), np.nan, dtype=np.float64)
-    clearance_classes = np.zeros((rows, columns), dtype=np.uint8) if configuration.include_clearance else None
     calculated = 0
     profile_points = 0
     p1812_cells = 0
@@ -1073,8 +1028,6 @@ def _evaluate_grid_block(spec: GridBlockSpec) -> GridBlockResult:
     failures = 0
     errors: list[str] = []
     centre = (configuration.dimension - 1) / 2.0
-    wavelength_m = SPEED_OF_LIGHT_M_S / (configuration.frequency_mhz * 1e6)
-    effective_radius_m = EARTH_MEAN_RADIUS_M * configuration.effective_earth_k
 
     for local_row, row in enumerate(range(spec.row_start, spec.row_stop)):
         north_m = (centre - row) * configuration.resolution_m
@@ -1104,26 +1057,7 @@ def _evaluate_grid_block(spec: GridBlockSpec) -> GridBlockResult:
             calculated += 1
             try:
                 short_range = distance_m < MINIMUM_P1812_DISTANCE_M
-                geometric_profile = clearance_classes is not None and distance_m > 0.0
-                if not short_range or geometric_profile:
-                    bearing_deg = (math.degrees(math.atan2(east_m, north_m)) + 360.0) % 360.0
-                    distances, latitudes, longitudes, elevations = _sample_cell_profile(
-                        configuration, bearing_deg, distance_m,
-                    )
-                    profile_points += len(distances)
-                    if geometric_profile:
-                        clearance_classes[local_row, local_column] = profile_clearance_class(
-                            profile_geometry(
-                                distances, elevations,
-                                float(elevations[0] + configuration.transmitter_height_m),
-                                float(elevations[-1] + configuration.receiver_height_m),
-                                wavelength_m, effective_radius_m,
-                            ),
-                            configuration.fresnel_percent,
-                        )
-                if _WORKER_CACHED_LOSS is not None:
-                    loss = float(_WORKER_CACHED_LOSS[row, column])
-                elif short_range:
+                if short_range:
                     effective_distance = max(
                         1.0,
                         distance_m,
@@ -1134,6 +1068,11 @@ def _evaluate_grid_block(spec: GridBlockSpec) -> GridBlockResult:
                         effective_distance,
                     )
                 else:
+                    bearing_deg = math.degrees(math.atan2(east_m, north_m)) % 360.0
+                    distances, latitudes, longitudes, elevations = _sample_cell_profile(
+                        configuration, bearing_deg, distance_m,
+                    )
+                    profile_points += len(distances)
                     loss = _p1812_loss_for_profile(
                         configuration, distances, latitudes, longitudes, elevations,
                     )
@@ -1161,7 +1100,6 @@ def _evaluate_grid_block(spec: GridBlockSpec) -> GridBlockResult:
         elapsed_seconds=time.monotonic() - started,
         errors=tuple(errors),
         loss_db=losses,
-        clearance_classes=clearance_classes,
     )
 
 
@@ -1376,9 +1314,6 @@ def _worker_configuration(
         receiver_gain_dbi=request.receiver_gain_dbi,
         receiver_line_loss_db=request.receiver_line_loss_db,
         receiver_threshold_dbm=request.receiver_threshold_dbm,
-        include_clearance=request.include_clearance,
-        effective_earth_k=request.effective_earth_k,
-        fresnel_percent=request.fresnel_percent,
     )
 
 
@@ -1462,7 +1397,6 @@ def _checkpoint_paths(
         loss=directory / "coverage_loss_db.npy",
         completed=directory / "completed_blocks.npy",
         block_statistics=directory / "block_statistics.npy",
-        clearance=directory / "coverage_clearance_classes.npy",
     )
 
 
@@ -1471,7 +1405,7 @@ def _open_checkpoint(
     fingerprint: str,
     blocks: tuple[GridBlockSpec, ...],
     paths: _CheckpointPaths,
-) -> tuple[np.memmap, np.memmap, np.memmap, np.memmap, np.memmap | None, bool]:
+) -> tuple[np.memmap, np.memmap, np.memmap, np.memmap, bool]:
     dimension = coverage_grid_dimension(request.radius_km, request.resolution_m)
     resumed = paths.metadata.is_file()
     paths.directory.mkdir(parents=True, exist_ok=True)
@@ -1484,20 +1418,17 @@ def _open_checkpoint(
             loss = np.load(paths.loss, mmap_mode="r+")
             completed = np.load(paths.completed, mmap_mode="r+")
             statistics = np.load(paths.block_statistics, mmap_mode="r+")
-            clearance = np.load(paths.clearance, mmap_mode="r+") if request.include_clearance else None
         except Exception as exc:
             raise RuntimeError(
                 tr('O checkpoint de cobertura está danificado: {x0}', x0=paths.directory)
             ) from exc
         if grid.shape != (dimension, dimension) or loss.shape != grid.shape or loss.dtype != np.float64:
             raise RuntimeError(tr('A grade do checkpoint possui dimensões inválidas.'))
-        if clearance is not None and (clearance.shape != grid.shape or clearance.dtype != np.uint8):
-            raise RuntimeError(tr('A grade do checkpoint possui dimensões inválidas.'))
         if completed.shape != (len(blocks),):
             raise RuntimeError(tr('O estado de blocos do checkpoint é inválido.'))
         if statistics.shape != (len(blocks), 6):
             raise RuntimeError(tr('As estatísticas do checkpoint são inválidas.'))
-        return grid, loss, completed, statistics, clearance, True
+        return grid, loss, completed, statistics, True
 
     grid = np.lib.format.open_memmap(
         paths.grid,
@@ -1529,11 +1460,6 @@ def _open_checkpoint(
     )
     statistics[:] = 0
     statistics.flush()
-    clearance = None
-    if request.include_clearance:
-        clearance = np.lib.format.open_memmap(paths.clearance, mode="w+", dtype=np.uint8, shape=grid.shape)
-        clearance[:] = 0
-        clearance.flush()
     _update_checkpoint_metadata(
         request,
         fingerprint,
@@ -1543,7 +1469,7 @@ def _open_checkpoint(
         resumed_runs=0,
         accumulated_compute_seconds=0.0,
     )
-    return grid, loss, completed, statistics, clearance, False
+    return grid, loss, completed, statistics, False
 
 
 def _update_checkpoint_metadata(
@@ -1571,7 +1497,7 @@ def _update_checkpoint_metadata(
         "completed_cells": completed_cells,
         "resumed_runs": resumed_runs,
         "accumulated_compute_seconds": accumulated_compute_seconds,
-        "updated_at_utc": datetime.now(UTC).isoformat(),
+        "updated_at_utc": datetime.now(timezone.utc).isoformat(),
     }
     temporary = paths.metadata.with_suffix(".tmp")
     temporary.write_text(
@@ -1586,7 +1512,6 @@ def _remove_completed_checkpoint(paths: _CheckpointPaths) -> None:
         paths.metadata,
         paths.grid,
         paths.loss,
-        paths.clearance,
         paths.completed,
         paths.block_statistics,
     ):
@@ -1833,7 +1758,7 @@ def _record_performance(
             "elapsed_seconds": elapsed_seconds,
             "work_units_per_second": work_units / elapsed_seconds,
             "cell_overhead_work_units": CELL_OVERHEAD_WORK_UNITS,
-            "recorded_at_utc": datetime.now(UTC).isoformat(),
+            "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
         }
     )
     payload["runs"] = runs[-PERFORMANCE_HISTORY_LIMIT:]

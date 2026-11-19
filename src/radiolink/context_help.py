@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import ttk
 
 from PIL import Image, ImageDraw, ImageFont, ImageTk
 
@@ -47,19 +47,75 @@ FIELD_HELP = {
         "Azimute de apontamento (°)",
         "Direção do ganho máximo, medida em graus no sentido horário a partir do norte geográfico. 0° é norte e 90° é leste.",
     ),
-    "fresnel": (
-        "Fresnel livre (%)",
-        "Fração do raio da primeira zona de Fresnel que se deseja manter livre de terreno ao longo do percurso. O padrão é 60%. Com 0%, o critério exige apenas visada direta.",
-    ),
-    "earth_k": (
-        "Fator k",
-        "Multiplica o raio da Terra para representar a refração no perfil geométrico. Um k menor aumenta a curvatura aparente e torna a folga mais exigente. O padrão é 4/3 (cerca de 1,33).",
-    ),
     "height_step": (
         "Passo (m)",
         "Intervalo entre as alturas de antena testadas na busca. Um passo menor permite escolher a altura com mais precisão dentro dos limites informados.",
     ),
 }
+
+
+class _HelpCard:
+    def __init__(self, anchor: tk.Button, title: str, explanation: str) -> None:
+        self.anchor = anchor
+        self.window = anchor.winfo_toplevel()
+        self.frame = tk.Frame(
+            self.window, background="#252d36", highlightbackground="#6ea8f2", highlightthickness=1,
+        )
+        self.heading = tk.Label(self.frame, text=title, background="#252d36", foreground="#ffffff",
+                                font=("Segoe UI Semibold", 10), justify="left", anchor="w")
+        self.body = tk.Label(self.frame, text=explanation, background="#252d36", foreground="#dce2e8",
+                             font=("Segoe UI", 10), justify="left", anchor="w")
+        self.heading.pack(fill="x", padx=12, pady=(9, 3))
+        self.body.pack(fill="x", padx=12, pady=(0, 10))
+        self.bindings = [
+            (self.window, "<ButtonPress-1>", self.window.bind("<ButtonPress-1>", self._outside, add="+")),
+            (self.window, "<Escape>", self.window.bind("<Escape>", self._escape, add="+")),
+            (self.window, "<Configure>", self.window.bind("<Configure>", self._resized, add="+")),
+            (self.anchor, "<Destroy>", self.anchor.bind("<Destroy>", self.close, add="+")),
+        ]
+        self._place()
+
+    def _place(self) -> None:
+        window = self.window
+        width = min(round(window.winfo_fpixels("3.7i")), max(1, window.winfo_width() - 12))
+        for label in (self.heading, self.body):
+            label.configure(wraplength=max(1, width - 28))
+        self.frame.update_idletasks()
+        x = self.anchor.winfo_rootx() - window.winfo_rootx()
+        anchor_y = self.anchor.winfo_rooty() - window.winfo_rooty()
+        height = self.frame.winfo_reqheight()
+        y = anchor_y + self.anchor.winfo_height() + 5
+        if y + height > window.winfo_height() - 6:
+            y = anchor_y - height - 5
+        self.frame.place(
+            x=max(6, min(x, window.winfo_width() - width - 6)),
+            y=max(6, y), width=width,
+        )
+        self.frame.lift()
+
+    def _outside(self, event: tk.Event) -> None:
+        if event.widget is not self.anchor and not (
+            event.widget is self.frame or str(event.widget).startswith(f"{self.frame}.")
+        ):
+            self.close()
+
+    def _escape(self, _: tk.Event) -> str:
+        self.close()
+        return "break"
+
+    def _resized(self, event: tk.Event) -> None:
+        if event.widget is self.window:
+            self._place()
+
+    def close(self, _: tk.Event | None = None) -> None:
+        if getattr(self.window, "_help_card", None) is self:
+            self.window._help_card = None
+        for widget, sequence, identifier in self.bindings:
+            if widget.winfo_exists():
+                widget.unbind(sequence, identifier)
+        self.bindings.clear()
+        if self.frame.winfo_exists():
+            self.frame.destroy()
 
 
 def label_with_help(
@@ -87,6 +143,16 @@ def label_with_help(
         font=ImageFont.load_default(size=round(pixels * 0.82)),
     )
     photo = ImageTk.PhotoImage(icon.resize((size, size), Image.Resampling.LANCZOS), master=frame)
+
+    def toggle_help() -> None:
+        window = button.winfo_toplevel()
+        previous = getattr(window, "_help_card", None)
+        if previous is not None:
+            previous.close()
+            if previous.anchor is button:
+                return
+        window._help_card = _HelpCard(button, tr(title), tr(explanation))
+
     button = tk.Button(
         frame,
         text=tr(title),
@@ -102,7 +168,7 @@ def label_with_help(
         relief="flat",
         cursor="hand2",
         takefocus=True,
-        command=lambda: messagebox.showinfo(tr(title), tr(explanation), parent=parent.winfo_toplevel()),
+        command=toggle_help,
     )
     button.image = photo
     button.bind("<Return>", lambda event: button.invoke())

@@ -45,9 +45,9 @@ from radiolink.coverage_report import (
     _render_overlay,
     _render_s_contours,
     coverage_cell_at,
+    write_coverage_outputs,
 )
 from radiolink.geodesy import destination_point, great_circle_distance_m
-from radiolink.geometry import ClearanceClass
 from radiolink.map_picker import build_picker_html
 from radiolink.report_server import start_report_server
 
@@ -94,60 +94,33 @@ def _radial(
     )
 
 
-def test_clearance_layer_changes_without_changing_propagation(tmp_path, monkeypatch):
-    request = _request(
-        tmp_path, resolution_preset="custom", custom_resolution_m=10_000,
-        transmitter_height_m=100.0, receiver_height_m=100.0, include_clearance=True,
+def test_detailed_coverage_exports_narrow_contour_from_original_grid(tmp_path):
+    request = _request(tmp_path, resolution_preset="detailed", receiver_threshold_dbm=-117.0)
+    dimension = coverage_grid_dimension(request.radius_km, request.resolution_m)
+    assert dimension == 2001 and request.resolution_m == 50
+    margin_grid = np.full((dimension, dimension), -2.0, dtype=np.float32)
+    margin_grid[965:1045, 1001] = 5.0  # skipped by the 100 m display sampling
+    assert (margin_grid[::2, ::2] < 0).all()
+    paths, statistics = write_coverage_outputs(
+        request=request, grid=margin_grid, output_directory=tmp_path,
+        grid_metadata={
+            "valid_circle_cells": margin_grid.size, "model_version": "test",
+            "p1812_cells": margin_grid.size - 1, "short_range_free_space_cells": 1,
+            "terrain_profile_points": margin_grid.size * 10, "worker_count": 1,
+        },
     )
-    elevations_sampled = []
-
-    def sample(latitudes, longitudes, **kwargs):
-        elevations_sampled.append(len(latitudes))
-        elevations = np.full(len(latitudes), 650.0)
-        peak = 120.0 if latitudes[-1] < request.latitude_deg - 0.02 else (
-            70.0 if longitudes[-1] > request.longitude_deg + 0.02 else 0.0
-        )
-        elevations[len(elevations) // 2] += peak
-        return elevations
-
-    def model_loss(*args):
-        return 110.0
-
-    monkeypatch.setattr(coverage_grid, "coverage_terrain_tile_codes", lambda _: ())
-    monkeypatch.setattr(coverage_grid, "load_digital_product_module", lambda *args: object())
-    monkeypatch.setattr(coverage_grid, "ensure_itu_data", lambda **kwargs: None)
-    monkeypatch.setattr(coverage_grid, "optimize_p1812", lambda model: model)
-    monkeypatch.setattr(coverage_grid, "sample_elevations", sample)
-    monkeypatch.setattr(coverage_grid, "_p1812_loss_for_profile", model_loss)
-    monkeypatch.setattr(coverage_grid, "_record_performance", lambda **kwargs: None)
-    first = run_coverage_analysis(request, worker_count=1)
-    margin = np.load(first.paths["margin_grid"])
-    loss = np.load(first.paths["loss_grid"])
-    classes = np.load(first.paths["clearance_grid"])
-    assert len(elevations_sampled) == coverage_circle_cell_count(50, 10_000) - 1
-    assert classes[4, 5] == ClearanceClass.FRESNEL_CLEAR
-    assert classes[5, 6] == ClearanceClass.LINE_OF_SIGHT
-    assert classes[6, 5] == ClearanceClass.OBSTRUCTED
-    assert classes[5, 5] == ClearanceClass.NO_PATH
-    assert margin[6, 5] > 0.0
-    markup = first.paths["report_html"].read_text(encoding="utf-8")
-    assert '<option value="clearance">Visada e Fresnel</option>' in markup
-    assert "Fresnel exigida 60%" in markup
-    assert first.paths["clearance_map_overlay"].is_file()
-
-    def fail_if_called(*args, **kwargs):
-        pytest.fail("changing geometry recalculated model loss")
-
-    monkeypatch.setattr(coverage_grid, "_p1812_loss_for_profile", fail_if_called)
-    monkeypatch.setattr(coverage_grid, "ensure_itu_data", fail_if_called)
-    updated = run_coverage_analysis(replace(request, fresnel_percent=0.0, effective_earth_k=0.25), worker_count=1)
-    assert updated.statistics["p1812_calls_this_run"] == 0
-    np.testing.assert_array_equal(np.load(updated.paths["margin_grid"]), margin)
-    np.testing.assert_array_equal(np.load(updated.paths["loss_grid"]), loss)
-    changed = np.load(updated.paths["clearance_grid"])
-    assert changed[5, 6] == ClearanceClass.FRESNEL_CLEAR
-    assert changed[0, 5] == ClearanceClass.OBSTRUCTED
-    assert ClearanceClass.LINE_OF_SIGHT not in changed
+    assert statistics["display_resolution_m"] == 100
+    assert any(
+        line["properties"]["level_db"] == 0
+        for line in json.loads(paths["contours"].read_text(encoding="utf-8"))["features"]
+    )
+    assert any(
+        line["properties"]["label"] == "S5"
+        for line in json.loads(paths["s_contours"].read_text(encoding="utf-8"))["features"]
+    )
+    report = paths["report_html"].read_text(encoding="utf-8")
+    assert "Imagem do mapa: 100 m" in report and "grade original de 50 m" in report
+    assert '<option value="clearance">' not in report
 
 
 def test_radius_resolution_policy_matches_product_scope() -> None:
@@ -294,7 +267,7 @@ def test_local_report_server_serves_relative_map_assets(
         server.server_close()
 
 
-def test_report_cell_query_uses_native_grid_with_optional_clearance(tmp_path: Path) -> None:
+def test_report_cell_query_uses_native_grid(tmp_path: Path) -> None:
     request = _request(
         tmp_path, latitude_deg=-23.0, longitude_deg=179.97,
         resolution_preset="custom", custom_resolution_m=10_000,
@@ -306,16 +279,12 @@ def test_report_cell_query_uses_native_grid_with_optional_clearance(tmp_path: Pa
     margin_grid = np.full((dimension, dimension), np.nan, dtype=np.float32)
     margin_grid[cell] = 9.0
     margin_grid[mid, mid] = 28.0
-    classes = np.zeros(margin_grid.shape, dtype=np.uint8)
-    classes[cell] = ClearanceClass.OBSTRUCTED
     paths = {
         "report_html": tmp_path / "coverage_report.html",
         "margin_grid": tmp_path / "coverage_margin_db.npy",
-        "clearance_grid": tmp_path / "coverage_clearance_classes.npy",
     }
     paths["report_html"].write_text("<html>Coverage</html>", encoding="utf-8")
     np.save(paths["margin_grid"], margin_grid)
-    np.save(paths["clearance_grid"], classes)
     outcome = CoverageOutcome(request, (), paths, {})
     latitude, longitude = destination_point(-23.0, 179.97, 32.0, 22_000.0)
     assert longitude < 0.0  # The click and station are on opposite sides of the dateline.
@@ -331,7 +300,7 @@ def test_report_cell_query_uses_native_grid_with_optional_clearance(tmp_path: Pa
             data = json.load(response)
         assert data["margin_db"] == 9.0
         assert data["s_estimate"] == "S6"
-        assert data["clearance"] == ClearanceClass.OBSTRUCTED
+        assert "clearance" not in data
         assert data["distance_km"] == pytest.approx(22.3606798)
         assert data["azimuth_deg"] == pytest.approx(26.5650512)
         with urllib.request.urlopen(f"{endpoint}?lat=-23&lon=179.97", timeout=5.0) as response:
@@ -351,8 +320,6 @@ def test_report_cell_query_uses_native_grid_with_optional_clearance(tmp_path: Pa
     finally:
         server.shutdown()
         server.server_close()
-    without_clearance = replace(outcome, paths={"margin_grid": paths["margin_grid"]})
-    assert coverage_cell_at(without_clearance, latitude, longitude)["clearance"] is None
 
 
 def test_coverage_report_fits_bounds_before_loading_overlay(

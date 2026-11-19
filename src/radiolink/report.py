@@ -13,8 +13,12 @@ from typing import Any
 
 import numpy as np
 
-from .analysis import AGREEMENT_CRITERIA, VIABILITY_CRITERIA, describe_agreement, recommendation_lines
-from .domain import DEFAULT_FRESNEL_PERCENT, Project
+from .analysis import (
+    AGREEMENT_CRITERIA, VIABILITY_CRITERIA, describe_agreement, describe_assessment_basis,
+    model_diagnostic_lines, recommendation_lines,
+)
+from .monte_carlo import describe_simulated_success, percentage_text
+from .domain import DEFAULT_EFFECTIVE_EARTH_K, DEFAULT_FRESNEL_PERCENT, Project
 from .geodesy import great_circle_points
 from .geometry import CLEARANCE_TOLERANCE_M, GeometryArrays, calculate_geometry
 from .height_optimization import height_comparison_table, height_summary_lines, project_at_heights
@@ -145,7 +149,11 @@ def render_profile_plot(
         arrays.apparent_terrain_m_asl,
         color="#d98b39",
         linewidth=1.1,
-        label=tr('Terreno aparente (k={x0:.3f})', x0=project.environment.effective_earth_k),
+        label=(
+            tr("Terreno aparente (k=4/3)")
+            if project.environment.effective_earth_k == DEFAULT_EFFECTIVE_EARTH_K
+            else tr('Terreno aparente (k={x0:.3f})', x0=project.environment.effective_earth_k)
+        ),
     )
     axis.plot(
         distance_km,
@@ -292,6 +300,7 @@ def render_monte_carlo_plot(
     threshold = None
     labels: list[str] = []
     probabilities: list[float] = []
+    upper_bounds: list[float] = []
     bar_colors: list[str] = []
     for simulation in simulations:
         primary = next(
@@ -305,7 +314,10 @@ def render_monte_carlo_plot(
             if simulation["temporal_sampling"] == "conditional_fixed_quantile"
             else simulation["model_id"].upper()
         )
-        probabilities.append(primary["success_probability_percent"])
+        bounds = primary.get("annual_availability_bounds_percent")
+        probability = primary["success_probability_percent"]
+        probabilities.append(bounds[0] if bounds else probability)
+        upper_bounds.append(bounds[1] if bounds else probability)
         bar_colors.append(colors.get(simulation["model_id"], "#555555"))
     if threshold is not None:
         axis_hist.axvline(
@@ -326,14 +338,21 @@ def render_monte_carlo_plot(
         color="#d62728",
         linestyle="--",
         linewidth=1.2,
-        label=tr('Meta {x0:.0f}%', x0=project.target_availability_percent),
+        label=tr("Meta {percent}%", percent=percentage_text(project.target_availability_percent)),
     )
     axis_bar.set_ylim(0.0, 105.0)
-    axis_bar.set_ylabel(tr('Execuções acima do limiar (%)'))
+    axis_bar.set_ylabel(tr("Disponibilidade estimada / sucesso condicional (%)"))
     axis_bar.set_title(tr('Funcionamento em {x0}', x0=project.primary_mode.upper()), loc="left")
     axis_bar.grid(True, axis="y", alpha=0.18)
     axis_bar.legend(fontsize=8)
-    for bar, value, simulation in zip(bars, probabilities, simulations):
+    for bar, value, upper, simulation in zip(bars, probabilities, upper_bounds, simulations):
+        center = bar.get_x() + bar.get_width() / 2.0
+        if upper > value:
+            axis_bar.errorbar(center, value, yerr=[[0.0], [upper - value]], fmt="none",
+                              ecolor="#333333", capsize=4)
+        display = percentage_text(value)
+        if upper > value:
+            display += "–" + percentage_text(upper)
         suffix = (
             "*"
             if simulation["temporal_sampling"] == "conditional_fixed_quantile"
@@ -341,8 +360,8 @@ def render_monte_carlo_plot(
         )
         axis_bar.text(
             bar.get_x() + bar.get_width() / 2.0,
-            value + 2.0,
-            f"{value:.1f}%{suffix}",
+            upper + 2.0,
+            f"{display}%{suffix}",
             ha="center",
             va="bottom",
             fontsize=9,
@@ -351,11 +370,11 @@ def render_monte_carlo_plot(
         item["temporal_sampling"] == "conditional_fixed_quantile"
         for item in simulations
     )
-    if has_conditional_result:
+    if has_conditional_result or upper_bounds != probabilities:
         fig.text(
             0.05,
             0.018,
-            tr('* A barra marcada é condicional ao percentil exibido; a disponibilidade anual exige uma curva temporal completa.'),
+            tr("Os traços mostram a faixa anual com caudas desconhecidas. * Sucesso condicional ao percentil indicado."),
             fontsize=7.5,
             color="#555555",
             ha="left",
@@ -368,7 +387,7 @@ def render_monte_carlo_plot(
         x=0.04,
         ha="left",
     )
-    fig.tight_layout(rect=(0.0, 0.055 if has_conditional_result else 0.0, 1.0, 0.95))
+    fig.tight_layout(rect=(0.0, 0.055 if has_conditional_result or upper_bounds != probabilities else 0.0, 1.0, 0.95))
     fig.savefig(output_path, bbox_inches="tight")
     plt.close(fig)
 
@@ -401,7 +420,7 @@ def build_markdown_summary(project: Project, result: dict[str, Any]) -> str:
                 "",
                 describe_agreement(assessment),
                 "",
-                tr('### Comparação coerente em {x0:.0f}%', x0=direction['comparison_percent']),
+                "### " + tr("Comparação coerente em {percent}%", percent=percentage_text(direction["comparison_percent"])),
                 "",
                 tr('| Modelo | Perda (dB) |'),
                 "|---|---:|",
@@ -417,7 +436,7 @@ def build_markdown_summary(project: Project, result: dict[str, Any]) -> str:
         lines.extend(
             [
                 "",
-                tr('### Ponto de projeto: {x0:.0f}%', x0=direction['target_availability_percent']),
+                "### " + tr("Ponto de projeto: {percent}%", percent=percentage_text(direction["target_availability_percent"])),
                 "",
                 tr('| Modelo | Quantil de projeto | Perda (dB) | Potência (dBm) | Margem (dB) |'),
                 "|---|---:|---:|---:|---:|",
@@ -433,7 +452,7 @@ def build_markdown_summary(project: Project, result: dict[str, Any]) -> str:
                 continue
             lines.append(
                 f"| {model['model_id'].upper()} | "
-                f"{model['percentile']:.1f}% | "
+                f"{percentage_text(model['percentile'])}% | "
                 f"{model['loss_db']:.2f} | "
                 f"{budget['received_power_dbm']:.2f} | "
                 f"{budget['fade_margin_db']:.2f} |"
@@ -448,6 +467,18 @@ def build_markdown_summary(project: Project, result: dict[str, Any]) -> str:
             if project.target_availability_percent > 50.0:
                 lines.append(tr("A tabela usa {percent:g}% para P.1812. A viabilidade na meta de {target:g}% usa ITM e P.2001 disponíveis.",
                                 percent=direction["comparison_percent"], target=project.target_availability_percent))
+        if basis := describe_assessment_basis(assessment):
+            lines.extend(["", basis])
+        if diagnostics := model_diagnostic_lines(direction):
+            lines.extend(["", "### " + tr("Avisos e erros dos modelos"), ""])
+            lines.extend(f"- {line}" for line in diagnostics)
+        if direction.get("monte_carlo"):
+            lines.extend(["", "### Monte Carlo", ""])
+            for simulation in direction["monte_carlo"]:
+                if description := describe_simulated_success(
+                    simulation, project.primary_mode, project.target_availability_percent,
+                ):
+                    lines.append(f"- {simulation['model_id'].upper()} · {description}")
         lines.extend(["", "### " + tr('Recomendações pertinentes'), ""])
         lines.extend(f"- {item}" for item in recommendation_lines(assessment))
         lines.extend(["", tr('### Incertezas declaradas'), ""])

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import base64
 import ctypes
+import io
+import json
 import os
 import queue
 import subprocess
@@ -12,6 +15,8 @@ import traceback
 import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+
+from PIL import Image, ImageOps, ImageTk
 
 from .antenna import COVERAGE_ANTENNA_DEFAULTS, DirectionalAntenna
 from .context_help import label_with_help
@@ -39,7 +44,7 @@ from .desktop_core import (
     default_output_directory,
     run_form_analysis,
 )
-from .domain import DEFAULT_EFFECTIVE_EARTH_K, DEFAULT_FRESNEL_PERCENT, Project, ReceiverSpec
+from .domain import Project, ReceiverSpec
 from .height_optimization import apply_height_solution
 from .map_picker import open_coordinate_picker
 from .map_export import COVERAGE_MAP_PDF, LINK_MAP_PDF
@@ -53,7 +58,7 @@ from .project_editor import (
     project_slug,
     write_project_json,
 )
-from .project_files import COVERAGE_GEOMETRY_DEFAULTS, read_coverage_project, write_coverage_project
+from .project_files import COVERAGE_THRESHOLD_OVERRIDES, read_coverage_project, write_coverage_project
 from .report_server import open_report_in_browser
 from .terrain import TerrainProfile
 from .version import __version__, RELEASE_MONTH, DEVELOPER, CALLSIGN, CONTACT_EMAIL
@@ -61,6 +66,58 @@ from .i18n import LANGUAGES, tr, choice_id, choice_label, get_language, load_lan
 
 def resolution_labels() -> dict[str, str]:
     return {choice_label(value): value for value in ("quick", "recommended", "detailed", "custom")}
+
+
+class _ReceiverThresholdInput:
+    """Track editable values by mode while retaining the receiver calibration."""
+
+    def __init__(self, root: tk.Misc, value: tk.StringVar) -> None:
+        self.value = value
+        self.source = tk.StringVar(root)
+        self.mode = ""
+        self.base = ReceiverSpec()
+        self.overrides: dict[str, str] = {}
+        self.rendering = False
+        self.value.trace_add("write", self._edited)
+
+    def load(self, mode: str, receiver: ReceiverSpec) -> None:
+        self.base = receiver.model_copy(update={"threshold_overrides_dbm": {}})
+        self.overrides = {key.upper(): str(value) for key, value in receiver.threshold_overrides_dbm.items()}
+        self.show(mode)
+
+    def show(self, mode: str) -> None:
+        self.mode = mode.upper()
+        if self.mode not in MODE_PROFILES:
+            return
+        default, _ = threshold_dbm(self.base, self.mode)
+        self.rendering = True
+        try:
+            self.value.set(self.overrides.get(self.mode, f"{default:.2f}"))
+        finally:
+            self.rendering = False
+        self._show_source()
+
+    def _edited(self, *_: object) -> None:
+        if self.rendering or self.mode not in MODE_PROFILES:
+            return
+        if value := self.value.get().strip():
+            self.overrides[self.mode] = value
+        else:
+            self.overrides.pop(self.mode, None)
+        self._show_source()
+
+    def _show_source(self) -> None:
+        self.source.set(tr("Limiar informado") if self.mode in self.overrides else tr("Limiar do preset"))
+
+    def receiver(self, parse) -> ReceiverSpec:
+        return ReceiverSpec(
+            noise_figure_db=self.base.noise_figure_db,
+            external_noise_db=self.base.external_noise_db,
+            threshold_overrides_dbm={
+                mode: parse(value, tr("Sensibilidade RX (dBm)"))
+                for mode, value in self.overrides.items()
+            },
+        )
 
 
 class RadioLinkPlannerApp:
@@ -86,12 +143,14 @@ class RadioLinkPlannerApp:
         self.mode_var = tk.StringVar()
         self.polarization_var = tk.StringVar()
         self.availability_var = tk.StringVar()
-        self.fresnel_var = tk.StringVar(value=str(DEFAULT_FRESNEL_PERCENT))
-        self.earth_k_var = tk.StringVar(value=str(DEFAULT_EFFECTIVE_EARTH_K))
         self.allow_mode_change_var = tk.BooleanVar()
         self.terminal_vars = {
             "a": self._new_terminal_vars(),
             "b": self._new_terminal_vars(),
+        }
+        self.link_thresholds = {
+            key: _ReceiverThresholdInput(root, variables["sensitivity"])
+            for key, variables in self.terminal_vars.items()
         }
         self.output_var = tk.StringVar(value=str(default_output_directory()))
         self.runs_var = tk.StringVar(value="20000")
@@ -117,7 +176,7 @@ class RadioLinkPlannerApp:
             "rx_height": tk.StringVar(value="2"),
             "rx_gain": tk.StringVar(value="2"),
             "rx_line_loss": tk.StringVar(value="1"),
-            "rx_sensitivity": tk.StringVar(value="-120"),
+            "rx_sensitivity": tk.StringVar(),
             "output": tk.StringVar(
                 value=str(
                     Path.home()
@@ -129,8 +188,10 @@ class RadioLinkPlannerApp:
         }
         self.coverage_vars.update({
             key: tk.StringVar(value=choice_label(default) if key == "tx_pattern" else default)
-            for key, default in {**COVERAGE_ANTENNA_DEFAULTS, **COVERAGE_GEOMETRY_DEFAULTS}.items()
+            for key, default in COVERAGE_ANTENNA_DEFAULTS.items()
         })
+        self.coverage_threshold = _ReceiverThresholdInput(root, self.coverage_vars["rx_sensitivity"])
+        self.coverage_threshold.load("FM", ReceiverSpec())
         self.coverage_resolution_var = tk.StringVar()
         self.coverage_progress_var = tk.StringVar(
             value=tr('Aguardando o início do cálculo.')
@@ -289,6 +350,17 @@ class RadioLinkPlannerApp:
             "Accent.TButton",
             background=[("active", "#ec5a5a"), ("disabled", "#663737")],
         )
+        style.configure(
+            "Panel.Treeview", background="#252d36", fieldbackground="#252d36", foreground="#dce2e8",
+            bordercolor="#36414c", rowheight=round(self.root.winfo_fpixels("0.26i")),
+        )
+        style.configure(
+            "Panel.Treeview.Heading", background="#313b46", foreground="#f2f4f6",
+            font=("Segoe UI Semibold", 10),
+        )
+        style.map(
+            "Panel.Treeview", background=[("selected", "#663737")], foreground=[("selected", "#ffffff")],
+        )
         style.configure("TButton", padding=(10, 7))
         style.configure(
             "TEntry",
@@ -427,6 +499,8 @@ class RadioLinkPlannerApp:
         self.coverage_vars["polarization"].set(choice_label(coverage_polarization))
         self.coverage_vars["resolution_preset"].set(choice_label(resolution))
         self.coverage_vars["tx_pattern"].set(choice_label(pattern))
+        for field in (*self.link_thresholds.values(), self.coverage_threshold):
+            field.show(field.mode)
         self._coordinates_changed()
         self._coverage_radius_changed()
         self._show_start_screen()
@@ -498,13 +572,14 @@ class RadioLinkPlannerApp:
             f"{image_path.suffix}.b64"
         )
         if image_path.is_file() or encoded_image_path.is_file():
-            if image_path.is_file():
-                source = tk.PhotoImage(file=str(image_path))
-            else:
-                source = tk.PhotoImage(
-                    data=encoded_image_path.read_text(encoding="ascii")
-                )
-            photo = source.subsample(2, 2)
+            source_path = image_path if image_path.is_file() else io.BytesIO(
+                base64.b64decode(encoded_image_path.read_bytes())
+            )
+            with Image.open(source_path) as original:
+                source = original.convert("RGB")
+            photo = ImageTk.PhotoImage(
+                ImageOps.contain(source, (320, 180), Image.Resampling.LANCZOS), master=card,
+            )
             self.home_images.append(photo)
             image_label = tk.Label(
                 card,
@@ -535,16 +610,18 @@ class RadioLinkPlannerApp:
 
         if image_label is not None:
             def fit_illustration(event):
-                # Reserve the text and action before sizing the illustration.
+                # Resize continuously, reserving padding, text and the action row.
                 available_height = max(1, event.height - 94 - title_label.winfo_reqheight()
                                        - description_label.winfo_reqheight() - action.winfo_reqheight())
                 available_width = max(1, event.width - 48)
-                factor = max(2, (source.width() + available_width - 1) // available_width,
-                             (source.height() + available_height - 1) // available_height)
-                if factor != getattr(image_label, "subsample_factor", 2):
-                    image_label.photo = source.subsample(factor, factor)
+                scale = min(1.0, available_width / source.width, available_height / source.height)
+                size = (max(1, round(source.width * scale)), max(1, round(source.height * scale)))
+                if size != getattr(image_label, "illustration_size", (320, 180)):
+                    image_label.photo = ImageTk.PhotoImage(
+                        source.resize(size, Image.Resampling.LANCZOS), master=card,
+                    )
                     image_label.configure(image=image_label.photo)
-                    image_label.subsample_factor = factor
+                    image_label.illustration_size = size
             card.bind("<Configure>", fit_illustration)
 
     def _open_mode(self, mode: str) -> None:
@@ -736,19 +813,11 @@ class RadioLinkPlannerApp:
         )
         availability_entry.grid(row=1, column=5, sticky="ew", pady=5)
         self._register(availability_entry)
-        self._form_field(
-            general, row=2, label=tr("Fresnel livre (%)"), variable=self.fresnel_var,
-            label_column=0, entry_column=1, help_key="fresnel",
-        )
-        self._form_field(
-            general, row=2, label=tr("Fator k"), variable=self.earth_k_var,
-            label_column=2, entry_column=3, left_padding=20, help_key="earth_k",
-        )
         mode_change = ttk.Checkbutton(
             general, text=tr("Aceito avaliar SSB como alternativa à FM"),
             variable=self.allow_mode_change_var,
         )
-        mode_change.grid(row=3, column=0, columnspan=6, sticky="w", pady=(4, 0))
+        mode_change.grid(row=2, column=0, columnspan=6, sticky="w", pady=(4, 0))
         self._register(mode_change)
 
         terminals = ttk.Frame(tab, style="Panel.TFrame")
@@ -849,6 +918,10 @@ class RadioLinkPlannerApp:
             entry = ttk.Entry(panel, textvariable=variables[key])
             entry.grid(row=row, column=1, sticky="ew", pady=4)
             self._register(entry)
+        threshold = self.link_thresholds["a" if column == 0 else "b"]
+        ttk.Label(panel, textvariable=threshold.source, style="Hint.TLabel").grid(
+            row=len(fields), column=1, sticky="w",
+        )
         map_button = ttk.Button(
             panel,
             text=tr('Escolher coordenadas no mapa…'),
@@ -859,7 +932,7 @@ class RadioLinkPlannerApp:
             ),
         )
         map_button.grid(
-            row=len(fields),
+            row=len(fields) + 1,
             column=0,
             columnspan=2,
             sticky="ew",
@@ -870,7 +943,7 @@ class RadioLinkPlannerApp:
             panel,
             text=tr('Altura sobre o solo; ganhos em dBi e perdas positivas.'),
             style="Hint.TLabel",
-        ).grid(row=len(fields) + 1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        ).grid(row=len(fields) + 2, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
     def _build_coverage_layout(self) -> None:
         outer = ttk.Frame(self.root, style="App.TFrame", padding=(24, 20))
@@ -1168,37 +1241,17 @@ class RadioLinkPlannerApp:
                 receiver, row, label, variables[key],
                 help_key="sensitivity" if key == "rx_sensitivity" else None,
             )
+        ttk.Label(receiver, textvariable=self.coverage_threshold.source, style="Hint.TLabel").grid(
+            row=4, column=1, sticky="w",
+        )
         ttk.Label(
             receiver,
-            text=(
-                tr('Os mesmos parâmetros receptores são aplicados a todas as células do mapa.')
-            ),
-            style="Hint.TLabel",
-            wraplength=420,
-        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
+            text=tr('Os mesmos parâmetros receptores são aplicados a todas as células do mapa.'),
+            style="Hint.TLabel", wraplength=420,
+        ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
-        geometry = ttk.LabelFrame(
-            tab, text=tr("Visada e Fresnel"), style="Panel.TLabelframe", padding=12,
-        )
-        geometry.grid(row=3, column=0, sticky="ew", pady=(12, 0))
-        geometry.columnconfigure(1, weight=1)
-        geometry.columnconfigure(3, weight=1)
-        include_clearance = ttk.Checkbutton(
-            geometry, text=tr("Incluir camada no mapa"), variable=variables["include_clearance"],
-            onvalue="1", offvalue="0",
-        )
-        include_clearance.grid(row=0, column=0, columnspan=4, sticky="w")
-        self._register(include_clearance)
-        self._form_field(
-            geometry, row=1, label=tr("Fresnel livre (%)"), variable=variables["fresnel_percent"],
-            label_column=0, entry_column=1, help_key="fresnel",
-        )
-        self._form_field(
-            geometry, row=1, label=tr("Fator k"), variable=variables["effective_earth_k"],
-            label_column=2, entry_column=3, left_padding=16, help_key="earth_k",
-        )
         output = ttk.Frame(tab, style="Panel.TFrame")
-        output.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+        output.grid(row=3, column=0, sticky="ew", pady=(12, 0))
         output.columnconfigure(1, weight=1)
         ttk.Label(output, text=tr('Pasta de saída'), style="Panel.TLabel").grid(
             row=0, column=0, sticky="w", padx=(0, 10)
@@ -1215,7 +1268,7 @@ class RadioLinkPlannerApp:
         self._register(output_button)
 
         project_actions = ttk.Frame(tab, style="Panel.TFrame")
-        project_actions.grid(row=5, column=0, sticky="ew", pady=(12, 0))
+        project_actions.grid(row=4, column=0, sticky="ew", pady=(12, 0))
         project_actions.columnconfigure(3, weight=1)
         new_button = ttk.Button(
             project_actions,
@@ -1574,11 +1627,7 @@ class RadioLinkPlannerApp:
         )
 
     def _coverage_mode_changed(self, _: tk.Event[tk.Misc]) -> None:
-        mode = self.coverage_vars["mode"].get()
-        if mode not in MODE_PROFILES:
-            return
-        default, _ = threshold_dbm(ReceiverSpec(), mode)
-        self.coverage_vars["rx_sensitivity"].set(f"{default:.2f}")
+        self.coverage_threshold.show(self.coverage_vars["mode"].get())
 
     def _coordinate_tuple(self) -> tuple[float, float, float, float]:
         terminal_a = self.terminal_vars["a"]
@@ -1618,12 +1667,10 @@ class RadioLinkPlannerApp:
         self.mode_var.set("FM")
         self.polarization_var.set(choice_label("vertical"))
         self.availability_var.set("70")
-        self.fresnel_var.set(str(DEFAULT_FRESNEL_PERCENT))
-        self.earth_k_var.set(str(DEFAULT_EFFECTIVE_EARTH_K))
         self.allow_mode_change_var.set(False)
         defaults = {
-            "a": (tr('Estação A'), "10", "2", "1", "50", "-120"),
-            "b": (tr('Estação B'), "10", "2", "1", "50", "-120"),
+            "a": (tr('Estação A'), "10", "2", "1", "50"),
+            "b": (tr('Estação B'), "10", "2", "1", "50"),
         }
         for key, values in defaults.items():
             variables = self.terminal_vars[key]
@@ -1634,7 +1681,7 @@ class RadioLinkPlannerApp:
             variables["gain"].set(values[2])
             variables["line_loss"].set(values[3])
             variables["power"].set(values[4])
-            variables["sensitivity"].set(values[5])
+            self.link_thresholds[key].load("FM", ReceiverSpec())
         self.output_var.set(str(Path.home() / APP_NAME / "Resultados" / "Meu-enlace"))
         self.last_outcome = None
         self._disable_result_actions()
@@ -1742,7 +1789,6 @@ class RadioLinkPlannerApp:
             "rx_height": "2",
             "rx_gain": "2",
             "rx_line_loss": "1",
-            "rx_sensitivity": "-120",
             "output": str(
                 Path.home()
                 / APP_NAME
@@ -1750,10 +1796,10 @@ class RadioLinkPlannerApp:
                 / "Minha-cobertura"
             ),
             **COVERAGE_ANTENNA_DEFAULTS,
-            **COVERAGE_GEOMETRY_DEFAULTS,
         }
         for key, value in defaults.items():
             self.coverage_vars[key].set(choice_label(value) if key == "tx_pattern" else value)
+        self.coverage_threshold.load("FM", ReceiverSpec())
         self.coverage_project_path = None
         self.last_coverage = None
         self._disable_result_actions()
@@ -1791,6 +1837,10 @@ class RadioLinkPlannerApp:
         values["resolution_preset"] = choice_id(values["resolution_preset"], ("quick", "recommended", "detailed", "custom"))
         values["tx_pattern"] = choice_id(values["tx_pattern"], ("omni", "directional"))
         try:
+            receiver = self.coverage_threshold.receiver(self._parse_float)
+            active_threshold, _ = threshold_dbm(receiver, values["mode"])
+            values["rx_sensitivity"] = str(active_threshold)
+            values[COVERAGE_THRESHOLD_OVERRIDES] = json.dumps(receiver.threshold_overrides_dbm)
             destination = write_coverage_project(values, selected)
         except Exception as exc:  # noqa: BLE001 - filesystem boundary
             messagebox.showerror(
@@ -1814,9 +1864,15 @@ class RadioLinkPlannerApp:
         try:
             values = {
                 **COVERAGE_ANTENNA_DEFAULTS,
-                **COVERAGE_GEOMETRY_DEFAULTS,
                 **read_coverage_project(selected),
             }
+            legacy_threshold = values.pop("rx_sensitivity")
+            stored_thresholds = values.pop(COVERAGE_THRESHOLD_OVERRIDES, None)
+            if stored_thresholds is None:
+                overrides = {values["mode"]: self._parse_float(legacy_threshold, tr("Sensibilidade RX (dBm)"))}
+            else:
+                overrides = json.loads(stored_thresholds)
+            receiver = ReceiverSpec(threshold_overrides_dbm=overrides)
             for key, choices in (
                 ("polarization", ("vertical", "horizontal")),
                 ("resolution_preset", ("quick", "recommended", "detailed", "custom")),
@@ -1831,6 +1887,7 @@ class RadioLinkPlannerApp:
             return
         for key, value in values.items():
             self.coverage_vars[key].set(value)
+        self.coverage_threshold.load(values["mode"], receiver)
         self.coverage_project_path = Path(selected).resolve()
         self.last_coverage = None
         self._disable_result_actions()
@@ -1846,10 +1903,8 @@ class RadioLinkPlannerApp:
         self.allow_mode_change_var.set(values.allow_mode_change)
         self.polarization_var.set(choice_label(values.polarization))
         self.availability_var.set(
-            f"{values.target_availability_percent:.3f}".rstrip("0").rstrip(".")
+            str(values.target_availability_percent).removesuffix(".0")
         )
-        self.fresnel_var.set(str(values.fresnel_percent))
-        self.earth_k_var.set(str(values.effective_earth_k))
         self._apply_terminal_values("a", values.terminal_a)
         self._apply_terminal_values("b", values.terminal_b)
 
@@ -1864,19 +1919,17 @@ class RadioLinkPlannerApp:
         variables["gain"].set(self._format_number(values.antenna_gain_dbi))
         variables["line_loss"].set(self._format_number(values.line_loss_db))
         variables["power"].set(self._format_number(values.tx_power_w))
-        variables["sensitivity"].set(self._format_number(values.receiver_threshold_dbm))
+        mode = self.mode_var.get()
+        receiver = values.receiver or ReceiverSpec(threshold_overrides_dbm={mode: values.receiver_threshold_dbm})
+        self.link_thresholds[terminal_id].load(mode, receiver)
 
     @staticmethod
     def _format_number(value: float) -> str:
         return f"{value:.6f}".rstrip("0").rstrip(".")
 
     def _mode_changed(self, _: tk.Event[tk.Misc]) -> None:
-        mode = self.mode_var.get()
-        if mode not in MODE_PROFILES:
-            return
-        default, _ = threshold_dbm(ReceiverSpec(), mode)
-        for terminal in self.terminal_vars.values():
-            terminal["sensitivity"].set(f"{default:.2f}")
+        for field in self.link_thresholds.values():
+            field.show(self.mode_var.get())
 
     def _select_output(self) -> None:
         selected = filedialog.askdirectory(title=tr('Selecionar pasta de saída'))
@@ -1893,6 +1946,8 @@ class RadioLinkPlannerApp:
     def _collect_editor_values(self) -> ProjectEditorValues:
         def terminal(terminal_id: str, label: str) -> TerminalEditorValues:
             variables = self.terminal_vars[terminal_id]
+            receiver = self.link_thresholds[terminal_id].receiver(self._parse_float)
+            active_threshold, _ = threshold_dbm(receiver, self.mode_var.get())
             return TerminalEditorValues(
                 name=variables["name"].get().strip(),
                 latitude_deg=self._parse_float(
@@ -1913,9 +1968,8 @@ class RadioLinkPlannerApp:
                 tx_power_w=self._parse_float(
                     variables["power"].get(), tr('Potência TX {x0}', x0=label)
                 ),
-                receiver_threshold_dbm=self._parse_float(
-                    variables["sensitivity"].get(), tr('Sensibilidade RX {x0}', x0=label)
-                ),
+                receiver_threshold_dbm=active_threshold,
+                receiver=receiver,
             )
 
         return ProjectEditorValues(
@@ -1929,8 +1983,6 @@ class RadioLinkPlannerApp:
             terminal_a=terminal("a", "A"),
             terminal_b=terminal("b", "B"),
             allow_mode_change=self.allow_mode_change_var.get(),
-            fresnel_percent=self._parse_float(self.fresnel_var.get(), tr("Fresnel livre (%)")),
-            effective_earth_k=self._parse_float(self.earth_k_var.get(), tr("Fator k")),
         )
 
     @staticmethod
@@ -2056,9 +2108,10 @@ class RadioLinkPlannerApp:
                 values["rx_line_loss"].get(),
                 tr('Perda no cabo receptor'),
             ),
-            receiver_threshold_dbm=self._parse_float(
-                values["rx_sensitivity"].get(),
-                tr('Sensibilidade receptora'),
+            receiver_threshold_dbm=(
+                self._parse_float(values["rx_sensitivity"].get(), tr("Sensibilidade receptora"))
+                if values["mode"].get().upper() in self.coverage_threshold.overrides
+                else threshold_dbm(self.coverage_threshold.base, values["mode"].get())[0]
             ),
             output_directory=Path(output_text),
             time_percentage=self._parse_float(
@@ -2068,9 +2121,6 @@ class RadioLinkPlannerApp:
             resolution_preset=preset,
             custom_resolution_m=custom_resolution,
             transmitter_pattern=pattern,
-            include_clearance=values["include_clearance"].get() == "1",
-            fresnel_percent=self._parse_float(values["fresnel_percent"].get(), tr("Fresnel livre (%)")),
-            effective_earth_k=self._parse_float(values["effective_earth_k"].get(), tr("Fator k")),
         )
         request.validate()
         return request
@@ -2275,6 +2325,7 @@ class RadioLinkPlannerApp:
             )
             return
 
+        self._restore_result_actions()
         error = payload
         if not isinstance(error, dict):
             error = {"message": str(error), "traceback": str(error)}
@@ -2318,6 +2369,15 @@ class RadioLinkPlannerApp:
             if self.current_mode == "coverage":
                 self._coverage_radius_changed()
             self.coverage_cancel_event = None
+
+    def _restore_result_actions(self) -> None:
+        previous = self.last_coverage if self.current_mode == "coverage" else self.last_outcome
+        if previous is None:
+            return
+        self.report_button.configure(state="normal")
+        self.folder_button.configure(state="normal")
+        if self.current_mode == "link" and previous.paths["terrain_profile"].is_file():
+            self.optimize_height_button.configure(state="normal")
 
     def _disable_result_actions(self) -> None:
         self.report_button.configure(state="disabled")
@@ -2429,8 +2489,6 @@ class RadioLinkPlannerApp:
             self.loaded_terrain_path = outcome.paths["terrain_profile"]
             self.terminal_vars["a"]["height"].set(str(solution.proposed_a_m))
             self.terminal_vars["b"]["height"].set(str(solution.proposed_b_m))
-            self.fresnel_var.set(str(solution.fresnel_percent))
-            self.earth_k_var.set(str(solution.effective_earth_k))
             self.notebook.select(self.editor_tab)
             self.status_var.set(tr("Alturas aplicadas ao formulário. Execute Analisar para atualizar os resultados."))
 

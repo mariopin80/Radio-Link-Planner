@@ -19,6 +19,25 @@ from .base import (
 
 ITM_COMMIT = "183ad95bd813a8be11009df396e1c631356864b2"
 
+# These are the flags defined by the bundled NTIA library (Warnings.h).
+ITM_WARNING_MESSAGES = {
+    0x0001: "A altura da antena transmissora está próxima dos limites do ITM.",
+    0x0002: "A altura da antena receptora está próxima dos limites do ITM.",
+    0x0004: "A frequência está próxima dos limites do ITM.",
+    0x0008: "A distância está próxima do limite superior do ITM.",
+    0x0010: "O ITM recomenda cautela devido à grande distância do enlace.",
+    0x0020: "A distância está próxima do limite inferior do ITM.",
+    0x0040: "O ITM recomenda cautela devido à curta distância do enlace.",
+    0x0080: "O ângulo do horizonte no transmissor é elevado para a aproximação do ITM.",
+    0x0100: "O ângulo do horizonte no receptor é elevado para a aproximação do ITM.",
+    0x0200: "O horizonte do transmissor está muito próximo em relação ao terreno liso.",
+    0x0400: "O horizonte do receptor está muito próximo em relação ao terreno liso.",
+    0x0800: "O horizonte do transmissor está muito distante em relação ao terreno liso.",
+    0x1000: "O horizonte do receptor está muito distante em relação ao terreno liso.",
+    0x2000: "O ITM está avaliando um percentil extremo da distribuição.",
+    0x4000: "A refratividade de superfície calculada é baixa para o ITM.",
+}
+
 
 class _IntermediateValues(ctypes.Structure):
     _fields_ = [
@@ -155,7 +174,7 @@ class ItmModel:
                 ctypes.byref(warning_bits),
                 ctypes.byref(intermediate),
             )
-            if error != 0:
+            if error not in (0, 1):
                 return self._failure(
                     context,
                     ModelStatus.ERROR,
@@ -166,11 +185,13 @@ class ItmModel:
                 2: "diffraction",
                 3: "troposcatter",
             }.get(intermediate.mode, "unknown")
-            warnings = (
-                (f"ITM warning bitmask: {warning_bits.value}",)
-                if warning_bits.value
-                else ()
+            warnings = tuple(
+                message for flag, message in ITM_WARNING_MESSAGES.items()
+                if warning_bits.value & flag
             )
+            unknown_flags = warning_bits.value & ~sum(ITM_WARNING_MESSAGES)
+            if unknown_flags or (error == 1 and not warnings):
+                warnings += ("O ITM concluiu o cálculo com um aviso adicional.",)
             return ModelEvaluation(
                 model_id=self.model_id,
                 model_name=self.model_name,
@@ -184,6 +205,7 @@ class ItmModel:
                 warnings=warnings,
                 details={
                     "confidence_percent": 50.0,
+                    "native_return_code": error,
                     "warning_bitmask": int(warning_bits.value),
                     "free_space_loss_db": float(intermediate.A_fs__db),
                     "reference_attenuation_db": float(intermediate.A_ref__db),
@@ -221,11 +243,11 @@ class ItmModel:
             loss_db=np.asarray([item.loss_db for item in evaluations], dtype=float),
             percentile_meaning="reliability_percent",
             complete_annual_distribution=True,
-            warnings=tuple(
+            warnings=tuple(dict.fromkeys(
                 warning
                 for item in evaluations
                 for warning in item.warnings
-            ),
+            )),
         )
 
     def _failure(

@@ -9,13 +9,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .analysis import describe_agreement
+from .analysis import describe_agreement, describe_assessment_basis, model_diagnostic_lines
+from .monte_carlo import describe_simulated_success
 from .copernicus import DEFAULT_STEP_M, extract_profile
 from .domain import Project
 from .engine import analyze_project
 from .itu_data import ensure_itu_data
 from .project_editor import write_project_json
 from .report import describe_fresnel_clearance, describe_geometry_clearance, write_outputs
+from .result_runs import published_paths, result_run
 from .terrain import TerrainProfile
 
 APP_NAME = "Radio Link Planner"
@@ -67,76 +69,73 @@ def default_output_directory() -> Path:
 def run_analysis(
     request: AnalysisRequest,
     progress: ProgressCallback | None = None,
+    *,
+    download_model_data: bool = True,
 ) -> AnalysisOutcome:
     project, base_dir = Project.from_json(request.project_path)
-    if request.monte_carlo_runs is not None:
-        project = project.model_copy(deep=True)
-        project.monte_carlo.runs = request.monte_carlo_runs
-    terrain_path = project.resolved_terrain_path(base_dir)
-    profile = TerrainProfile.from_csv(terrain_path)
-    _ensure_model_data(project, progress)
-    outcome = _analyze(
-        project,
-        profile,
-        request.output_directory,
-        make_plots=request.make_plots,
-        progress=progress,
+    return run_form_analysis(
+        FormAnalysisRequest(
+            project=project,
+            output_directory=request.output_directory,
+            monte_carlo_runs=request.monte_carlo_runs,
+            make_plots=request.make_plots,
+            existing_terrain_path=project.resolved_terrain_path(base_dir),
+        ),
+        progress,
+        download_model_data=download_model_data,
     )
-    outcome.paths["terrain_profile"] = terrain_path
-    return outcome
 
 
 def run_form_analysis(
     request: FormAnalysisRequest,
     progress: ProgressCallback | None = None,
+    *,
+    download_model_data: bool = True,
 ) -> AnalysisOutcome:
-    destination = request.output_directory.resolve()
-    destination.mkdir(parents=True, exist_ok=True)
-    terrain_path = destination / "terrain_profile.csv"
-    project = request.project.model_copy(deep=True)
+    project = request.project.with_standard_geometry().model_copy(deep=True)
     if request.monte_carlo_runs is not None:
         project.monte_carlo.runs = request.monte_carlo_runs
 
-    if request.existing_terrain_path is not None:
-        source = request.existing_terrain_path.resolve()
-        if not source.is_file():
-            raise FileNotFoundError(tr('Perfil de terreno não encontrado: {x0}', x0=source))
-        if source != terrain_path:
+    with result_run(request.output_directory) as (staging, final):
+        terrain_path = staging / "terrain_profile.csv"
+        if request.existing_terrain_path is not None:
+            source = request.existing_terrain_path.resolve()
+            if not source.is_file():
+                raise FileNotFoundError(tr('Perfil de terreno não encontrado: {x0}', x0=source))
             shutil.copyfile(source, terrain_path)
-        _notify(progress, tr('Terreno: usando o perfil do projeto carregado.'))
-        profile = TerrainProfile.from_csv(terrain_path)
-        project.terrain_resolution_m = profile.nominal_step_m
-    else:
-        profile = extract_profile(
-            project.terminal_a.latitude_deg,
-            project.terminal_a.longitude_deg,
-            project.terminal_b.latitude_deg,
-            project.terminal_b.longitude_deg,
-            terrain_path,
-            step_m=request.terrain_step_m,
-            progress=progress,
-        )
-        project.terrain_source = (
-            "Copernicus GLO-30, obtido automaticamente pelo Radio Link Planner"
-        )
-        project.terrain_resolution_m = request.terrain_step_m
-        project.clutter_included = False
-        project.metadata["terrain_zone_assumption"] = "all_inland_land"
+            _notify(progress, tr('Terreno: usando o perfil do projeto carregado.'))
+            profile = TerrainProfile.from_csv(terrain_path)
+            project.terrain_resolution_m = profile.nominal_step_m
+        else:
+            profile = extract_profile(
+                project.terminal_a.latitude_deg,
+                project.terminal_a.longitude_deg,
+                project.terminal_b.latitude_deg,
+                project.terminal_b.longitude_deg,
+                terrain_path,
+                step_m=request.terrain_step_m,
+                progress=progress,
+            )
+            project.terrain_source = (
+                "Copernicus GLO-30, obtido automaticamente pelo Radio Link Planner"
+            )
+            project.terrain_resolution_m = request.terrain_step_m
+            project.clutter_included = False
+            project.metadata["terrain_zone_assumption"] = "all_inland_land"
 
-    project.terrain_profile = "terrain_profile.csv"
-    project = Project.model_validate(project.model_dump(mode="json"))
-    project_path = write_project_json(project, destination / "project.json")
-    _ensure_model_data(project, progress)
-    outcome = _analyze(
-        project,
-        profile,
-        destination,
-        make_plots=request.make_plots,
-        progress=progress,
-    )
-    paths = dict(outcome.paths)
-    paths["project_json"] = project_path
-    paths["terrain_profile"] = terrain_path
+        project.terrain_profile = terrain_path.name
+        project = Project.model_validate(project.model_dump(mode="json"))
+        project_path = write_project_json(project, staging / "project.json")
+        if download_model_data:
+            _ensure_model_data(project, progress)
+        outcome = _analyze(
+            project, profile, staging, make_plots=request.make_plots, progress=progress,
+        )
+        paths = published_paths({
+            **outcome.paths, "project_json": project_path, "terrain_profile": terrain_path,
+        }, staging, final)
+
+    _notify(progress, tr('Análise concluída.'))
     return AnalysisOutcome(project=project, result=outcome.result, paths=paths)
 
 
@@ -159,7 +158,6 @@ def _analyze(
         arrays,
         make_plots=make_plots,
     )
-    _notify(progress, tr('Análise concluída.'))
     return AnalysisOutcome(project=project, result=result, paths=paths)
 
 
@@ -217,6 +215,8 @@ def build_desktop_summary(outcome: AnalysisOutcome) -> str:
                 describe_agreement(assessment),
             ]
         )
+        if basis := describe_assessment_basis(assessment):
+            lines.append(basis)
         budgets = {budget["model_id"]: budget for budget in direction["link_budgets"]}
         simulations = {
             simulation["model_id"]: simulation
@@ -234,23 +234,13 @@ def build_desktop_summary(outcome: AnalysisOutcome) -> str:
                 tr('perda {x0:.2f} dB • margem {x1:+.2f} dB', x0=model['loss_db'], x1=budget['fade_margin_db'])
             )
             simulation = simulations.get(model_id)
-            if simulation:
-                primary = next(
-                    (
-                        item
-                        for item in simulation["mode_results"]
-                        if item["mode"] == project.primary_mode.upper()
-                    ),
-                    None,
-                )
-                if primary:
-                    if simulation.get("temporal_sampling") == "conditional_fixed_quantile":
-                        detail += tr(
-                            " • sucesso condicional {percent:.1f}%", percent=primary["success_probability_percent"]
-                        )
-                    else:
-                        detail += tr(' • sucesso {x0:.1f}%', x0=primary['success_probability_percent'])
             lines.append(f"  {model_id.upper()}: {detail}")
+            if simulation:
+                if presentation := describe_simulated_success(
+                    simulation, project.primary_mode, project.target_availability_percent,
+                ):
+                    lines.append(f"    {presentation}")
+        lines.extend(f"  {line}" for line in model_diagnostic_lines(direction))
         lines.append("")
     lines.extend(
         [

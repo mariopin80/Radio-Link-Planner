@@ -48,13 +48,15 @@ class QuantileCurve:
     warnings: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
+        lower, upper = float(self.percentiles[0]), float(self.percentiles[-1])
         return {
             "model_id": self.model_id,
             "direction": self.direction,
             "percentiles": self.percentiles.tolist(),
             "loss_db": self.loss_db.tolist(),
             "percentile_meaning": self.percentile_meaning,
-            "complete_annual_distribution": self.complete_annual_distribution,
+            "percentile_interval": [lower, upper],
+            "complete_annual_distribution": self.complete_annual_distribution and lower == 0 and upper == 100,
             "warnings": list(self.warnings),
         }
 

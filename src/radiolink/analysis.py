@@ -186,6 +186,26 @@ def describe_agreement(assessment: dict) -> str:
     return description
 
 
+def describe_assessment_basis(assessment: dict) -> str:
+    models = assessment.get("design_model_ids")
+    if models is None:
+        return ""
+    if not models:
+        return tr("Nenhum modelo calculou a margem na meta de projeto.")
+    return tr("Modelos que sustentam o parecer na meta: {models}.",
+              models=", ".join(model.upper() for model in models))
+
+
+def model_diagnostic_lines(direction: dict) -> list[str]:
+    diagnostics = (
+        f"{model['model_id'].upper()} · {tr(warning)}"
+        for key in ("design_models", "comparison_models")
+        for model in direction.get(key, ())
+        for warning in model.get("warnings", ())
+    )
+    return list(dict.fromkeys(diagnostics))
+
+
 def recommendation_lines(assessment: dict) -> list[str]:
     classification = assessment["classification"]
     if classification == "robust":

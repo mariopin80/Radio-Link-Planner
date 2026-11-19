@@ -23,7 +23,6 @@ from .coverage import (
     RadialCoverage,
 )
 from .geodesy import destination_point, great_circle_distance_m, initial_bearing_deg
-from .geometry import ClearanceClass
 from .legal_notices import (
     COPERNICUS_GLO30_DERIVED_CREDIT,
     COPERNICUS_GLO30_NO_LIABILITY,
@@ -49,13 +48,6 @@ S_CONTOUR_LEVELS_DBM = (
     ("S7", S9_DBM - 2 * S_UNIT_DB),
     ("S9+", S9_DBM),
 )
-CLEARANCE_STYLES = (
-    (ClearanceClass.FRESNEL_CLEAR, "#117a68", "Fresnel atende ao critério"),
-    (ClearanceClass.LINE_OF_SIGHT, "#e5a52a", "Visada com folga insuficiente"),
-    (ClearanceClass.OBSTRUCTED, "#8b386e", "Visada direta bloqueada"),
-)
-
-
 def coverage_cell_at(
     outcome: CoverageOutcome, latitude_deg: float, longitude_deg: float,
 ) -> dict[str, float | int | str | None] | None:
@@ -83,15 +75,6 @@ def coverage_cell_at(
     if not math.isfinite(margin_db):
         return None
 
-    clearance = None
-    clearance_file = outcome.paths.get("clearance_grid")
-    if clearance_file is not None and clearance_file.is_file():
-        classes = np.load(clearance_file, mmap_mode="r", allow_pickle=False)
-        with closing(classes._mmap):
-            if classes.shape != (rows, columns):
-                raise ValueError("clearance grid does not match margin grid")
-            clearance = int(classes[row, col])
-
     east_m = (col - center_col) * step_m
     north_m = (center_row - row) * step_m
     center_distance_m = math.hypot(east_m, north_m)
@@ -104,18 +87,10 @@ def coverage_cell_at(
     return {
         "margin_db": margin_db,
         "s_estimate": s_estimate,
-        "clearance": clearance,
         "distance_km": center_distance_m / 1000.0,
         "azimuth_deg": math.degrees(math.atan2(east_m, north_m)) % 360.0
         if center_distance_m else None,
     }
-
-
-def clearance_criteria_label(request: CoverageRequest) -> str:
-    return tr(
-        "Fresnel exigida {percent:g}% · k = {k:.6g}",
-        percent=request.fresnel_percent, k=request.effective_earth_k,
-    )
 
 
 def write_coverage_outputs(
@@ -127,7 +102,6 @@ def write_coverage_outputs(
     progress: ProgressCallback | None = None,
     radials: tuple[RadialCoverage, ...] | None = None,
     cancel_check: Callable[[], bool] | None = None,
-    clearance_grid: np.ndarray | None = None,
 ) -> tuple[dict[str, Path], dict[str, Any]]:
     output_directory.mkdir(parents=True, exist_ok=True)
     overlay_path = output_directory / "coverage_overlay.png"
@@ -159,23 +133,17 @@ def write_coverage_outputs(
         s_overlay_path,
         scale="s",
     )
-    clearance_path = output_directory / "coverage_overlay_clearance.png"
-    clearance_tiles = None
-    if clearance_grid is not None:
-        _check_cancelled(cancel_check)
-        classes, _ = _sample_grid_for_rendering(clearance_grid, request.radius_km, request.resolution_m)
-        clearance_tiles = _render_overlay(
-            request, classes, axis_km, clearance_path, scale="clearance",
-        )
     _check_cancelled(cancel_check)
     _notify(progress, tr('Cobertura: heatmap interativo renderizado.'))
-    contour_geojson = _render_heatmap_and_contours(
-        request,
-        sampled,
-        axis_km,
-        heatmap_path,
+    native_axis = _grid_axis_km(grid, request.resolution_m)
+    s_levels = [level_dbm - request.receiver_threshold_dbm for _, level_dbm in S_CONTOUR_LEVELS_DBM]
+    segments = _contour_segments(
+        grid, native_axis, (*CONTOUR_LEVELS_DB, *s_levels), cancel_check=cancel_check,
     )
-    s_contour_geojson = _render_s_contours(request, sampled, axis_km)
+    contour_geojson = _render_heatmap_and_contours(
+        request, sampled, axis_km, heatmap_path, segments=segments,
+    )
+    s_contour_geojson = _render_s_contours(request, grid, native_axis, segments=segments)
     _check_cancelled(cancel_check)
     _notify(progress, tr('Cobertura: contornos científicos gerados.'))
     contours_path.write_text(
@@ -188,7 +156,9 @@ def write_coverage_outputs(
     )
     map_assets = _install_map_assets(output_directory)
     _check_cancelled(cancel_check)
-    statistics = _coverage_statistics(grid)
+    display_resolution = round((axis_km[1] - axis_km[0]) * 1000.0) if len(axis_km) > 1 else request.resolution_m
+    grid_metadata = {**grid_metadata, "display_resolution_m": display_resolution}
+    statistics = {**_coverage_statistics(grid), "display_resolution_m": display_resolution}
     report_path.write_text(
         _build_coverage_report(
             request=request,
@@ -198,7 +168,6 @@ def write_coverage_outputs(
             overlay_tiles=overlay_tiles,
             s_contour_geojson=s_contour_geojson,
             s_overlay_tiles=s_overlay_tiles,
-            clearance_tiles=clearance_tiles,
             map_assets=map_assets,
             radials=radials,
         ),
@@ -212,8 +181,6 @@ def write_coverage_outputs(
         "contours": contours_path,
         "s_contours": s_contours_path,
     }
-    if clearance_tiles:
-        paths["clearance_map_overlay"] = clearance_path
     from .pdf_reports import write_coverage_pdf
 
     paths["report_pdf"] = write_coverage_pdf(
@@ -235,11 +202,25 @@ def _sample_grid_for_rendering(
     maximum_render_dimension = 1800
     stride = max(1, math.ceil(max(grid.shape) / maximum_render_dimension))
     sampled = np.asarray(grid[::stride, ::stride], dtype=np.float32)
-    radius = radius_km * 1000.0
-    full_axis = (
-        np.arange(grid.shape[1], dtype=float) - (grid.shape[1] - 1) / 2.0
-    ) * resolution_m
-    return sampled, full_axis[::stride] / 1000.0
+    return sampled, _grid_axis_km(grid, resolution_m)[::stride]
+
+
+def _grid_axis_km(grid: np.ndarray, resolution_m: int) -> np.ndarray:
+    return (np.arange(grid.shape[1], dtype=float) - (grid.shape[1] - 1) / 2.0) * resolution_m / 1000.0
+
+
+def _contour_segments(
+    grid: np.ndarray, axis_km: np.ndarray, levels: tuple[float, ...],
+    *, cancel_check: Callable[[], bool] | None = None,
+) -> dict[float, list[np.ndarray]]:
+    from contourpy import contour_generator
+
+    generator = contour_generator(x=axis_km, y=axis_km[::-1], z=grid)
+    result = {}
+    for level in sorted(set(levels)):
+        _check_cancelled(cancel_check)
+        result[level] = generator.lines(level)
+    return result
 
 
 def _coverage_colormap():
@@ -268,25 +249,19 @@ def _render_overlay(
     scale: str = "margin",
 ) -> list[dict[str, Any]]:
     import matplotlib.pyplot as plt
-    from matplotlib.colors import Normalize, to_rgba
+    from matplotlib.colors import Normalize
 
-    if scale == "clearance":
-        palette = np.zeros((max(ClearanceClass) + 1, 4))
-        for code, color, _ in CLEARANCE_STYLES:
-            palette[code] = to_rgba(color)
-        rgba = palette[grid.astype(np.uint8, copy=False)]
+    if scale == "margin":
+        render_values = grid
+        minimum, maximum = -12.0, 18.0
+    elif scale == "s":
+        render_values = grid + request.receiver_threshold_dbm
+        minimum, maximum = S_CONTOUR_LEVELS_DBM[0][1], S9_DBM
     else:
-        if scale == "margin":
-            render_values = grid
-            minimum, maximum = -12.0, 18.0
-        elif scale == "s":
-            render_values = grid + request.receiver_threshold_dbm
-            minimum, maximum = S_CONTOUR_LEVELS_DBM[0][1], S9_DBM
-        else:
-            raise ValueError(f"unsupported coverage scale: {scale}")
-        normalization = Normalize(vmin=minimum, vmax=maximum, clip=True)
-        rgba = _coverage_colormap()(normalization(np.nan_to_num(render_values, nan=minimum)))
-        rgba[..., 3] = np.where(np.isfinite(grid), 0.78, 0.0)
+        raise ValueError(f"unsupported coverage scale: {scale}")
+    normalization = Normalize(vmin=minimum, vmax=maximum, clip=True)
+    rgba = _coverage_colormap()(normalization(np.nan_to_num(render_values, nan=minimum)))
+    rgba[..., 3] = np.where(np.isfinite(grid), 0.78, 0.0)
     plt.imsave(path, rgba, origin="upper")
     tile_count = 1 if request.radius_km <= 100 else (
         2 if request.radius_km <= 300 else 4
@@ -334,11 +309,15 @@ def _render_heatmap_and_contours(
     grid: np.ndarray,
     axis_km: np.ndarray,
     output_path: Path,
+    *,
+    segments: dict[float, list[np.ndarray]] | None = None,
 ) -> dict[str, Any]:
     import matplotlib.pyplot as plt
+    from matplotlib.collections import LineCollection
     from matplotlib.colors import Normalize
 
-    x_grid, y_grid = np.meshgrid(axis_km, axis_km[::-1])
+    if segments is None:
+        segments = _contour_segments(grid, axis_km, CONTOUR_LEVELS_DB)
     colormap = _coverage_colormap()
     normalization = Normalize(vmin=-12.0, vmax=18.0, clip=True)
     figure, axis = plt.subplots(figsize=(10.8, 9.2), dpi=150)
@@ -350,16 +329,10 @@ def _render_heatmap_and_contours(
         norm=normalization,
         interpolation="bilinear",
     )
-    contours = axis.contour(
-        x_grid,
-        y_grid,
-        grid,
-        levels=CONTOUR_LEVELS_DB,
-        colors=("#7a0012", "#8a5a00", "#1d551f", "#08384f"),
-        linewidths=(0.65, 0.5, 0.5, 0.6),
-        alpha=0.5,
-    )
-    axis.clabel(contours, fmt=lambda value: f"{value:+.0f} dB", fontsize=7)
+    for level, color, width in zip(
+        CONTOUR_LEVELS_DB, ("#7a0012", "#8a5a00", "#1d551f", "#08384f"), (0.65, 0.5, 0.5, 0.6),
+    ):
+        axis.add_collection(LineCollection(segments[level], colors=color, linewidths=width, alpha=0.55))
     axis.scatter(
         [0.0],
         [0.0],
@@ -388,8 +361,8 @@ def _render_heatmap_and_contours(
     figure.savefig(output_path, bbox_inches="tight")
 
     features: list[dict[str, Any]] = []
-    for level, segments in zip(contours.levels, contours.allsegs):
-        for segment in segments:
+    for level in CONTOUR_LEVELS_DB:
+        for segment in segments[level]:
             if len(segment) < 2:
                 continue
             coordinates = _local_km_to_lon_lat(
@@ -421,33 +394,16 @@ def _render_s_contours(
     request: CoverageRequest,
     grid: np.ndarray,
     axis_km: np.ndarray,
+    *,
+    segments: dict[float, list[np.ndarray]] | None = None,
 ) -> dict[str, Any]:
-    """Return S-meter contours from received power, not link margin."""
-    import matplotlib.pyplot as plt
-
-    power_dbm = np.asarray(grid, dtype=float) + request.receiver_threshold_dbm
-    finite_values = power_dbm[np.isfinite(power_dbm)]
-    if not finite_values.size:
-        return {"type": "FeatureCollection", "features": []}
-
-    lowest, highest = float(np.min(finite_values)), float(np.max(finite_values))
-    selected = [
-        (label, level)
-        for label, level in S_CONTOUR_LEVELS_DBM
-        if lowest < level < highest
-    ]
-    if not selected:
-        return {"type": "FeatureCollection", "features": []}
-
-    x_grid, y_grid = np.meshgrid(axis_km, axis_km[::-1])
-    figure, axis = plt.subplots()
-    contours = axis.contour(
-        x_grid, y_grid, np.ma.masked_invalid(power_dbm),
-        levels=[level for _, level in selected],
-    )
+    """Contour the power thresholds by translating them to margin levels."""
+    if segments is None:
+        levels = tuple(level - request.receiver_threshold_dbm for _, level in S_CONTOUR_LEVELS_DBM)
+        segments = _contour_segments(grid, axis_km, levels)
     features: list[dict[str, Any]] = []
-    for (label, level), segments in zip(selected, contours.allsegs):
-        for segment in segments:
+    for label, level in S_CONTOUR_LEVELS_DBM:
+        for segment in segments[level - request.receiver_threshold_dbm]:
             if len(segment) < 2:
                 continue
             features.append({
@@ -460,7 +416,6 @@ def _render_s_contours(
                     ),
                 },
             })
-    plt.close(figure)
     return {"type": "FeatureCollection", "features": features}
 
 
@@ -524,7 +479,6 @@ def _build_coverage_report(
     radials: tuple[RadialCoverage, ...] | None = None,
     s_contour_geojson: dict[str, Any] | None = None,
     s_overlay_tiles: list[dict[str, Any]] | None = None,
-    clearance_tiles: list[dict[str, Any]] | None = None,
 ) -> str:
     map_css, map_js = map_assets
     bounds = _coverage_bounds(request)
@@ -551,39 +505,21 @@ def _build_coverage_report(
     embedded_s_overlay_tiles = json.dumps(
         s_overlay_tiles or [], separators=(",", ":"),
     )
-    clearance_option = clearance_legend = clearance_note = ""
-    clearance_labels = None
     cell_labels = {
         "margin": tr("Margem"),
         "s": tr("S estimado"),
-        "clearance": tr("Condição de visada"),
         "distance": tr("Distância"),
         "azimuth": tr("Azimute"),
-        "classes": {
-            ClearanceClass.OBSTRUCTED: tr("Bloqueada"),
-            ClearanceClass.LINE_OF_SIGHT: tr("Insuficiente"),
-            ClearanceClass.FRESNEL_CLEAR: tr("Livre"),
-        },
         "loading": tr("Consultando a célula…"),
         "empty": tr("Sem dados de cobertura neste ponto."),
         "unavailable": tr("Abra Mapa e relatório no aplicativo para consultar as células."),
     }
-    if clearance_tiles:
-        title = tr("Visada e Fresnel")
-        criteria = clearance_criteria_label(request)
-        entries = [(color, tr(label)) for _, color, label in CLEARANCE_STYLES]
-        clearance_labels = {"title": title, "criteria": criteria, "entries": entries}
-        clearance_option = f'<option value="clearance">{html.escape(title)}</option>'
-        swatches = "".join(
-            f'<div><span class="legend-swatch" style="background:{color}"></span>{html.escape(label)}</div>'
-            for color, label in entries
-        )
-        clearance_legend = (
-            f'<div class="legend" id="clearance-legend" hidden><strong>{html.escape(title)}</strong>'
-            f'<div>{html.escape(criteria)}</div><div class="legend-classes">{swatches}</div></div>'
-        )
-        clearance_note = (
-            f'<p class="note">{html.escape(tr("Visada e Fresnel avalia a geometria de cada percurso. A margem da P.1812 inclui efeitos como a difração e pode ser positiva mesmo com visada bloqueada."))}</p>'
+    display_resolution = grid_metadata.get("display_resolution_m", request.resolution_m)
+    display_note = ""
+    if display_resolution != request.resolution_m:
+        display_note = tr(
+            "Imagem do mapa: {display} m. Contornos e consulta de células: grade original de {native} m.",
+            display=display_resolution, native=request.resolution_m,
         )
     raster_cells = grid_metadata["valid_circle_cells"]
     failed_cells = int(grid_metadata.get("failed_cells", 0))
@@ -717,14 +653,13 @@ def _build_coverage_report(
           <select id="coverage-scale">
             <option value="margin">{html.escape(tr('Margem (dB)'))}</option>
             <option value="s">{html.escape(tr('Escala S'))}</option>
-            {clearance_option}
           </select>
         </label>
         <button type="button" id="export-map-pdf" disabled>{html.escape(tr('Exportar PDF com este mapa'))}</button>
       </div>
       <div class="export-status" id="export-status" role="status" aria-live="polite"></div>
       <p class="note">{html.escape(tr('Escala S estimada para VHF/UHF: S9 = −93 dBm e 6 dB por unidade S. O indicador real do receptor pode ser diferente.'))}</p>
-      {clearance_note}
+      <p class="note">{html.escape(display_note)}</p>
       <p class="note">{html.escape(tr('Clique no mapa para consultar a célula.'))}</p>
       <div id="coverage-map" aria-label="{html.escape(tr('Mapa de cobertura'), quote=True)}"></div>
       <div class="legend" id="coverage-legend">
@@ -734,7 +669,6 @@ def _build_coverage_report(
           <span>+6</span><span>+12</span><span>{html.escape(tr('+18 dB'))}</span></div>
         <div style="margin-top:7px" id="legend-contours">{html.escape(tr('Contornos: 0, +3, +6 e +12 dB'))}</div>
       </div>
-      {clearance_legend}
     </section>
     <section class="card">
       <div class="stats">
@@ -783,8 +717,7 @@ def _build_coverage_report(
   <script>
     const overlayTiles = {embedded_overlay_tiles};
     const sOverlayTiles = {embedded_s_overlay_tiles};
-    const overlayGroups = {{margin:overlayTiles, s:sOverlayTiles, clearance:{json.dumps(clearance_tiles or [])}}};
-    const clearanceLabels = {json.dumps(clearance_labels, ensure_ascii=False)};
+    const overlayGroups = {{margin:overlayTiles, s:sOverlayTiles}};
     const cellLabels = {json.dumps(cell_labels, ensure_ascii=False)};
     const coverageBounds = {json.dumps(bounds)};
     const contourData = {embedded_contours};
@@ -856,7 +789,6 @@ def _build_coverage_report(
         for (const [label, value] of [
           [cellLabels.margin, marginNumber.format(cell.margin_db) + " dB"],
           [cellLabels.s, cell.s_estimate],
-          [cellLabels.clearance, cellLabels.classes[cell.clearance] ?? "—"],
           [cellLabels.distance, cellNumber.format(cell.distance_km) + " km"],
           [cellLabels.azimuth, azimuth],
         ]) {{
@@ -883,7 +815,7 @@ def _build_coverage_report(
           id:"coverage-image-" + mode + "-" + index,
           type:"raster", source:sourceId,
           layout:{{visibility:mode === "margin" ? "visible" : "none"}},
-          paint:{{"raster-opacity":0.78,"raster-resampling":mode === "clearance" ? "nearest" : "linear"}}
+          paint:{{"raster-opacity":0.78,"raster-resampling":"linear"}}
         }});
       }});
     }}
@@ -931,11 +863,6 @@ def _build_coverage_report(
           map.setLayoutProperty(layer + mode, "visibility", visibility);
         }}
       }}
-      const showClearance = scaleSelect.value === "clearance";
-      document.getElementById("coverage-legend").hidden = showClearance;
-      const clearanceLegend = document.getElementById("clearance-legend");
-      if (clearanceLegend) clearanceLegend.hidden = !showClearance;
-      if (showClearance) return;
       const label = legendLabels[scaleSelect.value];
       document.getElementById("legend-title").textContent = label.title;
       document.getElementById("legend-ticks").replaceChildren(
@@ -981,28 +908,14 @@ def _build_coverage_report(
     }});
 
     function drawCoverageLegend(ctx, cssWidth, cssHeight) {{
-      const showClearance = scaleSelect.value === "clearance";
       const legendWidth = Math.min(300, cssWidth-24);
-      const legendHeight = showClearance ? 111 : 91;
+      const legendHeight = 91;
       const legendX = 14;
       const legendY = cssHeight-legendHeight-28;
       ctx.fillStyle = "rgba(255,255,255,0.94)";
       ctx.fillRect(legendX,legendY,legendWidth,legendHeight);
       ctx.fillStyle = "#17191d";
       ctx.font = "bold 12px Arial, sans-serif";
-      if (showClearance && clearanceLabels) {{
-        ctx.fillText(clearanceLabels.title,legendX+10,legendY+17,legendWidth-20);
-        ctx.font = "11px Arial, sans-serif";
-        ctx.fillText(clearanceLabels.criteria,legendX+10,legendY+34,legendWidth-20);
-        clearanceLabels.entries.forEach(([color, text], index) => {{
-          const y = legendY+54+17*index;
-          ctx.fillStyle = color;
-          ctx.fillRect(legendX+10,y-9,12,10);
-          ctx.fillStyle = "#34383e";
-          ctx.fillText(text,legendX+28,y,legendWidth-38);
-        }});
-        return;
-      }}
       const label = legendLabels[scaleSelect.value];
       ctx.fillText(label.title,legendX+10,legendY+17,legendWidth-20);
       const gradient = ctx.createLinearGradient(legendX+10,0,legendX+legendWidth-10,0);

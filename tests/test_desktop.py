@@ -81,7 +81,7 @@ def test_desktop_summary_exposes_decision_and_report(
     assert "Viabilidade: MARGINAL" in summary
     assert "Concordância entre modelos: baixa" in summary
     assert "ITM: perda 168.36 dB" in summary
-    assert "sucesso 67.2%" in summary
+    assert "Sucesso estimado: 67.2%" in summary
     assert str(report) in summary
 
 
@@ -351,3 +351,37 @@ def test_link_geographic_pdf_is_saved_and_downloadable(tmp_path):
         set_language(original)
         server.shutdown()
         server.server_close()
+
+
+def test_failed_link_keeps_previous_execution(reference_project, reference_profile, tmp_path, monkeypatch):
+    import json
+
+    from radiolink.domain import ModelSelection
+
+    project = reference_project.model_copy(update={
+        "models": ModelSelection(itm=True, p1812=False, p2001=False),
+    })
+
+    def run(project):
+        return run_form_analysis(FormAnalysisRequest(
+            project, tmp_path, monte_carlo_runs=100, make_plots=False,
+            existing_terrain_path=reference_profile.source_path,
+        ))
+
+    first = run(project)
+    snapshot = {key: path.read_bytes() for key, path in first.paths.items()}
+
+    def fail(*_args):
+        raise RuntimeError("simulation of model data failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr("radiolink.desktop_core._ensure_model_data", fail)
+        with pytest.raises(RuntimeError, match="model data failure"):
+            run(project.model_copy(update={"frequency_mhz": 435.0}))
+    assert list((tmp_path / "runs").iterdir()) == [first.paths["report_html"].parent]
+
+    second = run(project.model_copy(update={"frequency_mhz": 435.0}))
+    assert second.paths["report_html"].parent != first.paths["report_html"].parent
+    assert {key: path.read_bytes() for key, path in first.paths.items()} == snapshot
+    config = json.loads(second.paths["project_json"].read_text(encoding="utf-8"))
+    assert config["frequency_mhz"] == second.result["project"]["frequency_mhz"] == 435.0

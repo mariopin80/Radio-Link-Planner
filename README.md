@@ -4,7 +4,7 @@
 
 A local planning tool for **terrestrial VHF/UHF point-to-point links and coverage**. It combines terrain profiles, propagation models, a bidirectional link budget, uncertainty analysis and traceable technical reports. The repository includes a Windows desktop interface and a scientific command-line engine.
 
-**Author:** Mario Pin, PU2PTU · **Application:** 0.5.6 (pre-release)
+**Author:** Mario Pin, PU2PTU · **Application:** 0.6.0 (pre-release)
 
 ## What it can do
 
@@ -53,18 +53,17 @@ Run the two build/data scripts from a suitable development shell. `bootstrap_itu
 ### First point-to-point link
 
 1. Launch `RadioLinkPlanner.exe`, select **English** using the language flags if needed, choose **Point-to-point link** and create a new project. Enter both station coordinates directly or choose locations on the map.
-2. Set frequency, mode, polarization, desired availability, antenna settings and receiver thresholds. Set the required **Fresnel clearance (%)** and **k factor** for the geometric profile. Select a blue **?** for help with a technical field.
+2. Set frequency, mode, polarization, desired availability, antenna settings and receiver thresholds. The geometric profile uses **k = 4/3** and **60% of the first Fresnel zone**. Select a blue **?** to open inline help.
 3. Choose the output folder and Monte Carlo run count under **Analysis and results**; select **Get terrain and analyze**. The app downloads missing terrain and model data as needed, caches them, then runs the analysis.
 4. Open **Map and report** for the path, profile, Fresnel clearance, model comparison, margins and recommendations. Save the project to repeat or edit it later.
-5. Use **Optimize antenna heights** to set terminal limits, height step, target Fresnel clearance and effective Earth factor k. Preview the profile and optionally simulate propagation before and after. **Apply heights** updates the form for the next analysis.
+5. Use **Optimize antenna heights** to set terminal limits and height step using the same geometric criteria as the profile. Preview the profile and optionally simulate propagation before and after. **Apply heights** updates the form for the next analysis.
 
 ### Coverage map
 
 1. Choose **Coverage map**, enter the transmitting station and reference receiver settings, and select radius **50–500 km** and a quick/recommended/detailed/custom grid.
 2. Choose an omnidirectional or directional transmitting antenna. For a directional antenna, set peak gain, −3 dB beamwidth, front-to-back ratio and pointing azimuth.
-3. To compare path geometry with the predicted margin, enable **Include layer on the map** under **Line of sight and Fresnel**.
-4. Check the predicted cell count, memory and time, then start the calculation. Repeating the same settings and output folder resumes completed blocks. Changes to the link budget or antenna pattern can reuse stored propagation loss in that folder.
-5. Open **Map and report** and click a cell in any view to see its margin, estimated S reading, line of sight, distance, and azimuth.
+3. Check the predicted cell count, memory and time, then start the calculation. Repeating the same settings and output folder resumes completed blocks. Changes to the link budget or antenna pattern can reuse stored propagation loss in that folder.
+4. Open **Map and report** and click a cell in any view to see its margin, estimated S reading, distance, and azimuth.
 
 Large radii can take hours and use substantial storage even when the total cell count is similar. Terrain profiles are sampled nominally at 30 m regardless of map cell size. Results live under the user profile; terrain and ITU caches under `%LOCALAPPDATA%\RadioLinkPlanner\` on Windows.
 
@@ -81,6 +80,8 @@ The CLI accepts `--runs`, `--no-plots` and `--print-json`. `radio-link-desktop` 
 ![Terrain profile from the included example](demo-output/profile.png)
 
 ![Monte Carlo model comparison from the included example](demo-output/monte_carlo.png)
+
+Each completed analysis saves a timestamped subfolder under `runs/` inside the selected output folder.
 
 | Point-to-point output | Content |
 | --- | --- |

@@ -714,3 +714,160 @@ MESSAGES: dict[str, tuple[str, str, str, str]] = {
     'Centro': ('Center', 'Centro', 'Centre', 'Zentrum'),
     'Indicador': ('Indicator', 'Indicador', 'Indicateur', 'Kennzahl'),
 }
+
+# Results and interface introduced in 0.6.0.
+MESSAGES.update({
+    "Limiar informado": ("Entered threshold", "Umbral indicado", "Seuil saisi", "Eingegebene Schwelle"),
+    "Limiar do preset": ("Preset threshold", "Umbral predefinido", "Seuil prédéfini", "Voreingestellte Schwelle"),
+    "Critério geométrico: k = 4/3 e 60% da primeira zona de Fresnel.": (
+        "Geometric criterion: k = 4/3 and 60% of the first Fresnel zone.",
+        "Criterio geométrico: k = 4/3 y 60% de la primera zona de Fresnel.",
+        "Critère géométrique : k = 4/3 et 60 % de la première zone de Fresnel.",
+        "Geometrisches Kriterium: k = 4/3 und 60 % der ersten Fresnelzone.",
+    ),
+    "Terreno aparente (k=4/3)": (
+        "Apparent terrain (k=4/3)", "Terreno aparente (k=4/3)",
+        "Terrain apparent (k=4/3)", "Scheinbares Gelände (k=4/3)",
+    ),
+    "Imagem do mapa: {display} m. Contornos e consulta de células: grade original de {native} m.": (
+        "Map image: {display} m. Contours and cell lookup: original {native} m grid.",
+        "Imagen del mapa: {display} m. Contornos y consulta de celdas: cuadrícula original de {native} m.",
+        "Image de la carte : {display} m. Contours et consultation des cellules : grille d'origine de {native} m.",
+        "Kartenbild: {display} m. Konturen und Zellabfrage: ursprüngliches {native}-m-Raster.",
+    ),
+    "Avisos e erros dos modelos": (
+        "Model warnings and errors", "Avisos y errores de los modelos",
+        "Avertissements et erreurs des modèles", "Modellwarnungen und -fehler",
+    ),
+    "Modelos que sustentam o parecer na meta: {models}.": (
+        "Models used for the assessment at the target: {models}.",
+        "Modelos usados para la evaluación en el objetivo: {models}.",
+        "Modèles utilisés pour le diagnostic à la cible : {models}.",
+        "Modelle für die Bewertung beim Zielwert: {models}.",
+    ),
+    "Nenhum modelo calculou a margem na meta de projeto.": (
+        "No model calculated a margin at the design target.",
+        "Ningún modelo calculó el margen para el objetivo de diseño.",
+        "Aucun modèle n'a calculé de marge à la cible de conception.",
+        "Kein Modell hat eine Reserve am Auslegungsziel berechnet.",
+    ),
+    "Comparação coerente em {percent}%": (
+        "Comparison at {percent}%", "Comparación al {percent}%",
+        "Comparaison à {percent} %", "Vergleich bei {percent} %",
+    ),
+    "Ponto de projeto: {percent}%": (
+        "Design point: {percent}%", "Punto de diseño: {percent}%",
+        "Point de conception : {percent} %", "Auslegungspunkt: {percent} %",
+    ),
+    "Meta {percent}%": ("Target {percent}%", "Objetivo {percent}%", "Cible {percent} %", "Ziel {percent} %"),
+    "Disponibilidade estimada / sucesso condicional (%)": (
+        "Estimated availability / conditional success (%)",
+        "Disponibilidad estimada / éxito condicional (%)",
+        "Disponibilité estimée / succès conditionnel (%)",
+        "Geschätzte Verfügbarkeit / bedingter Erfolg (%)",
+    ),
+    "Os traços mostram a faixa anual com caudas desconhecidas. * Sucesso condicional ao percentil indicado.": (
+        "Whiskers show the annual range with unknown tails. * Success conditional on the indicated percentile.",
+        "Los trazos muestran el intervalo anual con colas desconocidas. * Éxito condicionado al percentil indicado.",
+        "Les traits montrent la plage annuelle avec queues inconnues. * Succès conditionnel au percentile indiqué.",
+        "Striche zeigen die Jahresspanne bei unbekannten Randbereichen. * Erfolg bedingt durch das angegebene Perzentil.",
+    ),
+    "Sucesso condicional em p{percent}: {success}%.": (
+        "Conditional success at p{percent}: {success}%.", "Éxito condicional en p{percent}: {success}%.",
+        "Succès conditionnel à p{percent} : {success} %.", "Bedingter Erfolg bei p{percent}: {success} %.",
+    ),
+    "Sucesso condicional: {success}%.": (
+        "Conditional success: {success}%.", "Éxito condicional: {success}%.",
+        "Succès conditionnel : {success} %.", "Bedingter Erfolg: {success} %.",
+    ),
+    "Sucesso estimado: {success}%.": (
+        "Estimated success: {success}%.", "Éxito estimado: {success}%.",
+        "Succès estimé : {success} %.", "Geschätzter Erfolg: {success} %.",
+    ),
+    "Sucesso em p{lo}–p{hi}: {success}%. Disponibilidade anual estimada: {lower}% a {upper}%, com caudas desconhecidas.": (
+        "Success over p{lo}–p{hi}: {success}%. Estimated annual availability: {lower}% to {upper}%, with unknown tails.",
+        "Éxito entre p{lo} y p{hi}: {success}%. Disponibilidad anual estimada: {lower}% a {upper}%, con colas desconocidas.",
+        "Succès entre p{lo} et p{hi} : {success} %. Disponibilité annuelle estimée : {lower} % à {upper} %, avec queues inconnues.",
+        "Erfolg zwischen p{lo} und p{hi}: {success} %. Geschätzte Jahresverfügbarkeit: {lower} % bis {upper} % bei unbekannten Randbereichen.",
+    ),
+    "A meta é atingida no limite inferior estimado.": (
+        "The target is met at the estimated lower bound.",
+        "El objetivo se alcanza en el límite inferior estimado.",
+        "La cible est atteinte à la borne inférieure estimée.",
+        "Das Ziel wird an der geschätzten Untergrenze erreicht.",
+    ),
+    "A meta supera o limite superior estimado.": (
+        "The target exceeds the estimated upper bound.", "El objetivo supera el límite superior estimado.",
+        "La cible dépasse la borne supérieure estimée.", "Das Ziel liegt über der geschätzten Obergrenze.",
+    ),
+    "A faixa estimada não permite confirmar se a meta foi atingida.": (
+        "The estimated range does not establish whether the target is met.",
+        "El intervalo estimado no permite confirmar si se alcanza el objetivo.",
+        "La plage estimée ne permet pas de confirmer que la cible est atteinte.",
+        "Die geschätzte Spanne lässt offen, ob das Ziel erreicht wird.",
+    ),
+    "A altura da antena transmissora está próxima dos limites do ITM.": (
+        "Transmit antenna height is near the ITM limits.", "La altura de la antena transmisora está cerca de los límites del ITM.",
+        "La hauteur de l'antenne émettrice est proche des limites de l'ITM.", "Die Sendeantennenhöhe liegt nahe den ITM-Grenzen.",
+    ),
+    "A altura da antena receptora está próxima dos limites do ITM.": (
+        "Receive antenna height is near the ITM limits.", "La altura de la antena receptora está cerca de los límites del ITM.",
+        "La hauteur de l'antenne réceptrice est proche des limites de l'ITM.", "Die Empfangsantennenhöhe liegt nahe den ITM-Grenzen.",
+    ),
+    "A frequência está próxima dos limites do ITM.": (
+        "Frequency is near the ITM limits.", "La frecuencia está cerca de los límites del ITM.",
+        "La fréquence est proche des limites de l'ITM.", "Die Frequenz liegt nahe den ITM-Grenzen.",
+    ),
+    "A distância está próxima do limite superior do ITM.": (
+        "The distance is near the ITM upper limit.", "La distancia está cerca del límite superior del ITM.",
+        "La distance est proche de la limite supérieure de l'ITM.", "Die Entfernung liegt nahe der oberen ITM-Grenze.",
+    ),
+    "O ITM recomenda cautela devido à grande distância do enlace.": (
+        "Use caution with ITM results over this long path.", "Interprete con cautela el resultado del ITM debido a la gran distancia.",
+        "Interprétez le résultat de l'ITM avec prudence sur ce trajet long.", "ITM-Ergebnisse auf dieser langen Strecke mit Vorsicht interpretieren.",
+    ),
+    "A distância está próxima do limite inferior do ITM.": (
+        "The distance is near the ITM lower limit.", "La distancia está cerca del límite inferior del ITM.",
+        "La distance est proche de la limite inférieure de l'ITM.", "Die Entfernung liegt nahe der unteren ITM-Grenze.",
+    ),
+    "O ITM recomenda cautela devido à curta distância do enlace.": (
+        "Use caution with ITM results over this short path.", "Interprete con cautela el resultado del ITM debido a la corta distancia.",
+        "Interprétez le résultat de l'ITM avec prudence sur ce trajet court.", "ITM-Ergebnisse auf dieser kurzen Strecke mit Vorsicht interpretieren.",
+    ),
+    "O ângulo do horizonte no transmissor é elevado para a aproximação do ITM.": (
+        "The transmitter horizon angle is large for the ITM approximation.", "El ángulo del horizonte en el transmisor es alto para la aproximación del ITM.",
+        "L'angle d'horizon à l'émetteur est élevé pour l'approximation ITM.", "Der Horizontwinkel am Sender ist für die ITM-Näherung groß.",
+    ),
+    "O ângulo do horizonte no receptor é elevado para a aproximação do ITM.": (
+        "The receiver horizon angle is large for the ITM approximation.", "El ángulo del horizonte en el receptor es alto para la aproximación del ITM.",
+        "L'angle d'horizon au récepteur est élevé pour l'approximation ITM.", "Der Horizontwinkel am Empfänger ist für die ITM-Näherung groß.",
+    ),
+    "O horizonte do transmissor está muito próximo em relação ao terreno liso.": (
+        "The transmit horizon is much closer than for smooth terrain.", "El horizonte del transmisor está mucho más cerca que en terreno liso.",
+        "L'horizon de l'émetteur est beaucoup plus proche qu'en terrain lisse.", "Der Sendehorizont liegt deutlich näher als bei glattem Gelände.",
+    ),
+    "O horizonte do receptor está muito próximo em relação ao terreno liso.": (
+        "The receive horizon is much closer than for smooth terrain.", "El horizonte del receptor está mucho más cerca que en terreno liso.",
+        "L'horizon du récepteur est beaucoup plus proche qu'en terrain lisse.", "Der Empfangshorizont liegt deutlich näher als bei glattem Gelände.",
+    ),
+    "O horizonte do transmissor está muito distante em relação ao terreno liso.": (
+        "The transmit horizon is much farther away than for smooth terrain.", "El horizonte del transmisor está mucho más lejos que en terreno liso.",
+        "L'horizon de l'émetteur est beaucoup plus éloigné qu'en terrain lisse.", "Der Sendehorizont liegt deutlich weiter entfernt als bei glattem Gelände.",
+    ),
+    "O horizonte do receptor está muito distante em relação ao terreno liso.": (
+        "The receive horizon is much farther away than for smooth terrain.", "El horizonte del receptor está mucho más lejos que en terreno liso.",
+        "L'horizon du récepteur est beaucoup plus éloigné qu'en terrain lisse.", "Der Empfangshorizont liegt deutlich weiter entfernt als bei glattem Gelände.",
+    ),
+    "O ITM está avaliando um percentil extremo da distribuição.": (
+        "ITM is evaluating an extreme percentile of the distribution.", "El ITM está evaluando un percentil extremo de la distribución.",
+        "L'ITM évalue un percentile extrême de la distribution.", "Das ITM wertet ein extremes Perzentil der Verteilung aus.",
+    ),
+    "A refratividade de superfície calculada é baixa para o ITM.": (
+        "The calculated surface refractivity is low for ITM.", "La refractividad superficial calculada es baja para el ITM.",
+        "La réfractivité de surface calculée est faible pour l'ITM.", "Die berechnete Bodenrefraktivität ist für das ITM niedrig.",
+    ),
+    "O ITM concluiu o cálculo com um aviso adicional.": (
+        "ITM finished with an additional warning.", "El ITM terminó con un aviso adicional.",
+        "L'ITM a terminé avec un avertissement supplémentaire.", "Das ITM wurde mit einer zusätzlichen Warnung abgeschlossen.",
+    ),
+})

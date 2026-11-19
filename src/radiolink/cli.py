@@ -5,10 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from .domain import Project
-from .engine import analyze_project
-from .report import write_outputs
-from .terrain import TerrainProfile
+from .desktop_core import AnalysisRequest, run_analysis
 from .version import __version__
 
 
@@ -48,21 +45,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.command != "analyze":
         parser.error("unknown command")
     try:
-        project, base_dir = Project.from_json(args.project)
-        if args.runs is not None:
-            project.monte_carlo.runs = args.runs
-        profile = TerrainProfile.from_csv(
-            project.resolved_terrain_path(base_dir)
-        )
-        result, arrays = analyze_project(project, profile)
-        paths = write_outputs(
-            args.output,
-            project,
-            profile,
-            result,
-            arrays,
+        outcome = run_analysis(AnalysisRequest(
+            project_path=args.project,
+            output_directory=args.output,
+            monte_carlo_runs=args.runs,
             make_plots=not args.no_plots,
-        )
+        ), download_model_data=False)
+        project, result, paths = outcome.project, outcome.result, outcome.paths
     except Exception as exc:
         print(f"error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2

@@ -5,7 +5,11 @@ from .i18n import tr, choice_label
 from pathlib import Path
 from typing import Any
 
-from .analysis import AGREEMENT_CRITERIA, VIABILITY_CRITERIA, describe_agreement, recommendation_lines
+from .analysis import (
+    AGREEMENT_CRITERIA, VIABILITY_CRITERIA, describe_agreement, describe_assessment_basis,
+    model_diagnostic_lines, recommendation_lines,
+)
+from .monte_carlo import describe_simulated_success, percentage_text
 from .antenna import ANTENNA_APPROXIMATION_NOTE, antenna_report_rows
 from .coverage import CoverageRequest
 from .domain import Project
@@ -145,6 +149,8 @@ def write_link_pdf(
             report["Paragraph"](_escape(tr("Viabilidade: {classification}", classification=choice_label(assessment["classification"]))), styles["body"]),
             report["Paragraph"](_escape(describe_agreement(assessment)), styles["body"]),
         ])
+        if basis := describe_assessment_basis(assessment):
+            story.append(report["Paragraph"](_escape(basis), styles["body"]))
         comparison_rows = [[tr("Modelo"), tr("Perda"), tr("Tempo (%)")]]
         for model in direction.get("comparison_models", ()):
             comparison_rows.append([
@@ -186,13 +192,12 @@ def write_link_pdf(
             rows.append(
                 [
                     str(model_id).upper(),
-                    _number(model.get("percentile"), "%"),
+                    percentage_text(model["percentile"]) + "%",
                     _number(model.get("loss_db"), " dB"),
                     _number(budget.get("received_power_dbm"), " dBm"),
                     _signed_number(budget.get("fade_margin_db"), " dB"),
                     (
-                        f"{probability:.1f}%"
-                        + ("*" if simulations[model_id]["temporal_sampling"] == "conditional_fixed_quantile" else "")
+                        f"{percentage_text(probability)}%"
                         if probability is not None
                         else "—"
                     ),
@@ -208,11 +213,13 @@ def write_link_pdf(
                 report["Spacer"](1, 12),
             ]
         )
-        if any(item["temporal_sampling"] == "conditional_fixed_quantile" for item in simulations.values()):
-            story.append(report["Paragraph"](_escape(tr(
-                "* Monte Carlo condicional ao percentil indicado na tabela. "
-                "A disponibilidade anual exige uma distribuição temporal completa."
-            )), styles["small"]))
+        for model_id, simulation in simulations.items():
+            if description := describe_simulated_success(
+                simulation, project.primary_mode, project.target_availability_percent,
+            ):
+                story.append(report["Paragraph"](_escape(f"{model_id.upper()} · {description}"), styles["small"]))
+        for diagnostic in model_diagnostic_lines(direction):
+            story.append(report["Paragraph"](_escape(diagnostic), styles["small"]))
         for label, details in (
             (tr("Recomendações pertinentes"), recommendation_lines(assessment)),
             (tr("Incertezas declaradas"), [tr(item) for item in assessment["uncertainties"]]),
@@ -382,12 +389,12 @@ def write_coverage_pdf(
     ]
     if request.transmitter_pattern:
         story.append(report["Paragraph"](_escape(tr(ANTENNA_APPROXIMATION_NOTE)), styles["small"]))
-    if request.include_clearance:
-        from .coverage_report import clearance_criteria_label
-
-        story.append(
-            report["Paragraph"](_escape(clearance_criteria_label(request)), styles["small"])
-        )
+    display_resolution = statistics.get("display_resolution_m", request.resolution_m)
+    if display_resolution != request.resolution_m:
+        story.append(report["Paragraph"](_escape(tr(
+            "Imagem do mapa: {display} m. Contornos e consulta de células: grade original de {native} m.",
+            display=display_resolution, native=request.resolution_m,
+        )), styles["small"]))
     geographic_map = paths.get("geographic_map")
     heatmap = paths.get("heatmap")
     selected_map = (

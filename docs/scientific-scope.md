@@ -33,7 +33,9 @@ redistribuídos.
 As curvas temporais de ITM e P.2001 já contêm variabilidade de propagação.
 Por isso, o Monte Carlo amostra essas curvas e, separadamente, as incertezas
 de equipamento e instalação. Não é somada uma perda atmosférica aleatória
-arbitrária.
+arbitrária. O relatório informa o intervalo temporal efetivamente amostrado.
+Se houver caudas desconhecidas, a faixa anual estimada considera seus dois
+limites: todos esses casos falham ou todos atingem o limiar.
 
 As variáveis iniciais são:
 
@@ -124,8 +126,7 @@ do DEM entram como incertezas declaradas.
 A otimização de altura busca o menor aumento total nas alturas, na grade
 definida pelo passo e pelos limites de cada estação. Em caso de empate,
 escolhe o menor aumento em A. O critério é a folga em cada amostra interior
-do perfil, medida em relação à fração escolhida da primeira zona de Fresnel,
-com o fator k selecionado. A simulação recalcula as perdas com as duas
+do perfil, usando k = 4/3 e 60% da primeira zona de Fresnel. A simulação recalcula as perdas com as duas
 configurações de altura.
 
 Na cobertura direcional são usados dois trechos de cosseno em escala dB.
