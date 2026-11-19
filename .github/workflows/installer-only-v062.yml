@@ -1,0 +1,42 @@
+name: Keep only the v0.6.2 Windows installer
+
+on:
+  push:
+    branches:
+      - fix/v0.6.2-installer-only
+    paths:
+      - .github/workflows/installer-only-v062.yml
+
+permissions:
+  contents: write
+
+jobs:
+  update-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update v0.6.2 downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=v0.6.2
+          installer=RadioLinkPlanner-0.6.2-Windows-x64-Setup.exe
+          portable=RadioLinkPlanner-0.6.2-Windows-x64.zip
+          release=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag")
+          jq -e --arg portable "$portable" '
+            .id == 451960880 and
+            .tag_name == "v0.6.2" and
+            .target_commitish == "adea57d19888e4da797ed7a24fc0dbd63f50b083" and
+            any(.assets[]; .id == 769362250 and .name == $portable)
+          ' <<<"$release" >/dev/null
+          digest=$(jq -er --arg installer "$installer" '
+            .assets[] | select(.name == $installer and .state == "uploaded") | .digest |
+            select(test("^sha256:[a-f0-9]{64}$"))
+          ' <<<"$release")
+          printf '%s  %s\n' "${digest#sha256:}" "$installer" >"$RUNNER_TEMP/SHA256SUMS.txt"
+          gh release upload "$tag" "$RUNNER_TEMP/SHA256SUMS.txt" --clobber --repo "$GITHUB_REPOSITORY"
+          gh release edit "$tag" --notes-file docs/release-0.6.2.md --repo "$GITHUB_REPOSITORY"
+          gh release delete-asset "$tag" "$portable" --yes --repo "$GITHUB_REPOSITORY"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq '.assets[].name'
