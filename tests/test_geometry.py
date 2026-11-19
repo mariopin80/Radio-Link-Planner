@@ -4,6 +4,7 @@ import pytest
 import numpy as np
 
 from radiolink.geometry import calculate_geometry
+from radiolink.terrain import matches_terminal_coordinates
 
 
 def test_reference_geometry(reference_project, reference_profile) -> None:
@@ -31,6 +32,22 @@ def test_reverse_profile_is_reciprocal(reference_profile) -> None:
     )
     assert reverse.elevation_m[0] == reference_profile.elevation_m[-1]
     assert reverse.elevation_m[-1] == reference_profile.elevation_m[0]
+
+
+def test_terrain_reuse_requires_matching_terminal_coordinates(reference_project, reference_profile):
+    a, b = reference_project.terminal_a, reference_project.terminal_b
+    original = (a.latitude_deg, a.longitude_deg, b.latitude_deg, b.longitude_deg)
+    assert matches_terminal_coordinates(reference_profile, *original)
+
+    # Actual v0.6.0 regression: the 180.19 km example was reused for a 95 km link.
+    assert not matches_terminal_coordinates(
+        reference_profile, -23.27873714, -47.67702601, -23.45842360, -46.76704776,
+    )
+    assert not matches_terminal_coordinates(reference_profile.reverse(), *original)
+    changed_distances = reference_profile.distance_km * 1.01
+    assert not matches_terminal_coordinates(
+        reference_profile._replace(distance_km=changed_distances), *original,
+    )
 
 
 def test_selected_fresnel_compares_only_interior_samples(reference_project, reference_profile):

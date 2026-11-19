@@ -15,10 +15,10 @@ from .copernicus import DEFAULT_STEP_M, extract_profile
 from .domain import Project
 from .engine import analyze_project
 from .itu_data import ensure_itu_data
-from .project_editor import write_project_json
+from .project_editor import project_slug, write_project_json
 from .report import describe_fresnel_clearance, describe_geometry_clearance, write_outputs
 from .result_runs import published_paths, result_run
-from .terrain import TerrainProfile
+from .terrain import TerrainProfile, matches_terminal_coordinates
 
 APP_NAME = "Radio Link Planner"
 EXAMPLE_PROJECT = Path("examples") / "morro_jacu_palmira.json"
@@ -66,6 +66,11 @@ def default_output_directory() -> Path:
     return Path.home() / APP_NAME / "Resultados" / "Morro-do-Jacu-Palmira"
 
 
+def suggested_output_directory(name: str) -> Path:
+    """Default output folder for either editor, based on the project name."""
+    return Path.home() / APP_NAME / "Resultados" / project_slug(name or "Projeto")
+
+
 def run_analysis(
     request: AnalysisRequest,
     progress: ProgressCallback | None = None,
@@ -98,11 +103,25 @@ def run_form_analysis(
 
     with result_run(request.output_directory) as (staging, final):
         terrain_path = staging / "terrain_profile.csv"
+        existing_profile = None
         if request.existing_terrain_path is not None:
             source = request.existing_terrain_path.resolve()
-            if not source.is_file():
-                raise FileNotFoundError(tr('Perfil de terreno não encontrado: {x0}', x0=source))
-            shutil.copyfile(source, terrain_path)
+            if source.is_file():
+                try:
+                    candidate = TerrainProfile.from_csv(source)
+                    if matches_terminal_coordinates(
+                        candidate,
+                        project.terminal_a.latitude_deg, project.terminal_a.longitude_deg,
+                        project.terminal_b.latitude_deg, project.terminal_b.longitude_deg,
+                    ):
+                        existing_profile = candidate
+                except (OSError, ValueError):
+                    pass
+            if existing_profile is None:
+                _notify(progress, tr('Terreno: perfil anterior incompatível; obtendo novo perfil Copernicus.'))
+
+        if existing_profile is not None:
+            shutil.copyfile(existing_profile.source_path, terrain_path)
             _notify(progress, tr('Terreno: usando o perfil do projeto carregado.'))
             profile = TerrainProfile.from_csv(terrain_path)
             project.terrain_resolution_m = profile.nominal_step_m

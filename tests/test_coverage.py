@@ -76,6 +76,52 @@ def _request(tmp_path: Path, **updates) -> CoverageRequest:
     return CoverageRequest(**values)
 
 
+@pytest.mark.parametrize("updates", [
+    {"latitude_deg": -23.25},
+    {"longitude_deg": -46.9},
+    {"frequency_mhz": 435.0},
+    {"radius_km": 100},
+    {"resolution_preset": "quick"},
+    {"time_percentage": 30.0},
+    {"transmitter_height_m": 40.0},
+    {"receiver_height_m": 5.0},
+])
+def test_coverage_cache_invalidation_for_propagation_changes(tmp_path, updates):
+    baseline = _request(tmp_path)
+    changed = _request(tmp_path, **updates)
+    assert coverage_grid.coverage_request_fingerprint(baseline) != coverage_grid.coverage_request_fingerprint(changed)
+    assert coverage_grid.propagation_fingerprint(baseline) != coverage_grid.propagation_fingerprint(changed)
+
+
+@pytest.mark.parametrize("updates", [
+    {"transmitter_power_w": 25.0},
+    {"transmitter_gain_dbi": 10.0},
+    {"transmitter_line_loss_db": 2.0},
+    {"receiver_gain_dbi": 5.0},
+    {"receiver_line_loss_db": 2.0},
+    {"receiver_threshold_dbm": -110.0},
+    {"transmitter_pattern": DirectionalAntenna(hpbw_deg=60., front_to_back_db=15., azimuth_deg=45.)},
+])
+def test_coverage_reuses_physical_loss_but_not_budget_for_radio_changes(tmp_path, updates):
+    baseline = _request(tmp_path)
+    changed = _request(tmp_path, **updates)
+    assert coverage_grid.coverage_request_fingerprint(baseline) != coverage_grid.coverage_request_fingerprint(changed)
+    assert coverage_grid.propagation_fingerprint(baseline) == coverage_grid.propagation_fingerprint(changed)
+
+
+def test_checkpoint_paths_are_isolated_by_coverage_configuration(tmp_path):
+    baseline = _request(tmp_path)
+    changed = _request(tmp_path, latitude_deg=-23.25)
+    first = coverage_grid._checkpoint_paths(
+        baseline, coverage_grid.coverage_request_fingerprint(baseline),
+    )
+    second = coverage_grid._checkpoint_paths(
+        changed, coverage_grid.coverage_request_fingerprint(changed),
+    )
+    assert first.directory != second.directory
+    assert first.directory.parent == second.directory.parent == tmp_path
+
+
 def _radial(
     bearing: float,
     margin: list[float],

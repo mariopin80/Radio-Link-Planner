@@ -7,6 +7,8 @@ from pathlib import Path
 
 import numpy as np
 
+from .geodesy import great_circle_distance_m
+
 
 @dataclass(frozen=True)
 class TerrainProfile:
@@ -144,3 +146,42 @@ class TerrainProfile:
         }
         values.update(updates)
         return TerrainProfile(**values)
+
+
+def matches_terminal_coordinates(
+    profile: TerrainProfile,
+    latitude_a_deg: float,
+    longitude_a_deg: float,
+    latitude_b_deg: float,
+    longitude_b_deg: float,
+    *,
+    endpoint_tolerance_m: float = 3.0,
+) -> bool:
+    """Check profile provenance before reusing terrain for different terminals.
+
+    Profile CSV coordinates are saved at six decimal places, so an endpoint
+    tolerance of a few metres allows harmless coordinate rounding.
+    """
+    endpoints = (
+        float(profile.latitude_deg[0]), float(profile.longitude_deg[0]),
+        float(profile.latitude_deg[-1]), float(profile.longitude_deg[-1]),
+    )
+    if not np.all(np.isfinite(endpoints)):
+        return False
+    start_error = great_circle_distance_m(
+        latitude_a_deg, longitude_a_deg, endpoints[0], endpoints[1],
+    )
+    end_error = great_circle_distance_m(
+        latitude_b_deg, longitude_b_deg, endpoints[2], endpoints[3],
+    )
+    distance_m = great_circle_distance_m(
+        latitude_a_deg, longitude_a_deg, latitude_b_deg, longitude_b_deg,
+    )
+    if distance_m <= 0.0:
+        return False
+    distance_error = abs(profile.total_distance_km * 1000.0 - distance_m)
+    return (
+        start_error <= endpoint_tolerance_m
+        and end_error <= endpoint_tolerance_m
+        and distance_error <= max(3.0, 0.005 * distance_m)
+    )

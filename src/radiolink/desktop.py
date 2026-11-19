@@ -43,6 +43,7 @@ from .desktop_core import (
     bundled_example_path,
     default_output_directory,
     run_form_analysis,
+    suggested_output_directory,
 )
 from .domain import Project, ReceiverSpec
 from .height_optimization import apply_height_solution
@@ -60,7 +61,7 @@ from .project_editor import (
 )
 from .project_files import COVERAGE_THRESHOLD_OVERRIDES, read_coverage_project, write_coverage_project
 from .report_server import open_report_in_browser
-from .terrain import TerrainProfile
+from .terrain import TerrainProfile, matches_terminal_coordinates
 from .version import __version__, RELEASE_MONTH, DEVELOPER, CALLSIGN, CONTACT_EMAIL
 from .i18n import LANGUAGES, tr, choice_id, choice_label, get_language, load_language, set_language, validation_message
 
@@ -78,11 +79,20 @@ class _ReceiverThresholdInput:
         self.base = ReceiverSpec()
         self.overrides: dict[str, str] = {}
         self.rendering = False
+        self.blank_when_unset = False
         self.value.trace_add("write", self._edited)
 
     def load(self, mode: str, receiver: ReceiverSpec) -> None:
+        self.blank_when_unset = False
         self.base = receiver.model_copy(update={"threshold_overrides_dbm": {}})
         self.overrides = {key.upper(): str(value) for key, value in receiver.threshold_overrides_dbm.items()}
+        self.show(mode)
+
+    def clear(self, mode: str) -> None:
+        """Require a deliberate sensitivity value in a new project."""
+        self.blank_when_unset = True
+        self.base = ReceiverSpec()
+        self.overrides = {}
         self.show(mode)
 
     def show(self, mode: str) -> None:
@@ -92,7 +102,9 @@ class _ReceiverThresholdInput:
         default, _ = threshold_dbm(self.base, self.mode)
         self.rendering = True
         try:
-            self.value.set(self.overrides.get(self.mode, f"{default:.2f}"))
+            self.value.set(self.overrides.get(
+                self.mode, "" if self.blank_when_unset else f"{default:.2f}",
+            ))
         finally:
             self.rendering = False
         self._show_source()
@@ -107,7 +119,10 @@ class _ReceiverThresholdInput:
         self._show_source()
 
     def _show_source(self) -> None:
-        self.source.set(tr("Limiar informado") if self.mode in self.overrides else tr("Limiar do preset"))
+        self.source.set(
+            tr("Limiar informado") if self.mode in self.overrides else
+            "" if self.blank_when_unset else tr("Limiar do preset")
+        )
 
     def receiver(self, parse) -> ReceiverSpec:
         return ReceiverSpec(
@@ -137,6 +152,9 @@ class RadioLinkPlannerApp:
         self.current_mode: str | None = None
         self.coverage_cancel_event: threading.Event | None = None
         self.home_images: list[tk.PhotoImage] = []
+        self.link_form_initialized = False
+        self._automatic_output = {"link": True, "coverage": True}
+        self._writing_output = False
 
         self.name_var = tk.StringVar()
         self.frequency_var = tk.StringVar()
@@ -152,46 +170,39 @@ class RadioLinkPlannerApp:
             key: _ReceiverThresholdInput(root, variables["sensitivity"])
             for key, variables in self.terminal_vars.items()
         }
-        self.output_var = tk.StringVar(value=str(default_output_directory()))
+        self.output_var = tk.StringVar(value=str(suggested_output_directory(tr('Novo Enlace'))))
         self.runs_var = tk.StringVar(value="20000")
         self.plots_var = tk.BooleanVar(value=True)
         self.distance_var = tk.StringVar(value=tr('Distância: —'))
         self.terrain_status_var = tk.StringVar()
-        self.status_var = tk.StringVar(value=tr('Carregando o caso de referência…'))
+        self.status_var = tk.StringVar(value=tr('Escolha o tipo de análise.'))
         self.coverage_vars = {
-            "name": tk.StringVar(value=tr('Minha cobertura')),
+            "name": tk.StringVar(value=tr('Nova Cobertura')),
             "latitude": tk.StringVar(),
             "longitude": tk.StringVar(),
-            "frequency": tk.StringVar(value="146.000"),
+            "frequency": tk.StringVar(),
             "polarization": tk.StringVar(value=choice_label("vertical")),
             "mode": tk.StringVar(value="FM"),
             "radius": tk.StringVar(value="50"),
             "resolution_preset": tk.StringVar(value=choice_label("recommended")),
             "custom_resolution": tk.StringVar(value="500"),
             "time_percentage": tk.StringVar(value="50"),
-            "tx_height": tk.StringVar(value="30"),
-            "tx_gain": tk.StringVar(value="6"),
-            "tx_line_loss": tk.StringVar(value="1"),
-            "tx_power": tk.StringVar(value="50"),
-            "rx_height": tk.StringVar(value="2"),
-            "rx_gain": tk.StringVar(value="2"),
-            "rx_line_loss": tk.StringVar(value="1"),
+            "tx_height": tk.StringVar(),
+            "tx_gain": tk.StringVar(),
+            "tx_line_loss": tk.StringVar(),
+            "tx_power": tk.StringVar(),
+            "rx_height": tk.StringVar(),
+            "rx_gain": tk.StringVar(),
+            "rx_line_loss": tk.StringVar(),
             "rx_sensitivity": tk.StringVar(),
-            "output": tk.StringVar(
-                value=str(
-                    Path.home()
-                    / APP_NAME
-                    / "Resultados"
-                    / "Minha-cobertura"
-                )
-            ),
+            "output": tk.StringVar(value=str(suggested_output_directory(tr('Nova Cobertura')))),
         }
         self.coverage_vars.update({
-            key: tk.StringVar(value=choice_label(default) if key == "tx_pattern" else default)
+            key: tk.StringVar(value=choice_label(default) if key == "tx_pattern" else "")
             for key, default in COVERAGE_ANTENNA_DEFAULTS.items()
         })
         self.coverage_threshold = _ReceiverThresholdInput(root, self.coverage_vars["rx_sensitivity"])
-        self.coverage_threshold.load("FM", ReceiverSpec())
+        self.coverage_threshold.clear("FM")
         self.coverage_resolution_var = tk.StringVar()
         self.coverage_progress_var = tk.StringVar(
             value=tr('Aguardando o início do cálculo.')
@@ -199,6 +210,7 @@ class RadioLinkPlannerApp:
 
         self._configure_window()
         self._configure_styles()
+        self._register_output_callbacks()
         self._install_coordinate_traces()
         for variable in self.coverage_vars.values():
             variable.trace_add("write", self._coverage_radius_changed)
@@ -636,8 +648,8 @@ class RadioLinkPlannerApp:
         if mode == "link":
             self.status_var.set(tr('Configure o enlace ou abra um projeto salvo.'))
             self._build_layout()
-            if self.loaded_project is None:
-                self._load_project_file(bundled_example_path(), announce=False)
+            if not self.link_form_initialized:
+                self._new_link()
         elif mode == "coverage":
             self.status_var.set(
                 tr('Configure o transmissor, o receptor de referência e o raio.')
@@ -1517,6 +1529,33 @@ class RadioLinkPlannerApp:
     def _register(self, widget: tk.Widget) -> None:
         self.form_widgets.append(widget)
 
+    def _register_output_callbacks(self) -> None:
+        self.name_var.trace_add("write", lambda *_: self._project_name_changed("link"))
+        self.coverage_vars["name"].trace_add("write", lambda *_: self._project_name_changed("coverage"))
+        self.output_var.trace_add("write", lambda *_: self._output_directory_edited("link"))
+        self.coverage_vars["output"].trace_add("write", lambda *_: self._output_directory_edited("coverage"))
+
+    def _output_variable(self, mode: str) -> tk.StringVar:
+        return self.output_var if mode == "link" else self.coverage_vars["output"]
+
+    def _set_output_directory(self, mode: str, directory: str | Path, *, automatic: bool) -> None:
+        self._automatic_output[mode] = automatic
+        self._writing_output = True
+        try:
+            self._output_variable(mode).set(str(directory))
+        finally:
+            self._writing_output = False
+
+    def _output_directory_edited(self, mode: str) -> None:
+        if not self._writing_output:
+            self._automatic_output[mode] = False
+
+    def _project_name_changed(self, mode: str) -> None:
+        if not self._automatic_output[mode]:
+            return
+        name = self.name_var.get() if mode == "link" else self.coverage_vars["name"].get()
+        self._set_output_directory(mode, suggested_output_directory(name), automatic=True)
+
     def _install_coordinate_traces(self) -> None:
         for terminal in self.terminal_vars.values():
             terminal['latitude'].trace_add("write", self._coordinates_changed)
@@ -1656,21 +1695,29 @@ class RadioLinkPlannerApp:
             self.loaded_project.terminal_b.latitude_deg,
             self.loaded_project.terminal_b.longitude_deg,
         )
-        return all(abs(left - right) <= 1e-8 for left, right in zip(current, original))
+        if not all(abs(left - right) <= 1e-8 for left, right in zip(current, original)):
+            return False
+        try:
+            profile = TerrainProfile.from_csv(self.loaded_terrain_path)
+            return matches_terminal_coordinates(profile, *current)
+        except (OSError, ValueError):
+            return False
 
     def _new_link(self) -> None:
+        self.link_form_initialized = True
         self.loaded_project = None
         self.loaded_terrain_path = None
         self.link_project_path = None
-        self.name_var.set(tr('Meu enlace'))
-        self.frequency_var.set("146.000")
+        self._automatic_output["link"] = True
+        self.name_var.set(tr('Novo Enlace'))
+        self.frequency_var.set("")
         self.mode_var.set("FM")
         self.polarization_var.set(choice_label("vertical"))
-        self.availability_var.set("70")
+        self.availability_var.set("")
         self.allow_mode_change_var.set(False)
         defaults = {
-            "a": (tr('Estação A'), "10", "2", "1", "50"),
-            "b": (tr('Estação B'), "10", "2", "1", "50"),
+            "a": (tr('Estação A'), "", "", "", ""),
+            "b": (tr('Estação B'), "", "", "", ""),
         }
         for key, values in defaults.items():
             variables = self.terminal_vars[key]
@@ -1681,8 +1728,8 @@ class RadioLinkPlannerApp:
             variables["gain"].set(values[2])
             variables["line_loss"].set(values[3])
             variables["power"].set(values[4])
-            self.link_thresholds[key].load("FM", ReceiverSpec())
-        self.output_var.set(str(Path.home() / APP_NAME / "Resultados" / "Meu-enlace"))
+            self.link_thresholds[key].clear("FM")
+        self._set_output_directory("link", suggested_output_directory(self.name_var.get()), automatic=True)
         self.last_outcome = None
         self._disable_result_actions()
         self.status_var.set(tr('Novo enlace. Informe as coordenadas dos terminais.'))
@@ -1691,14 +1738,16 @@ class RadioLinkPlannerApp:
     def _save_link_project(self) -> None:
         try:
             values = self._collect_editor_values()
+            reuse_terrain = self._can_reuse_loaded_terrain()
             project = project_from_editor_values(
                 values,
                 template=self.loaded_project,
                 terrain_profile=(
                     str(self.loaded_terrain_path)
-                    if self._can_reuse_loaded_terrain() else "terrain_profile.csv"
+                    if reuse_terrain else "terrain_profile.csv"
                 ),
             )
+            project.metadata["output_directory"] = self.output_var.get().strip()
         except Exception as exc:  # noqa: BLE001 - form validation boundary
             messagebox.showerror(
                 APP_NAME,
@@ -1726,6 +1775,8 @@ class RadioLinkPlannerApp:
             )
             return
         self.loaded_project = project
+        if not reuse_terrain:
+            self.loaded_terrain_path = None
         self.link_project_path = destination
         self.status_var.set(tr('Projeto salvo: {x0}.', x0=destination.name))
 
@@ -1753,11 +1804,16 @@ class RadioLinkPlannerApp:
             )
             return
         self.loaded_project = project
+        self.link_form_initialized = True
         self.link_project_path = path.resolve()
         self.loaded_terrain_path = terrain_path if terrain_path.is_file() else None
         self._apply_editor_values(values)
-        output_name = project_slug(project.name)
-        self.output_var.set(str(Path.home() / APP_NAME / "Resultados" / output_name))
+        saved_output = project.metadata.get("output_directory")
+        automatic_output = suggested_output_directory(project.name)
+        self._set_output_directory(
+            "link", saved_output or automatic_output,
+            automatic=not saved_output or Path(str(saved_output)) == automatic_output,
+        )
         self.runs_var.set(str(project.monte_carlo.runs))
         self.last_outcome = None
         self._disable_result_actions()
@@ -1771,35 +1827,34 @@ class RadioLinkPlannerApp:
             )
 
     def _new_coverage(self) -> None:
+        self._automatic_output["coverage"] = True
         defaults = {
-            "name": tr('Minha cobertura'),
+            "name": tr('Nova Cobertura'),
             "latitude": "",
             "longitude": "",
-            "frequency": "146.000",
+            "frequency": "",
             "polarization": choice_label("vertical"),
             "mode": "FM",
             "radius": "50",
             "resolution_preset": choice_label("recommended"),
             "custom_resolution": "500",
             "time_percentage": "50",
-            "tx_height": "30",
-            "tx_gain": "6",
-            "tx_line_loss": "1",
-            "tx_power": "50",
-            "rx_height": "2",
-            "rx_gain": "2",
-            "rx_line_loss": "1",
-            "output": str(
-                Path.home()
-                / APP_NAME
-                / "Resultados"
-                / "Minha-cobertura"
-            ),
+            "tx_height": "",
+            "tx_gain": "",
+            "tx_line_loss": "",
+            "tx_power": "",
+            "rx_height": "",
+            "rx_gain": "",
+            "rx_line_loss": "",
             **COVERAGE_ANTENNA_DEFAULTS,
+            "tx_hpbw": "",
+            "tx_front_to_back": "",
+            "tx_azimuth": "",
         }
         for key, value in defaults.items():
             self.coverage_vars[key].set(choice_label(value) if key == "tx_pattern" else value)
-        self.coverage_threshold.load("FM", ReceiverSpec())
+        self._set_output_directory("coverage", suggested_output_directory(self.coverage_vars["name"].get()), automatic=True)
+        self.coverage_threshold.clear("FM")
         self.coverage_project_path = None
         self.last_coverage = None
         self._disable_result_actions()
@@ -1817,6 +1872,11 @@ class RadioLinkPlannerApp:
                 APP_NAME,
                 tr('Informe um nome para a cobertura antes de salvar.'),
             )
+            return
+        try:
+            self._collect_coverage_request()
+        except (ValueError, TypeError) as exc:
+            messagebox.showerror(APP_NAME, validation_message(exc))
             return
         selected = filedialog.asksaveasfilename(
             title=tr('Salvar projeto de cobertura'),
@@ -1886,7 +1946,13 @@ class RadioLinkPlannerApp:
             )
             return
         for key, value in values.items():
-            self.coverage_vars[key].set(value)
+            if key != "output":
+                self.coverage_vars[key].set(value)
+        saved_output = values["output"]
+        self._set_output_directory(
+            "coverage", saved_output,
+            automatic=Path(saved_output) == suggested_output_directory(values["name"]),
+        )
         self.coverage_threshold.load(values["mode"], receiver)
         self.coverage_project_path = Path(selected).resolve()
         self.last_coverage = None
@@ -1946,6 +2012,7 @@ class RadioLinkPlannerApp:
     def _collect_editor_values(self) -> ProjectEditorValues:
         def terminal(terminal_id: str, label: str) -> TerminalEditorValues:
             variables = self.terminal_vars[terminal_id]
+            self._parse_float(variables["sensitivity"].get(), tr("Sensibilidade RX (dBm)"))
             receiver = self.link_thresholds[terminal_id].receiver(self._parse_float)
             active_threshold, _ = threshold_dbm(receiver, self.mode_var.get())
             return TerminalEditorValues(
@@ -2063,6 +2130,8 @@ class RadioLinkPlannerApp:
                 front_to_back_db=self._parse_float(values["tx_front_to_back"].get(), tr("Relação frente/costas (dB)")),
                 azimuth_deg=self._parse_float(values["tx_azimuth"].get(), tr("Azimute de apontamento (°)")),
             )
+        # New projects must not silently fall back to a receiver preset.
+        self._parse_float(values["rx_sensitivity"].get(), tr("Sensibilidade receptora"))
         request = CoverageRequest(
             name=values["name"].get().strip(),
             latitude_deg=self._parse_float(
