@@ -23,6 +23,7 @@ from .legal_notices import (
 )
 from .report import describe_fresnel_clearance, describe_geometry_clearance
 from .propagation.p1812 import P1812_TIME_HELP
+from .version import APP_NAME
 
 _RED = "#c62835"
 _DARK = "#20252b"
@@ -650,7 +651,7 @@ def _build_document(
         topMargin=16 * report["mm"],
         bottomMargin=17 * report["mm"],
         title=destination.stem,
-        author="Radio Link Planner",
+        author=APP_NAME,
     )
 
     def footer(canvas: Any, doc: Any) -> None:
@@ -669,7 +670,7 @@ def _build_document(
         canvas.drawString(
             16 * report["mm"],
             8 * report["mm"],
-            tr('Radio Link Planner • processamento local'),
+            tr('{app_name} • processamento local', app_name=APP_NAME),
         )
         canvas.drawRightString(
             width - 16 * report["mm"],

@@ -32,6 +32,7 @@ from .legal_notices import (
 from .map_export import COVERAGE_MAP_PDF, map_export_script
 from .propagation.p1812 import P1812_TIME_HELP
 from .report import _install_map_assets
+from .version import APP_NAME
 
 _MATPLOTLIB_CACHE = Path(tempfile.gettempdir()) / "radio-link-planner-matplotlib"
 _MATPLOTLIB_CACHE.mkdir(parents=True, exist_ok=True)
@@ -528,7 +529,7 @@ def _build_coverage_report(
         float(grid_metadata.get("compute_seconds", 0.0))
     )
     if radials is None:
-        eyebrow = tr('Radio Link Planner · grade métrica direta')
+        eyebrow = tr('{app_name} · grade métrica direta', app_name=APP_NAME)
         traceability_rows = f"""
         <tr><th>{html.escape(tr('Modelo'))}</th><td>ITU-R P.1812-8</td></tr>
         <tr><th>{html.escape(tr('Implementação'))}</th>
@@ -563,7 +564,7 @@ def _build_coverage_report(
       <p class="note">{html.escape(tr("Cada centro de célula a partir de 250 m recebeu uma execução independente da P.1812 com seu próprio perfil de terreno. Não há interpolação de perda entre radiais ou entre células. A imagem pode ser reamostrada apenas para exibição no navegador."))}</p>
       <p class="note">{html.escape(tr("A P.1812-8 declara escopo a partir de 0,25 km. Dentro dessa distância, o programa utiliza perda em espaço livre, identificada separadamente nos metadados."))}</p>"""
     else:
-        eyebrow = tr('Radio Link Planner · comparação radial legada')
+        eyebrow = tr('{app_name} · comparação radial legada', app_name=APP_NAME)
         evaluated = sum(item.evaluated_point_count for item in radials)
         traceability_rows = f"""
         <tr><th>Modelo</th><td>ITU-R P.1812-8</td></tr>
@@ -581,7 +582,7 @@ def _build_coverage_report(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <title>{html.escape(tr('{x0} — Radio Link Planner', x0=request.name))}</title>
+  <title>{html.escape(f'{request.name} — {APP_NAME}')}</title>
   <link rel="stylesheet" href="{html.escape(map_css, quote=True)}">
   <style>
     :root {{ --ink:#17191d; --muted:#60646c; --line:#d7dae0;

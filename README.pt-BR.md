@@ -1,10 +1,10 @@
-# Radio Link Planner
+# PU2PTU - Radio Link Planner
 
 [English](README.md) | **Português (Brasil)**
 
 Ferramenta local de planejamento de **enlaces terrestres VHF/UHF ponto a ponto e cobertura**. Reúne perfis de terreno, modelos de propagação, orçamento bidirecional, análise de incertezas e relatórios técnicos rastreáveis. O repositório contém interface desktop para Windows e motor científico de linha de comando.
 
-**Autor:** Mario Pin, PU2PTU · **Aplicativo:** 0.6.1 (pré-lançamento)
+**Autor:** Mario Pin, PU2PTU · **Aplicativo:** 0.6.2 (pré-lançamento)
 
 ## O que faz
 

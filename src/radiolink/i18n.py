@@ -9,6 +9,7 @@ from contextvars import ContextVar
 from pathlib import Path
 
 from .translations import MESSAGES
+from .version import APP_NAME
 
 LANGUAGES = {
     "pt": ("Português", "br"),
@@ -147,7 +148,10 @@ def validation_message(error: Exception) -> str:
     }
     messages = []
     for issue in error.errors(include_url=False):
-        field = tr(fields.get(str(issue["loc"][-1]), str(issue["loc"][-1]))) if issue["loc"] else tr("Projeto Radio Link Planner")
+        field = (
+            tr(fields.get(str(issue["loc"][-1]), str(issue["loc"][-1])))
+            if issue["loc"] else tr("Projeto {app_name}", app_name=APP_NAME)
+        )
         context = issue.get("ctx", {})
         bound = next((context[key] for key in ("ge", "gt", "le", "lt") if key in context), None)
         template = {

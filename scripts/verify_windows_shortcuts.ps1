@@ -4,9 +4,15 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$appName = "PU2PTU - Radio Link Planner"
 $expectedTarget = Join-Path $InstallDirectory "RadioLinkPlanner.exe"
 $expectedIcon = Join-Path $InstallDirectory "RadioLinkPlanner-$Version.ico"
 $sourceIcon = Join-Path $PSScriptRoot "..\assets\app-icon.ico"
+$versionInfo = (Get-Item -LiteralPath $expectedTarget).VersionInfo
+if ($versionInfo.ProductName -ne $appName -or $versionInfo.FileDescription -ne $appName -or
+    $versionInfo.ProductVersion -ne $Version) {
+  throw "The installed executable has unexpected Windows product metadata."
+}
 if (-not (Test-Path -LiteralPath $expectedIcon)) {
   throw "Installed shortcut icon is missing: $expectedIcon"
 }
@@ -31,13 +37,18 @@ try {
   $icon.Dispose()
 }
 
-$locations = @(
-  (Join-Path ([Environment]::GetFolderPath("CommonPrograms")) "Radio Link Planner.lnk"),
-  (Join-Path ([Environment]::GetFolderPath("CommonDesktopDirectory")) "Radio Link Planner.lnk")
+$shortcutFolders = @(
+  [Environment]::GetFolderPath("CommonPrograms"),
+  [Environment]::GetFolderPath("CommonDesktopDirectory")
 )
 $shell = New-Object -ComObject WScript.Shell
 try {
-  $results = foreach ($location in $locations) {
+  $results = foreach ($folder in $shortcutFolders) {
+    $legacyLocation = Join-Path $folder "Radio Link Planner.lnk"
+    if (Test-Path -LiteralPath $legacyLocation) {
+      throw "The upgrade left a shortcut with the previous name: $legacyLocation"
+    }
+    $location = Join-Path $folder "$appName.lnk"
     if (-not (Test-Path -LiteralPath $location)) {
       throw "Installer did not create shortcut: $location"
     }

@@ -10,6 +10,7 @@ from pathlib import Path
 from pypdf import PdfReader
 
 from radiolink.i18n import set_language, tr
+from radiolink.version import APP_NAME
 
 
 def verify(directory: Path) -> None:
@@ -20,6 +21,7 @@ def verify(directory: Path) -> None:
         for key in ("report_pdf", "coverage_pdf"):
             reader = PdfReader(values[key])
             text = "\n".join(page.extract_text() for page in reader.pages)
+            assert reader.metadata.author == APP_NAME and APP_NAME in text, (language, key, "product name")
             assert tr("Configuração") in text, (language, key, "untranslated heading")
             assert "\u25a0" not in text, (language, key, "missing glyph")
             assert "Copernicus WorldDEM-30" in text, (language, key, "missing DEM credit")
@@ -31,6 +33,7 @@ def verify(directory: Path) -> None:
                     assert model in text, (language, model)
         for report in (directory / language).rglob("*.html"):
             body = report.read_text(encoding="utf-8")
+            assert APP_NAME in body, (language, report, "product name")
             assert "https://www.openstreetmap.org/copyright" in body, (language, report, "missing OSM attribution link")
             assert "Copernicus WorldDEM-30" in body, (language, report, "missing DEM credit")
             for index, script in enumerate(re.findall(r"<script>(.*?)</script>", body, re.S)):

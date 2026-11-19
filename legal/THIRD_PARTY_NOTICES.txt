@@ -8,7 +8,7 @@ dependencies. Complete the release-package audit before commercial launch.
 1. NTIA ITS Irregular Terrain Model (ITM), upstream NTIA/itm.
    https://github.com/NTIA/itm
    Licence and modification history are distributed alongside this file as
-   LICENSE.md and NOTICE.md. NTIA does not endorse Radio Link Planner.
+   LICENSE.md and NOTICE.md. NTIA does not endorse PU2PTU - Radio Link Planner.
 
 2. Py1812, by Ivica Stevanovic (eeveetza), pinned upstream implementation.
    https://github.com/eeveetza/Py1812
@@ -65,5 +65,5 @@ distributable. The user downloads them from official ITU sources into the
 user's local profile. Commercial automated-download terms remain subject to
 formal clarification with the ITU; see legal/ITU-CLARIFICATION-REQUEST.en.md.
 
-Radio Link Planner's own proprietary licence is separate from every licence
+The proprietary licence for PU2PTU - Radio Link Planner is separate from every licence
 above. No preliminary licence draft changes third-party rights.

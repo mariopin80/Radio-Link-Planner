@@ -11,7 +11,7 @@ from pathlib import Path
 from .domain import Environment, Polarization, Project, ReceiverSpec, Terminal
 from .geodesy import great_circle_distance_m
 from .modes import MODE_PROFILES, threshold_dbm
-from .version import __version__
+from .version import APP_NAME, __version__
 
 MIN_DESKTOP_FREQUENCY_MHZ = 30.0
 MAX_DESKTOP_FREQUENCY_MHZ = 3000.0
@@ -134,7 +134,7 @@ def project_from_editor_values(
             allow_mode_change=values.allow_mode_change,
             environment=environment,
             metadata={
-                "created_with": f"Radio Link Planner desktop {__version__}",
+                "created_with": f"{APP_NAME} desktop {__version__}",
                 "terrain_zone_assumption": "all_inland_land",
             },
         )

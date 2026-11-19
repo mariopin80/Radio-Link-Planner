@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urlparse
 from .desktop_core import bundle_root
 from .legal_notices import OSM_HTML_ATTRIBUTION
 from .report import MAPLIBRE_VERSION
+from .version import APP_NAME
 
 CoordinateCallback = Callable[[float, float], None]
 
@@ -96,6 +97,10 @@ def open_coordinate_picker(
                         tr('Coordenadas inválidas.').encode("utf-8"),
                     )
                     return
+                confirmation = tr(
+                    'As coordenadas foram enviadas ao {app_name}. Esta janela será fechada automaticamente.',
+                    app_name=APP_NAME,
+                )
                 self._send(
                     200,
                     "text/html; charset=utf-8",
@@ -104,7 +109,7 @@ def open_coordinate_picker(
                         f"<title>{html.escape(tr('Local selecionado'))}</title>"
                         "<body style='font:18px Segoe UI;padding:40px'>"
                         f"<h2>{html.escape(tr('Local selecionado'))}</h2>"
-                        f"<p>{html.escape(tr('As coordenadas foram enviadas ao Radio Link Planner. Esta janela será fechada automaticamente.'))}</p>"
+                        f"<p>{html.escape(confirmation)}</p>"
                         "<script>setTimeout(() => window.close(), 350);</script>"
                         "</body>"
                     ).encode("utf-8"),
