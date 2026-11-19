@@ -385,3 +385,46 @@ def test_failed_link_keeps_previous_execution(reference_project, reference_profi
     assert {key: path.read_bytes() for key, path in first.paths.items()} == snapshot
     config = json.loads(second.paths["project_json"].read_text(encoding="utf-8"))
     assert config["frequency_mhz"] == second.result["project"]["frequency_mhz"] == 435.0
+
+
+def test_incompatible_saved_terrain_is_replaced_before_analysis(
+    reference_project, reference_profile, tmp_path, monkeypatch,
+):
+    import numpy as np
+    from radiolink.copernicus import write_profile_csv
+    from radiolink.geodesy import great_circle_distance_m
+    from radiolink.terrain import TerrainProfile, matches_terminal_coordinates
+
+    project = reference_project.model_copy(deep=True)
+    project.terminal_a.latitude_deg = -23.27873714
+    project.terminal_a.longitude_deg = -47.67702601
+    project.terminal_b.latitude_deg = -23.45842360
+    project.terminal_b.longitude_deg = -46.76704776
+    extracted = []
+
+    def fake_extract(lat_a, lon_a, lat_b, lon_b, destination, **kwargs):
+        extracted.append((lat_a, lon_a, lat_b, lon_b))
+        distance_km = great_circle_distance_m(lat_a, lon_a, lat_b, lon_b) / 1000
+        write_profile_csv(
+            destination, np.array([0., distance_km]),
+            np.array([lat_a, lat_b]), np.array([lon_a, lon_b]),
+            np.array([600., 650.]),
+        )
+        return TerrainProfile.from_csv(destination)
+
+    def fake_analyze(project, profile, directory, *, make_plots, progress):
+        assert matches_terminal_coordinates(
+            profile, project.terminal_a.latitude_deg, project.terminal_a.longitude_deg,
+            project.terminal_b.latitude_deg, project.terminal_b.longitude_deg,
+        )
+        report = directory / "report.html"
+        report.write_text("ok", encoding="utf-8")
+        return AnalysisOutcome(project, {}, {"report_html": report})
+
+    monkeypatch.setattr("radiolink.desktop_core.extract_profile", fake_extract)
+    monkeypatch.setattr("radiolink.desktop_core._analyze", fake_analyze)
+    result = run_form_analysis(FormAnalysisRequest(
+        project, tmp_path / "new-link", existing_terrain_path=reference_profile.source_path,
+    ), download_model_data=False)
+    assert len(extracted) == 1
+    assert result.paths["terrain_profile"].is_file()

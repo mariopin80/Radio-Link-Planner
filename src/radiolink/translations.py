@@ -870,4 +870,16 @@ MESSAGES.update({
         "ITM finished with an additional warning.", "El ITM terminó con un aviso adicional.",
         "L'ITM a terminé avec un avertissement supplémentaire.", "Das ITM wurde mit einer zusätzlichen Warnung abgeschlossen.",
     ),
+    "Novo Enlace": ("New Link", "Nuevo Enlace", "Nouvelle liaison", "Neue Funkstrecke"),
+    "Nova Cobertura": ("New Coverage", "Nueva cobertura", "Nouvelle couverture", "Neue Funkabdeckung"),
+    "Escolha o tipo de análise.": (
+        "Choose an analysis type.", "Elija el tipo de análisis.",
+        "Choisissez le type d’analyse.", "Wählen Sie die Art der Analyse.",
+    ),
+    "Terreno: perfil anterior incompatível; obtendo novo perfil Copernicus.": (
+        "Terrain: previous profile is incompatible; retrieving a new Copernicus profile.",
+        "Terreno: el perfil anterior es incompatible; obteniendo un nuevo perfil Copernicus.",
+        "Terrain : profil précédent incompatible ; récupération d’un nouveau profil Copernicus.",
+        "Gelände: vorheriges Profil ist inkompatibel; neues Copernicus-Profil wird abgerufen.",
+    ),
 })
