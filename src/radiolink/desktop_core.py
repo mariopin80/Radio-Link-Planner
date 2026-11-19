@@ -19,8 +19,9 @@ from .project_editor import project_slug, write_project_json
 from .report import describe_fresnel_clearance, describe_geometry_clearance, write_outputs
 from .result_runs import published_paths, result_run
 from .terrain import TerrainProfile, matches_terminal_coordinates
+from .version import APP_NAME
 
-APP_NAME = "Radio Link Planner"
+RESULTS_DIRECTORY = Path("Radio Link Planner") / "Resultados"
 EXAMPLE_PROJECT = Path("examples") / "morro_jacu_palmira.json"
 ProgressCallback = Callable[[str], None]
 
@@ -63,12 +64,12 @@ def bundled_example_path() -> Path:
 
 
 def default_output_directory() -> Path:
-    return Path.home() / APP_NAME / "Resultados" / "Morro-do-Jacu-Palmira"
+    return Path.home() / RESULTS_DIRECTORY / "Morro-do-Jacu-Palmira"
 
 
 def suggested_output_directory(name: str) -> Path:
     """Default output folder for either editor, based on the project name."""
-    return Path.home() / APP_NAME / "Resultados" / project_slug(name or "Projeto")
+    return Path.home() / RESULTS_DIRECTORY / project_slug(name or "Projeto")
 
 
 def run_analysis(
@@ -136,7 +137,7 @@ def run_form_analysis(
                 progress=progress,
             )
             project.terrain_source = (
-                "Copernicus GLO-30, obtido automaticamente pelo Radio Link Planner"
+                f"Copernicus GLO-30, obtido automaticamente pelo {APP_NAME}"
             )
             project.terrain_resolution_m = request.terrain_step_m
             project.clutter_included = False

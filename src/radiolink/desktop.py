@@ -35,7 +35,6 @@ from .coverage_grid import (
     format_duration,
 )
 from .desktop_core import (
-    APP_NAME,
     AnalysisOutcome,
     FormAnalysisRequest,
     build_desktop_summary,
@@ -62,7 +61,7 @@ from .project_editor import (
 from .project_files import COVERAGE_THRESHOLD_OVERRIDES, read_coverage_project, write_coverage_project
 from .report_server import open_report_in_browser
 from .terrain import TerrainProfile, matches_terminal_coordinates
-from .version import __version__, RELEASE_MONTH, DEVELOPER, CALLSIGN, CONTACT_EMAIL
+from .version import APP_NAME, __version__, RELEASE_MONTH, DEVELOPER, CALLSIGN, CONTACT_EMAIL
 from .i18n import LANGUAGES, tr, choice_id, choice_label, get_language, load_language, set_language, validation_message
 
 def resolution_labels() -> dict[str, str]:
@@ -79,20 +78,11 @@ class _ReceiverThresholdInput:
         self.base = ReceiverSpec()
         self.overrides: dict[str, str] = {}
         self.rendering = False
-        self.blank_when_unset = False
         self.value.trace_add("write", self._edited)
 
     def load(self, mode: str, receiver: ReceiverSpec) -> None:
-        self.blank_when_unset = False
         self.base = receiver.model_copy(update={"threshold_overrides_dbm": {}})
         self.overrides = {key.upper(): str(value) for key, value in receiver.threshold_overrides_dbm.items()}
-        self.show(mode)
-
-    def clear(self, mode: str) -> None:
-        """Require a deliberate sensitivity value in a new project."""
-        self.blank_when_unset = True
-        self.base = ReceiverSpec()
-        self.overrides = {}
         self.show(mode)
 
     def show(self, mode: str) -> None:
@@ -102,9 +92,7 @@ class _ReceiverThresholdInput:
         default, _ = threshold_dbm(self.base, self.mode)
         self.rendering = True
         try:
-            self.value.set(self.overrides.get(
-                self.mode, "" if self.blank_when_unset else f"{default:.2f}",
-            ))
+            self.value.set(self.overrides.get(self.mode, f"{default:.2f}"))
         finally:
             self.rendering = False
         self._show_source()
@@ -120,8 +108,7 @@ class _ReceiverThresholdInput:
 
     def _show_source(self) -> None:
         self.source.set(
-            tr("Limiar informado") if self.mode in self.overrides else
-            "" if self.blank_when_unset else tr("Limiar do preset")
+            tr("Limiar informado") if self.mode in self.overrides else tr("Limiar do preset")
         )
 
     def receiver(self, parse) -> ReceiverSpec:
@@ -202,7 +189,7 @@ class RadioLinkPlannerApp:
             for key, default in COVERAGE_ANTENNA_DEFAULTS.items()
         })
         self.coverage_threshold = _ReceiverThresholdInput(root, self.coverage_vars["rx_sensitivity"])
-        self.coverage_threshold.clear("FM")
+        self.coverage_threshold.load("FM", ReceiverSpec())
         self.coverage_resolution_var = tk.StringVar()
         self.coverage_progress_var = tk.StringVar(
             value=tr('Aguardando o início do cálculo.')
@@ -1713,7 +1700,7 @@ class RadioLinkPlannerApp:
         self.frequency_var.set("")
         self.mode_var.set("FM")
         self.polarization_var.set(choice_label("vertical"))
-        self.availability_var.set("")
+        self.availability_var.set("50")
         self.allow_mode_change_var.set(False)
         defaults = {
             "a": (tr('Estação A'), "", "", "", ""),
@@ -1728,7 +1715,7 @@ class RadioLinkPlannerApp:
             variables["gain"].set(values[2])
             variables["line_loss"].set(values[3])
             variables["power"].set(values[4])
-            self.link_thresholds[key].clear("FM")
+            self.link_thresholds[key].load("FM", ReceiverSpec())
         self._set_output_directory("link", suggested_output_directory(self.name_var.get()), automatic=True)
         self.last_outcome = None
         self._disable_result_actions()
@@ -1759,7 +1746,7 @@ class RadioLinkPlannerApp:
             defaultextension=".rlp",
             initialfile=f"{project_slug(project.name)}.rlp",
             filetypes=(
-                (tr('Projeto Radio Link Planner'), "*.rlp"),
+                (tr('Projeto {app_name}', app_name=APP_NAME), "*.rlp"),
                 (tr('Projeto JSON'), "*.json"),
                 (tr('Todos os arquivos'), "*.*"),
             ),
@@ -1784,7 +1771,7 @@ class RadioLinkPlannerApp:
         selected = filedialog.askopenfilename(
             title=tr('Abrir projeto de enlace'),
             filetypes=(
-                (tr('Projeto Radio Link Planner'), "*.rlp"),
+                (tr('Projeto {app_name}', app_name=APP_NAME), "*.rlp"),
                 (tr('Projeto JSON'), "*.json"),
                 (tr('Todos os arquivos'), "*.*"),
             ),
@@ -1854,7 +1841,7 @@ class RadioLinkPlannerApp:
         for key, value in defaults.items():
             self.coverage_vars[key].set(choice_label(value) if key == "tx_pattern" else value)
         self._set_output_directory("coverage", suggested_output_directory(self.coverage_vars["name"].get()), automatic=True)
-        self.coverage_threshold.clear("FM")
+        self.coverage_threshold.load("FM", ReceiverSpec())
         self.coverage_project_path = None
         self.last_coverage = None
         self._disable_result_actions()
@@ -1883,7 +1870,7 @@ class RadioLinkPlannerApp:
             defaultextension=".rlp",
             initialfile=f"{project_slug(name)}.rlp",
             filetypes=(
-                (tr('Projeto Radio Link Planner'), "*.rlp"),
+                (tr('Projeto {app_name}', app_name=APP_NAME), "*.rlp"),
                 (tr('Todos os arquivos'), "*.*"),
             ),
         )
@@ -1915,7 +1902,7 @@ class RadioLinkPlannerApp:
         selected = filedialog.askopenfilename(
             title=tr('Abrir projeto de cobertura'),
             filetypes=(
-                (tr('Projeto Radio Link Planner'), "*.rlp"),
+                (tr('Projeto {app_name}', app_name=APP_NAME), "*.rlp"),
                 (tr('Todos os arquivos'), "*.*"),
             ),
         )
@@ -2012,7 +1999,6 @@ class RadioLinkPlannerApp:
     def _collect_editor_values(self) -> ProjectEditorValues:
         def terminal(terminal_id: str, label: str) -> TerminalEditorValues:
             variables = self.terminal_vars[terminal_id]
-            self._parse_float(variables["sensitivity"].get(), tr("Sensibilidade RX (dBm)"))
             receiver = self.link_thresholds[terminal_id].receiver(self._parse_float)
             active_threshold, _ = threshold_dbm(receiver, self.mode_var.get())
             return TerminalEditorValues(

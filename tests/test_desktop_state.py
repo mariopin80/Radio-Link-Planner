@@ -11,8 +11,9 @@ import pytest
 from radiolink.antenna import COVERAGE_ANTENNA_DEFAULTS
 from radiolink.desktop import RadioLinkPlannerApp, _ReceiverThresholdInput
 from radiolink.desktop_core import suggested_output_directory
-from radiolink.domain import ReceiverSpec
+from radiolink.domain import Project, ReceiverSpec
 from radiolink.i18n import get_language, set_language
+from radiolink.modes import MODE_PROFILES, threshold_dbm
 from radiolink.project_editor import editor_values_from_project
 
 
@@ -73,10 +74,12 @@ def test_new_link_starts_blank_and_updates_only_automatic_output():
     app._new_link()
     assert app.name_var.get() == "Novo Enlace"
     assert app.link_form_initialized
-    assert app.frequency_var.get() == app.availability_var.get() == ""
+    assert app.frequency_var.get() == ""
+    assert app.availability_var.get() == "50"
     for station in app.terminal_vars.values():
-        for field in ("latitude", "longitude", "height", "gain", "line_loss", "power", "sensitivity"):
+        for field in ("latitude", "longitude", "height", "gain", "line_loss", "power"):
             assert station[field].get() == ""
+        assert station["sensitivity"].get() == "-115.03"
     assert app.output_var.get() == str(suggested_output_directory("Novo Enlace"))
     with pytest.raises(ValueError):
         app._collect_editor_values()
@@ -98,9 +101,10 @@ def test_new_coverage_starts_with_empty_equipment_and_presets_for_analysis():
     assert v["name"].get() == "Nova Cobertura"
     assert v["radius"].get() == "50"
     assert v["time_percentage"].get() == "50"
+    assert v["rx_sensitivity"].get() == "-115.03"
     for field in (
         "latitude", "longitude", "frequency", "tx_height", "tx_gain", "tx_line_loss",
-        "tx_power", "rx_height", "rx_gain", "rx_line_loss", "rx_sensitivity",
+        "tx_power", "rx_height", "rx_gain", "rx_line_loss",
         "tx_hpbw", "tx_front_to_back", "tx_azimuth",
     ):
         assert v[field].get() == ""
@@ -114,16 +118,62 @@ def test_new_coverage_starts_with_empty_equipment_and_presets_for_analysis():
     assert Path(v["output"].get()).name == "coverage-output"
 
 
-def test_sensitivity_is_blank_for_new_stations_but_presets_survive_loaded_projects():
-    tcl = tk.Tcl()
-    value = tk.StringVar(master=tcl)
-    control = _ReceiverThresholdInput(tcl, value)
-    control.clear("FM")
-    assert value.get() == ""
-    control.show("SSB")
-    assert value.get() == ""
-    control.load("FM", ReceiverSpec())
-    assert value.get() != ""
+def test_new_projects_offer_the_preset_for_every_mode():
+    app = make_editor()
+    app._new_link()
+    app._new_coverage()
+    for mode in MODE_PROFILES:
+        app.mode_var.set(mode)
+        app._mode_changed(None)
+        app.coverage_vars["mode"].set(mode)
+        app._coverage_mode_changed(None)
+        expected, _ = threshold_dbm(ReceiverSpec(), mode)
+        for control in (*app.link_thresholds.values(), app.coverage_threshold):
+            assert control.value.get() == f"{expected:.2f}"
+            assert control.source.get() == "Limiar do preset"
+
+    app.coverage_threshold.value.set("-138")
+    assert app.coverage_threshold.source.get() == "Limiar informado"
+    app._new_coverage()
+    assert app.coverage_threshold.overrides == {}
+    assert app.coverage_threshold.value.get() == "-115.03"
+
+
+def test_link_sensitivity_overrides_round_trip_by_mode_and_terminal(
+    reference_project, tmp_path, monkeypatch,
+):
+    app = make_editor()
+    app._new_link()
+    app._apply_editor_values(editor_values_from_project(reference_project))
+    a, b = app.link_thresholds["a"], app.link_thresholds["b"]
+    app.mode_var.set("FM")
+    app._mode_changed(None)
+    a.value.set("-117.5")
+    b.value.set("-120")
+    app.mode_var.set("SSB")
+    app._mode_changed(None)
+    a.value.set("-131")
+    b.value.set("-132")
+    app.mode_var.set("FM")
+    app._mode_changed(None)
+    assert (float(a.value.get()), float(b.value.get())) == (-117.5, -120)
+    assert a.source.get() == b.source.get() == "Limiar informado"
+
+    filename = tmp_path / "sensitivities.rlp"
+    monkeypatch.setattr("radiolink.desktop.filedialog.asksaveasfilename", lambda **_: str(filename))
+    app._save_link_project()
+    saved, _ = Project.from_json(filename)
+
+    app._new_link()
+    assert a.overrides == b.overrides == {}
+    app._apply_editor_values(editor_values_from_project(saved))
+    assert (float(a.value.get()), float(b.value.get())) == (-117.5, -120)
+    app.mode_var.set("SSB")
+    app._mode_changed(None)
+    assert (float(a.value.get()), float(b.value.get())) == (-131, -132)
+    a.value.set("")
+    assert a.source.get() == "Limiar do preset"
+    assert "SSB" not in app._collect_editor_values().terminal_a.receiver.threshold_overrides_dbm
 
 
 def test_saving_changed_coordinates_invalidates_previous_profile(

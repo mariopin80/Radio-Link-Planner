@@ -96,7 +96,7 @@ def test_translated_html_preserves_user_names_and_styles(reference_project, refe
                 self.text += text
     title = Title()
     title.feed(markup)
-    assert title.text == project.name + " — Radio Link Planner"
+    assert title.text == project.name + " — PU2PTU - Radio Link Planner"
     assert "<Station B>" not in markup
     assert "&gt;" not in markup.split("<style>")[1].split("</style>")[0]
 
@@ -177,8 +177,7 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
             app._show_start_screen()
             app._open_mode("coverage")
             app._new_coverage()
-            # The 0.6.1 form deliberately leaves station equipment blank.
-            # Supply valid values before exercising saving and mode changes.
+            # Supply station parameters before exercising saving and mode changes.
             for key, value in {
                 "latitude": "-23.0",
                 "longitude": "-47.0",

@@ -32,6 +32,7 @@ from .legal_notices import (
 from .terrain import TerrainProfile
 from .map_export import LINK_MAP_PDF, map_export_script
 from .propagation.p1812 import P1812_TIME_HELP
+from .version import APP_NAME
 
 _MATPLOTLIB_CACHE = Path(tempfile.gettempdir()) / "radio-link-planner-matplotlib"
 _MATPLOTLIB_CACHE.mkdir(parents=True, exist_ok=True)
@@ -549,6 +550,8 @@ def build_html_report(
         )
     map_css, map_js = map_assets
     route_json = _route_json(project, profile)
+    title = f"{project.name} — {APP_NAME}"
+    engine_label = f"{APP_NAME} {result['engine_version']}"
     images = ""
     if make_plots or "height_optimization" in result:
         images += (
@@ -566,7 +569,7 @@ def build_html_report(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="strict-origin-when-cross-origin">
-  <title>{html.escape(tr('{x0} — Radio Link Planner', x0=project.name))}</title>
+  <title>{html.escape(title)}</title>
   <link rel="stylesheet" href="{html.escape(map_css, quote=True)}">
   <style>
     :root {{ --ink:#17191d; --muted:#60646c; --line:#d7dae0;
@@ -609,7 +612,7 @@ def build_html_report(
 </head>
 <body>
   <header>
-    <div class="version">{html.escape(tr('Radio Link Planner {x0}', x0=result['engine_version']))}</div>
+    <div class="version">{html.escape(engine_label)}</div>
     <h1>{html.escape(project.name)}</h1>
     <div>{html.escape(tr('{x0:.3f} MHz · análise local e rastreável', x0=project.frequency_mhz))}</div>
   </header>

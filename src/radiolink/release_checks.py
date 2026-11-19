@@ -10,6 +10,7 @@ from unittest.mock import patch
 import numpy as np
 
 from .i18n import LANGUAGES, get_language, set_language
+from .version import APP_NAME, __version__
 
 
 def check_localized_reports(output: Path) -> dict:
@@ -167,18 +168,21 @@ def check_interface(root, output: Path) -> None:
         for language in LANGUAGES:
             app._change_language(language, persist=False)
             root.update_idletasks()
+            assert root.title() == f"{APP_NAME} — {__version__}"
             assert len(app.language_flags) == 5
             check_home_layout(root, output / "interface")
             app._open_mode("link")
             assert choice_id(app.polarization_var.get(), ("vertical", "horizontal")) == "vertical"
             assert app.frequency_var.get() == ""
+            assert app.availability_var.get() == "50"
+            assert all(station["sensitivity"].get() == "-115.03" for station in app.terminal_vars.values())
             assert app.notebook.tab(app.about_tab, "text") == tr("Sobre")
             app._show_start_screen()
             app._open_mode("coverage")
             app._new_coverage()
             assert app.coverage_vars["frequency"].get() == ""
-            # New coverage projects are intentionally blank in 0.6.1.
-            # Fill the technical fields before testing a calculated request.
+            assert app.coverage_vars["rx_sensitivity"].get() == "-115.03"
+            # Supply the station parameters before testing a calculated request.
             for key, value in {
                 "latitude": "-23.0",
                 "longitude": "-47.0",
@@ -190,13 +194,13 @@ def check_interface(root, output: Path) -> None:
                 "rx_height": "2",
                 "rx_gain": "2",
                 "rx_line_loss": "1",
-                "rx_sensitivity": "-120",
             }.items():
                 app.coverage_vars[key].set(value)
             app.coverage_vars["resolution_preset"].set(choice_label("custom"))
             app.coverage_vars["custom_resolution"].set("1000")
             request = app._collect_coverage_request(for_estimate=True)
             assert request.resolution_preset == "custom"
+            assert f"{request.receiver_threshold_dbm:.2f}" == "-115.03"
             app.events.put(("coverage_progress", CoverageProgress(
                 42, "cells", tr("{x0:.0f}% — Calculando células: {x1:,} de {x2:,}", x0=42, x1=400, x2=1000),
                 400, 1000, 60, 90,

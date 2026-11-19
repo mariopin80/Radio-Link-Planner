@@ -6,13 +6,13 @@ import sys
 from pathlib import Path
 
 from .desktop_core import AnalysisRequest, run_analysis
-from .version import __version__
+from .version import APP_NAME, __version__
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="radio-link",
-        description="Radio Link Planner scientific engine",
+        description=f"{APP_NAME} scientific engine",
     )
     parser.add_argument("--version", action="version", version=__version__)
     subparsers = parser.add_subparsers(dest="command", required=True)

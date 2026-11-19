@@ -1,4 +1,4 @@
-"""Radio Link Planner scientific engine."""
+"""PU2PTU - Radio Link Planner scientific engine."""
 
 from .version import __version__
 

@@ -1,5 +1,5 @@
-#define MyAppName "Radio Link Planner"
-#define MyAppVersion "0.6.1"
+#define MyAppName "PU2PTU - Radio Link Planner"
+#define MyAppVersion "0.6.2"
 #define MyAppPublisher "Mario Pin - PU2PTU"
 #define MyAppExeName "RadioLinkPlanner.exe"
 #define MyAppIconName "RadioLinkPlanner-" + MyAppVersion + ".ico"
@@ -11,11 +11,11 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-VersionInfoVersion=0.6.1.0
+VersionInfoVersion={#MyAppVersion}.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=Instalador do {#MyAppName}
 VersionInfoProductName={#MyAppName}
-VersionInfoProductVersion=0.6.1.0
+VersionInfoProductVersion={#MyAppVersion}.0
 DefaultDirName={autopf}\Radio Link Planner
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
@@ -23,7 +23,7 @@ PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\installer-output
-OutputBaseFilename=RadioLinkPlanner-0.6.1-Windows-x64-Setup
+OutputBaseFilename=RadioLinkPlanner-{#MyAppVersion}-Windows-x64-Setup
 Compression=lzma2/max
 SolidCompression=yes
 SetupIconFile=..\assets\app-icon.ico
@@ -47,6 +47,10 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "..\dist\RadioLinkPlanner\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\assets\app-icon.ico"; DestDir: "{app}"; DestName: "{#MyAppIconName}"; Flags: ignoreversion
+
+[InstallDelete]
+Type: files; Name: "{autoprograms}\Radio Link Planner.lnk"
+Type: files; Name: "{autodesktop}\Radio Link Planner.lnk"
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#MyAppIconName}"; IconIndex: 0; AppUserModelID: "MarioPin.RadioLinkPlanner"
