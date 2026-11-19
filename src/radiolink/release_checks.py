@@ -175,6 +175,7 @@ def check_interface(root, output: Path) -> None:
             assert app.notebook.tab(app.about_tab, "text") == tr("Sobre")
             app._show_start_screen()
             app._open_mode("coverage")
+            app._new_coverage()
             assert app.coverage_vars["frequency"].get() == ""
             # New coverage projects are intentionally blank in 0.6.1.
             # Fill the technical fields before testing a calculated request.
