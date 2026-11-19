@@ -155,7 +155,8 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
             assert len(app.language_flags) == 5
             check_home_layout(root, tmp_path / "interface")
             app._open_mode("link")
-            assert app._collect_editor_values().polarization == "vertical"
+            assert choice_id(app.polarization_var.get(), ("vertical", "horizontal")) == "vertical"
+            assert app.frequency_var.get() == ""
             assert app.optimize_height_button.instate(["disabled"])
             assert not hasattr(app, "pdf_button")
             assert app.notebook.tab(app.about_tab, "text") == tr("Sobre")
@@ -175,6 +176,25 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
                 assert value in about
             app._show_start_screen()
             app._open_mode("coverage")
+            app._new_coverage()
+            # The 0.6.1 form deliberately leaves station equipment blank.
+            # Supply valid values before exercising saving and mode changes.
+            for key, value in {
+                "latitude": "-23.0",
+                "longitude": "-47.0",
+                "frequency": "146",
+                "tx_height": "30",
+                "tx_gain": "6",
+                "tx_line_loss": "1",
+                "tx_power": "50",
+                "rx_height": "2",
+                "rx_gain": "2",
+                "rx_line_loss": "1",
+                "rx_sensitivity": "-120",
+                "tx_hpbw": "90",
+                "tx_front_to_back": "20",
+            }.items():
+                app.coverage_vars[key].set(value)
             assert app.report_button.cget("text") == tr("Mapa e relatório")
             assert not hasattr(app, "profile_button")
             verify_help_icons(root, ("polarization", "p1812_time", "resolution", "resolution",
