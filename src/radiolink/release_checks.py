@@ -159,7 +159,7 @@ def check_home_layout(root, output: Path) -> None:
 def check_interface(root, output: Path) -> None:
     from .coverage import CoverageProgress
     from .desktop import RadioLinkPlannerApp
-    from .i18n import choice_label, tr
+    from .i18n import choice_id, choice_label, tr
 
     original = get_language()
     app = RadioLinkPlannerApp(root, load_preferences=False)
@@ -170,10 +170,28 @@ def check_interface(root, output: Path) -> None:
             assert len(app.language_flags) == 5
             check_home_layout(root, output / "interface")
             app._open_mode("link")
-            assert app._collect_editor_values().polarization == "vertical"
+            assert choice_id(app.polarization_var.get(), ("vertical", "horizontal")) == "vertical"
+            assert app.frequency_var.get() == ""
             assert app.notebook.tab(app.about_tab, "text") == tr("Sobre")
             app._show_start_screen()
             app._open_mode("coverage")
+            assert app.coverage_vars["frequency"].get() == ""
+            # New coverage projects are intentionally blank in 0.6.1.
+            # Fill the technical fields before testing a calculated request.
+            for key, value in {
+                "latitude": "-23.0",
+                "longitude": "-47.0",
+                "frequency": "146",
+                "tx_height": "30",
+                "tx_gain": "6",
+                "tx_line_loss": "1",
+                "tx_power": "50",
+                "rx_height": "2",
+                "rx_gain": "2",
+                "rx_line_loss": "1",
+                "rx_sensitivity": "-120",
+            }.items():
+                app.coverage_vars[key].set(value)
             app.coverage_vars["resolution_preset"].set(choice_label("custom"))
             app.coverage_vars["custom_resolution"].set("1000")
             request = app._collect_coverage_request(for_estimate=True)
