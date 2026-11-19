@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 import numpy as np
 
 from .domain import Direction, Project
+from .i18n import tr
 from .link_budget import watts_to_dbm
 from .modes import MODE_PROFILES, threshold_dbm
 from .propagation.base import QuantileCurve
@@ -19,6 +20,7 @@ class MonteCarloModeResult:
     margin_p05_db: float
     margin_p50_db: float
     margin_p95_db: float
+    annual_availability_bounds_percent: tuple[float, float] | None
 
 
 @dataclass(frozen=True)
@@ -28,6 +30,7 @@ class MonteCarloResult:
     runs: int
     seed: int
     temporal_sampling: str
+    percentile_interval: tuple[float, float] | None
     received_power_p05_dbm: float
     received_power_p50_dbm: float
     received_power_p95_dbm: float
@@ -53,6 +56,7 @@ def simulate(
     model_id: str,
     curve: QuantileCurve | None,
     fixed_loss_db: float | None = None,
+    fixed_percentile: float | None = None,
 ) -> MonteCarloResult:
     if curve is None and fixed_loss_db is None:
         raise ValueError("curve or fixed loss must be provided")
@@ -63,16 +67,21 @@ def simulate(
     rng = np.random.default_rng(seed)
     runs = spec.runs
 
+    percentile_interval = None
+    annual_span = None
     if curve is not None and curve.complete_annual_distribution:
-        time_percentile = rng.uniform(
-            float(curve.percentiles[0]),
-            float(curve.percentiles[-1]),
-            runs,
-        )
+        low = float(curve.percentiles[0])
+        high = float(curve.percentiles[-1])
+        percentile_interval = (low, high)
+        annual_span = high - low
+        time_percentile = rng.uniform(low, high, runs)
         path_loss = np.interp(
             time_percentile, curve.percentiles, curve.loss_db
         )
-        temporal_sampling = "model_temporal_quantile_curve"
+        temporal_sampling = (
+            "model_temporal_quantile_curve" if annual_span == 100.0
+            else "conditional_percentile_interval"
+        )
         warnings = tuple(curve.warnings)
     else:
         baseline = (
@@ -82,6 +91,10 @@ def simulate(
         )
         path_loss = np.full(runs, baseline, dtype=float)
         temporal_sampling = "conditional_fixed_quantile"
+        if fixed_percentile is not None:
+            percentile_interval = (fixed_percentile, fixed_percentile)
+        elif fixed_loss_db is None:
+            percentile_interval = (50.0, 50.0)
         warnings = (
             "result is conditional on one propagation quantile, not annual availability",
         )
@@ -127,14 +140,22 @@ def simulate(
         if mode_id == project.primary_mode.upper():
             primary_margin = margin
         p05, p50, p95 = np.percentile(margin, [5.0, 50.0, 95.0])
+        success_fraction = float(np.mean(margin >= 0.0))
+        # Unknown tails contribute between zero and their full time mass.
+        lower = success_fraction * annual_span if annual_span is not None else None
+        annual_bounds = (
+            (lower, min(100.0, lower + (100.0 - annual_span)))
+            if lower is not None and annual_span is not None else None
+        )
         mode_results.append(
             MonteCarloModeResult(
                 mode=mode_id,
                 threshold_dbm=float(nominal_threshold),
-                success_probability_percent=float(100.0 * np.mean(margin >= 0.0)),
+                success_probability_percent=100.0 * success_fraction,
                 margin_p05_db=float(p05),
                 margin_p50_db=float(p50),
                 margin_p95_db=float(p95),
+                annual_availability_bounds_percent=annual_bounds,
             )
         )
     if primary_margin is None:
@@ -181,6 +202,7 @@ def simulate(
         runs=runs,
         seed=seed,
         temporal_sampling=temporal_sampling,
+        percentile_interval=percentile_interval,
         received_power_p05_dbm=float(rp05),
         received_power_p50_dbm=float(rp50),
         received_power_p95_dbm=float(rp95),
@@ -196,3 +218,40 @@ def _derived_seed(base_seed: int, model_id: str, direction: str) -> int:
     payload = f"{base_seed}:{model_id}:{direction}".encode("utf-8")
     digest = hashlib.sha256(payload).digest()
     return int.from_bytes(digest[:8], "big") & (2**63 - 1)
+
+
+def percentage_text(value: float) -> str:
+    """Display meaningful precision without rounding interior values to 0 or 100."""
+    rounded = f"{value:.4f}"
+    if 0.0 < value < 100.0 and float(rounded) in (0.0, 100.0):
+        return np.format_float_positional(value, trim="-")
+    return rounded.rstrip("0").rstrip(".")
+
+
+def describe_simulated_success(simulation: dict, mode: str, target: float) -> str:
+    primary = next((row for row in simulation["mode_results"] if row["mode"] == mode.upper()), None)
+    if primary is None:
+        return ""
+    success = percentage_text(primary["success_probability_percent"])
+    interval = simulation.get("percentile_interval")
+    if simulation.get("temporal_sampling") == "conditional_fixed_quantile":
+        if interval is None:
+            return tr("Sucesso condicional: {success}%.", success=success)
+        return tr("Sucesso condicional em p{percent}: {success}%.",
+                  percent=percentage_text(interval[0]), success=success)
+    bounds = primary.get("annual_availability_bounds_percent")
+    if interval is None or bounds is None or tuple(interval) == (0.0, 100.0):
+        return tr("Sucesso estimado: {success}%.", success=success)
+    low, high = bounds
+    details = tr(
+        "Sucesso em p{lo}–p{hi}: {success}%. Disponibilidade anual estimada: {lower}% a {upper}%, com caudas desconhecidas.",
+        lo=percentage_text(interval[0]), hi=percentage_text(interval[1]), success=success,
+        lower=percentage_text(low), upper=percentage_text(high),
+    )
+    if target <= low:
+        comparison = tr("A meta é atingida no limite inferior estimado.")
+    elif target > high:
+        comparison = tr("A meta supera o limite superior estimado.")
+    else:
+        comparison = tr("A faixa estimada não permite confirmar se a meta foi atingida.")
+    return f"{details} {comparison}"

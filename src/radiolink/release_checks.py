@@ -29,7 +29,7 @@ def check_localized_reports(output: Path) -> dict:
         transmitter_power_w=1, receiver_height_m=2, receiver_gain_dbi=2,
         receiver_line_loss_db=1, receiver_threshold_dbm=-120,
         output_directory=output / "pt/coverage", resolution_preset="custom",
-        custom_resolution_m=10_000, include_clearance=True, fresnel_percent=75, effective_earth_k=1.0,
+        custom_resolution_m=10_000,
     )
     terrain = output / "test-terrain"
     terrain.mkdir(parents=True, exist_ok=True)
@@ -50,7 +50,6 @@ def check_localized_reports(output: Path) -> dict:
     original = get_language()
     baseline_result = None
     baseline_grid = None
-    baseline_clearance = None
     matrix = {}
     first_coverage = None
     try:
@@ -69,26 +68,27 @@ def check_localized_reports(output: Path) -> dict:
             current = dataclasses.replace(request, output_directory=output / language / "coverage")
             if first_coverage:
                 current.output_directory.mkdir(parents=True, exist_ok=True)
-                for filename in ("coverage_loss_db.npy", "coverage_propagation.json"):
-                    shutil.copyfile(first_coverage.paths["report_html"].parent / filename, current.output_directory / filename)
+                shutil.copyfile(first_coverage.paths["loss_grid"], current.output_directory / "coverage_loss_db.npy")
+                original_index = first_coverage.request.output_directory / "coverage_propagation.json"
+                metadata = json.loads(original_index.read_text(encoding="utf-8"))
+                metadata.pop("loss_file", None)
+                (current.output_directory / "coverage_propagation.json").write_text(
+                    json.dumps(metadata), encoding="utf-8",
+                )
             with patch("radiolink.coverage_grid.default_cache_directory", return_value=terrain):
                 coverage = run_coverage_analysis(current, worker_count=2)
             grid = np.load(coverage.paths["margin_grid"])
-            clearance = np.load(coverage.paths["clearance_grid"])
             if baseline_grid is None:
                 baseline_grid = grid
-                baseline_clearance = clearance
                 first_coverage = coverage
             else:
                 np.testing.assert_array_equal(grid, baseline_grid)
-                np.testing.assert_array_equal(clearance, baseline_clearance)
                 assert coverage.statistics["p1812_calls_this_run"] == 0
-            assert '<option value="clearance">' in coverage.paths["report_html"].read_text(encoding="utf-8")
+            assert '<option value="clearance">' not in coverage.paths["report_html"].read_text(encoding="utf-8")
             point = destination_point(current.latitude_deg, current.longitude_deg, 90.0, 10_000.0)
             cell = coverage_cell_at(coverage, *point)
             mid = grid.shape[0] // 2
             assert cell["margin_db"] == grid[mid, mid + 1]
-            assert cell["clearance"] == clearance[mid, mid + 1]
             assert cell["distance_km"] == 10.0 and cell["azimuth_deg"] == 90.0
             for outcome in (link, coverage):
                 report = outcome.paths["report_html"].read_text(encoding="utf-8")
@@ -142,6 +142,9 @@ def check_home_layout(root, output: Path) -> None:
                     assert widget.winfo_height() >= widget.winfo_reqheight(), "home content clipped vertically"
                     assert widget.winfo_x() + widget.winfo_width() <= card.winfo_width()
                     assert widget.winfo_y() + widget.winfo_height() <= card.winfo_height()
+                illustration = next(widget for widget in card.winfo_children() if "image" in widget.keys() and widget.cget("image"))
+                min_width = 345 if width == 1180 else 250
+                assert illustration.winfo_width() >= min_width, "home illustration is too small"
                 action = next(widget for widget in card.winfo_children() if isinstance(widget, ttk.Button))
                 assert description.winfo_y() + description.winfo_height() < action.winfo_y()
             left, top = root.winfo_rootx(), root.winfo_rooty()

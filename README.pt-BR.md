@@ -4,7 +4,7 @@
 
 Ferramenta local de planejamento de **enlaces terrestres VHF/UHF ponto a ponto e cobertura**. Reúne perfis de terreno, modelos de propagação, orçamento bidirecional, análise de incertezas e relatórios técnicos rastreáveis. O repositório contém interface desktop para Windows e motor científico de linha de comando.
 
-**Autor:** Mario Pin, PU2PTU · **Aplicativo:** 0.5.6 (pré-lançamento)
+**Autor:** Mario Pin, PU2PTU · **Aplicativo:** 0.6.0 (pré-lançamento)
 
 ## O que faz
 
@@ -15,6 +15,8 @@ Ferramenta local de planejamento de **enlaces terrestres VHF/UHF ponto a ponto e
 | Cobertura | Execute P.1812 para cada centro de célula a partir de 250 m, com perfil Copernicus GLO-30 próprio. Mostre heatmap e contornos de margem 0/+3/+6/+12 dB. |
 | Incerteza | Monte Carlo reproduzível para equipamentos e instalação, sem somar uma segunda variabilidade atmosférica arbitrária. |
 | Trabalho | Novo/Abrir/Salvar projetos, seleção no mapa, estimativa de tempo/memória, cancelamento e retomada; reutilização da perda física quando mudam só parâmetros do orçamento. |
+Cada análise concluída salva uma subpasta com data e hora em `runs/`, dentro da pasta de saída selecionada.
+
 | Saídas | JSON, Markdown, HTML, PDF, gráficos de terreno e Monte Carlo, mapa interativo de cobertura e metadados científicos. |
 
 A interface oferece português, inglês, espanhol, francês e alemão. Os cálculos são locais. Para o seletor de coordenadas e os relatórios, o aplicativo pode servir páginas temporariamente em **127.0.0.1**, somente na própria máquina.
@@ -53,18 +55,17 @@ Execute os scripts em um terminal de desenvolvimento apropriado. `bootstrap_itu_
 ### Primeiro enlace ponto a ponto
 
 1. Abra `RadioLinkPlanner.exe`, escolha **Enlace ponto a ponto** e crie um projeto. Digite as coordenadas das duas estações ou escolha-as no mapa.
-2. Informe frequência, modo, polarização, disponibilidade, parâmetros das antenas e limiares dos receptores. Ajuste **Fresnel livre (%)** e **Fator k** para o perfil geométrico. Clique no **?** azul para consultar a ajuda do campo técnico.
+2. Informe frequência, modo, polarização, disponibilidade, parâmetros das antenas e limiares dos receptores. O perfil geométrico usa **k = 4/3** e **60% da primeira zona de Fresnel**. Clique no **?** azul para ver a ajuda na própria tela.
 3. Na aba **Análise e resultados**, selecione pasta de saída e número de rodadas Monte Carlo; clique **Obter terreno e analisar**. O programa baixa e guarda em cache os dados faltantes antes do cálculo.
 4. Use **Mapa e relatório** para examinar percurso, relevo, Fresnel, comparação entre modelos, margens e recomendações. Salve o projeto para repetir ou editar.
-5. Use **Otimizar altura das antenas** para definir limites por estação, passo, desobstrução de Fresnel e fator k. Compare o perfil e simule a propagação antes e depois. **Aplicar alturas** atualiza o formulário para a próxima análise.
+5. Use **Otimizar altura das antenas** para definir limites por estação e passo, com os mesmos critérios geométricos do perfil. Compare o perfil e simule a propagação antes e depois. **Aplicar alturas** atualiza o formulário para a próxima análise.
 
 ### Mapa de cobertura
 
 1. Escolha **Mapa de cobertura**, informe estação transmissora e receptor de referência, raio de **50–500 km** e grade rápida, recomendada, detalhada ou personalizada.
 2. Escolha antena omnidirecional ou direcional no transmissor. Para a direcional, informe ganho máximo, abertura a −3 dB, frente/costas e azimute.
-3. Para comparar a geometria com a previsão de margem, marque **Incluir camada no mapa** em **Visada e Fresnel**.
-4. Confira a previsão de células, memória e tempo e inicie o cálculo. Repita os mesmos parâmetros e a pasta de saída para retomar blocos concluídos. Alterações apenas no orçamento ou no diagrama podem reaproveitar a perda calculada nessa pasta.
-5. Abra **Mapa e relatório** e clique em uma célula de qualquer camada para consultar margem, S estimado, condição de visada, distância e azimute.
+3. Confira a previsão de células, memória e tempo e inicie o cálculo. Repita os mesmos parâmetros e a pasta de saída para retomar blocos concluídos. Alterações apenas no orçamento ou no diagrama podem reaproveitar a perda calculada nessa pasta.
+4. Abra **Mapa e relatório** e clique em uma célula de qualquer camada para consultar margem, S estimado, distância e azimute.
 
 Raios grandes podem levar horas e ocupar bastante disco mesmo com número parecido de células. O perfil de terreno é amostrado nominalmente a 30 m, independentemente do tamanho das células. Os resultados ficam no perfil do usuário; caches de relevo e ITU em `%LOCALAPPDATA%\RadioLinkPlanner\` no Windows.
 

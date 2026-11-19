@@ -174,3 +174,32 @@ def test_loss_checkpoint_resumes_and_releases_file_handles(tmp_path, monkeypatch
     assert len(calls) < result.statistics["p1812_cells"]
     assert not list(tmp_path.glob(".coverage-checkpoint-*"))
     assert np.count_nonzero(np.isfinite(np.load(result.paths["loss_grid"]))) == result.statistics["calculated_cells"]
+
+
+def test_cancelled_render_keeps_previous_report_and_loss_cache(tmp_path, monkeypatch):
+    calls = install_fake_engine(monkeypatch)
+    original = request(tmp_path)
+    first = cg.run_direct_grid_coverage(original, worker_count=1)
+    index = tmp_path / "coverage_propagation.json"
+    previous_index = index.read_bytes()
+    previous_grid = np.load(first.paths["margin_grid"])
+    stronger = replace(original, transmitter_power_w=original.transmitter_power_w * 2)
+
+    def cancel_after_writing(**kwargs):
+        (kwargs["output_directory"] / "coverage_report.html").write_text("incomplete report")
+        raise InterruptedError
+
+    calls.clear()
+    with monkeypatch.context() as patch:
+        patch.setattr("radiolink.coverage_report.write_coverage_outputs", cancel_after_writing)
+        with pytest.raises(CoverageCancelled):
+            cg.run_direct_grid_coverage(stronger, worker_count=1)
+    assert index.read_bytes() == previous_index
+    assert list((tmp_path / "runs").iterdir()) == [first.paths["report_html"].parent]
+    assert first.paths["report_html"].read_text() == "<html>regression test</html>"
+
+    second = cg.run_direct_grid_coverage(stronger, worker_count=1)
+    assert not calls
+    assert second.paths["report_html"] != first.paths["report_html"]
+    np.testing.assert_array_equal(np.load(first.paths["margin_grid"]), previous_grid)
+    np.testing.assert_allclose(np.load(second.paths["margin_grid"]), previous_grid + 10*np.log10(2), atol=1e-5)

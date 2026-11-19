@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from radiolink.domain import Project
+from radiolink.domain import Project, ReceiverSpec
 from radiolink.project_editor import (
     editor_values_from_project,
     project_from_editor_values,
@@ -13,6 +13,7 @@ from radiolink.project_editor import (
     write_project_json,
 )
 from radiolink.project_files import (
+    COVERAGE_THRESHOLD_OVERRIDES,
     read_coverage_project,
     write_coverage_project,
 )
@@ -55,24 +56,36 @@ def test_editor_rejects_link_outside_desktop_distance_scope(
         project_from_editor_values(too_short)
 
 
-def test_link_geometry_loads_legacy_k_and_saves_new_criteria(reference_project, tmp_path):
+def test_link_geometry_loads_legacy_k_and_uses_fixed_criteria(reference_project, tmp_path):
     payload = reference_project.model_dump(mode="json")
-    payload["environment"].pop("fresnel_percent")
-    payload["environment"]["effective_earth_k"] = 1.12
+    payload["environment"].update(fresnel_percent=30, effective_earth_k=1.12, itm_climate=3)
     path = tmp_path / "legacy.rlp"
     path.write_text(json.dumps(payload), encoding="utf-8")
     loaded, _ = Project.from_json(path)
     values = editor_values_from_project(loaded)
-    assert values.effective_earth_k == 1.12
-    assert values.fresnel_percent == 60.0
-    changed = replace(values, effective_earth_k=1.0, fresnel_percent=0.0)
-    saved = project_from_editor_values(changed, template=loaded)
-    path = write_project_json(saved, tmp_path / "updated.rlp")
-    restored, _ = Project.from_json(path)
-    assert restored.environment.effective_earth_k == 1.0
-    assert restored.environment.fresnel_percent == 0.0
-    with pytest.raises(ValueError, match="0,1"):
-        project_from_editor_values(replace(changed, effective_earth_k=0.1), template=loaded)
+    restored = project_from_editor_values(values, template=loaded)
+    assert restored.environment.effective_earth_k == 4.0 / 3.0
+    assert restored.environment.fresnel_percent == 60.0
+    assert restored.environment.itm_climate == 3
+
+
+def test_editor_preserves_receptor_calibration_and_inactive_modes(reference_project):
+    project = reference_project.model_copy(deep=True)
+    project.terminal_a.receiver = ReceiverSpec(
+        noise_figure_db=9, external_noise_db=8,
+        threshold_overrides_dbm={"FM": -118, "SSB": -132},
+    )
+    project.terminal_b.receiver = ReceiverSpec(
+        noise_figure_db=3, external_noise_db=2, threshold_overrides_dbm={"CW": -138},
+    )
+    values = editor_values_from_project(project)
+    restored = project_from_editor_values(values, template=project)
+    assert restored.terminal_a.receiver == project.terminal_a.receiver
+    assert restored.terminal_b.receiver == project.terminal_b.receiver
+    edited = replace(values, terminal_a=replace(values.terminal_a, receiver_threshold_dbm=-115.0))
+    receiver = project_from_editor_values(edited, template=project).terminal_a.receiver
+    assert receiver.threshold_overrides_dbm == {"FM": -115.0, "SSB": -132.0}
+    assert receiver.external_noise_db == 8
 
 
 def test_project_slug_is_portable() -> None:
@@ -104,11 +117,17 @@ def test_coverage_project_round_trip_preserves_form_values(tmp_path) -> None:
         "rx_line_loss": "1",
         "rx_sensitivity": "-120",
         "output": str(tmp_path / "output"),
-        "include_clearance": "1",
-        "fresnel_percent": "78",
-        "effective_earth_k": "1.2",
+        COVERAGE_THRESHOLD_OVERRIDES: json.dumps({"FM": -120, "CW": -136}),
     }
 
     project_path = write_coverage_project(values, tmp_path / "boituva.rlp")
 
     assert read_coverage_project(project_path) == values
+
+    payload = json.loads(project_path.read_text(encoding="utf-8"))
+    payload["schema_version"] = "1.2"
+    payload["values"].update(include_clearance="1", fresnel_percent="78", effective_earth_k="1.2")
+    project_path.write_text(json.dumps(payload), encoding="utf-8")
+    old = read_coverage_project(project_path)
+    assert old["rx_sensitivity"] == "-120" and old["tx_pattern"] == "directional"
+    assert "include_clearance" not in old

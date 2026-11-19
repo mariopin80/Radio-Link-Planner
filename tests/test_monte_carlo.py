@@ -41,3 +41,28 @@ def test_fixed_quantile_is_labeled_conditional(reference_project) -> None:
     )
     assert result.temporal_sampling == "conditional_fixed_quantile"
     assert result.warnings
+
+
+def test_unknown_tails_are_not_reported_as_certain_annual_success(reference_project):
+    from radiolink.domain import UncertaintySpec
+    from radiolink.monte_carlo import describe_simulated_success, percentage_text
+
+    project = reference_project.model_copy(deep=True)
+    project.monte_carlo.uncertainty = UncertaintySpec(
+        **dict.fromkeys(UncertaintySpec.model_fields, 0.0),
+    )
+    curve = QuantileCurve(
+        model_id="p2001", direction=Direction.A_TO_B.value,
+        percentiles=np.array([1.0, 50.0, 99.0]),
+        loss_db=np.array([1.0, 2.0, 3.0]),
+        percentile_meaning="time_percent_loss_not_exceeded",
+        complete_annual_distribution=True,
+    )
+    simulation = simulate(project, Direction.A_TO_B, "p2001", curve)
+    assert simulation.temporal_sampling == "conditional_percentile_interval"
+    assert simulation.percentile_interval == (1.0, 99.0)
+    fm = next(row for row in simulation.mode_results if row.mode == "FM")
+    assert fm.success_probability_percent == 100.0
+    assert fm.annual_availability_bounds_percent == (98.0, 100.0)
+    assert "98% a 100%" in describe_simulated_success(simulation.to_dict(), "FM", 99.5)
+    assert percentage_text(99.99999) == "99.99999"

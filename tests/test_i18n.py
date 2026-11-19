@@ -131,11 +131,23 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
         buttons = [item for item in descendants(widget) if isinstance(item, tk.Button)]
         assert len(buttons) == len(expected)
         help_messages.clear()
+        fragments = []
         for button in buttons:
             assert button.cget("image")
             assert button.winfo_reqwidth() <= round(root.winfo_fpixels("0.2i")) + 2
             button.invoke()
-        assert sorted(help_messages) == sorted(expected)
+            card = root._help_card
+            assert card.frame.master is root and not isinstance(card.frame, tk.Toplevel)
+            assert card.anchor is button
+            fragments.append((card.heading.cget("text"), card.body.cget("text")))
+        assert sorted(fragments) == sorted(expected)
+        buttons[-1].invoke()
+        assert root._help_card is None
+        buttons[0].invoke()
+        root.event_generate("<ButtonPress-1>", x=1, y=1)
+        root.update()
+        assert root._help_card is None
+        assert not help_messages
     try:
         for language in LANGUAGES:
             app._change_language(language, persist=False)
@@ -147,7 +159,9 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
             assert app.optimize_height_button.instate(["disabled"])
             assert not hasattr(app, "pdf_button")
             assert app.notebook.tab(app.about_tab, "text") == tr("Sobre")
-            verify_help_icons(root, ("polarization", "availability", "fresnel", "earth_k",
+            root.deiconify()
+            root.update()
+            verify_help_icons(root, ("polarization", "availability",
                                      "sensitivity", "sensitivity", "runs"))
             def all_text(widget):
                 result = []
@@ -165,7 +179,7 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
             assert not hasattr(app, "profile_button")
             verify_help_icons(root, ("polarization", "p1812_time", "resolution", "resolution",
                                      "antenna_pattern", "beamwidth", "front_to_back", "azimuth",
-                                     "sensitivity", "fresnel", "earth_k"))
+                                     "sensitivity"))
             assert app.coverage_vars["time_percentage"].get() == "50"
             app.coverage_vars["tx_pattern"].set(choice_label("directional"))
             app.coverage_vars["tx_azimuth"].set("359")
@@ -174,34 +188,39 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
             app.coverage_vars["resolution_preset"].set(choice_label("custom"))
             app.coverage_vars["custom_resolution"].set("1000")
             app.coverage_vars["polarization"].set(choice_label("horizontal"))
-            app.coverage_vars["include_clearance"].set("1")
-            app.coverage_vars["fresnel_percent"].set("80")
-            app.coverage_vars["effective_earth_k"].set("1.0")
+            app.coverage_vars["rx_sensitivity"].set("-121.5")
+            app.coverage_vars["mode"].set("CW")
+            app._coverage_mode_changed(None)
+            app.coverage_vars["rx_sensitivity"].set("-133")
+            app.coverage_vars["mode"].set("FM")
+            app._coverage_mode_changed(None)
+            assert float(app.coverage_vars["rx_sensitivity"].get()) == -121.5
             app._save_coverage_project()
             saved = read_coverage_project(filename)
             assert saved["resolution_preset"] == "custom"
             assert saved["polarization"] == "horizontal"
             assert saved["tx_pattern"] == "directional" and saved["tx_azimuth"] == "359"
-            assert saved["include_clearance"] == "1" and saved["fresnel_percent"] == "80"
+            assert json.loads(saved["rx_thresholds_dbm"]) == {"FM": -121.5, "CW": -133.0}
             app._new_coverage()
             app._select_coverage_project()
             request = app._collect_coverage_request(for_estimate=True)
-            assert (request.include_clearance, request.fresnel_percent, request.effective_earth_k) == (True, 80.0, 1.0)
+            assert request.receiver_threshold_dbm == -121.5
+            app.coverage_vars["mode"].set("CW")
+            app._coverage_mode_changed(None)
+            assert app._collect_coverage_request(for_estimate=True).receiver_threshold_dbm == -133.0
             # Versions 0.4.x saved Portuguese display labels; keep accepting them.
             payload = json.loads(filename.read_text())
             payload["schema_version"] = "1.0"
             payload["values"]["resolution_preset"] = "Recomendada"
             payload["values"]["polarization"] = "Vertical"
-            payload["values"].pop("include_clearance")
-            payload["values"].pop("fresnel_percent")
-            payload["values"].pop("effective_earth_k")
+            payload["values"].update(include_clearance="1", fresnel_percent="80", effective_earth_k="1")
             filename.write_text(json.dumps(payload), encoding="utf-8")
             app._select_coverage_project()
             request = app._collect_coverage_request(for_estimate=True)
             assert request.resolution_preset == "recommended"
             assert request.polarization == "vertical"
             assert request.transmitter_pattern is None
-            assert (request.include_clearance, request.fresnel_percent, request.effective_earth_k) == (False, 60.0, 4.0 / 3.0)
+            assert request.receiver_threshold_dbm == -121.5
             assert not app.directional_controls.winfo_manager()
             app.events.put(("coverage_progress", CoverageProgress(
                 42, "cells", tr("{x0:.0f}% — Calculando células: {x1:,} de {x2:,}", x0=42, x1=400, x2=1000),

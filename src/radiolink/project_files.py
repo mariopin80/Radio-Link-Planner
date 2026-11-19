@@ -7,15 +7,10 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from .antenna import COVERAGE_ANTENNA_DEFAULTS
-from .domain import DEFAULT_EFFECTIVE_EARTH_K, DEFAULT_FRESNEL_PERCENT
 
 COVERAGE_PROJECT_TYPE = "radio-link-planner-coverage"
-COVERAGE_PROJECT_SCHEMA = "1.2"
-COVERAGE_GEOMETRY_DEFAULTS = {
-    "include_clearance": "0",
-    "fresnel_percent": str(DEFAULT_FRESNEL_PERCENT),
-    "effective_earth_k": str(DEFAULT_EFFECTIVE_EARTH_K),
-}
+COVERAGE_PROJECT_SCHEMA = "1.3"
+COVERAGE_THRESHOLD_OVERRIDES = "rx_thresholds_dbm"
 COVERAGE_PROJECT_KEYS = frozenset(
     {
         "name",
@@ -59,9 +54,8 @@ def write_coverage_project(
         key: str(values.get(key, default))
         for key, default in COVERAGE_ANTENNA_DEFAULTS.items()
     })
-    saved_values.update({
-        key: str(values[key]) for key in COVERAGE_GEOMETRY_DEFAULTS if key in values
-    })
+    if COVERAGE_THRESHOLD_OVERRIDES in values:
+        saved_values[COVERAGE_THRESHOLD_OVERRIDES] = values[COVERAGE_THRESHOLD_OVERRIDES]
     payload = {
         "project_type": COVERAGE_PROJECT_TYPE,
         "schema_version": COVERAGE_PROJECT_SCHEMA,
@@ -81,7 +75,7 @@ def read_coverage_project(path: str | Path) -> dict[str, str]:
     if payload.get("project_type") != COVERAGE_PROJECT_TYPE:
         raise ValueError(tr('O arquivo não é um projeto de cobertura.'))
     schema = payload.get("schema_version")
-    if schema not in {"1.0", "1.1", COVERAGE_PROJECT_SCHEMA}:
+    if schema not in {"1.0", "1.1", "1.2", COVERAGE_PROJECT_SCHEMA}:
         raise ValueError(
             tr('Versão de projeto de cobertura não suportada: {x0!r}.', x0=payload.get('schema_version'))
         )
@@ -98,13 +92,12 @@ def read_coverage_project(path: str | Path) -> dict[str, str]:
         key: str(values[key])
         for key in COVERAGE_PROJECT_KEYS
     }
-    if schema == COVERAGE_PROJECT_SCHEMA:
+    if schema in {"1.2", COVERAGE_PROJECT_SCHEMA}:
         loaded.update({
             key: str(values.get(key, default))
             for key, default in COVERAGE_ANTENNA_DEFAULTS.items()
         })
-    loaded.update({
-        key: str(values[key]) for key in COVERAGE_GEOMETRY_DEFAULTS if key in values
-    })
+    if schema == COVERAGE_PROJECT_SCHEMA and COVERAGE_THRESHOLD_OVERRIDES in values:
+        loaded[COVERAGE_THRESHOLD_OVERRIDES] = str(values[COVERAGE_THRESHOLD_OVERRIDES])
     return loaded
 

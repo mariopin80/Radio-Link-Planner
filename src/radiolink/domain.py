@@ -155,7 +155,17 @@ class Project(BaseModel):
         source = Path(path).resolve()
         data = json.loads(source.read_text(encoding="utf-8"))
         project = cls.model_validate(data)
-        return project, source.parent
+        return project.with_standard_geometry(), source.parent
+
+    def with_standard_geometry(self) -> Project:
+        if (self.environment.effective_earth_k == DEFAULT_EFFECTIVE_EARTH_K
+                and self.environment.fresnel_percent == DEFAULT_FRESNEL_PERCENT):
+            return self
+        environment = self.environment.model_copy(update={
+            "effective_earth_k": DEFAULT_EFFECTIVE_EARTH_K,
+            "fresnel_percent": DEFAULT_FRESNEL_PERCENT,
+        })
+        return self.model_copy(update={"environment": environment})
 
     def resolved_terrain_path(self, base_dir: str | Path) -> Path:
         path = Path(self.terrain_profile)
