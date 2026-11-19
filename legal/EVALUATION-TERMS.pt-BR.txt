@@ -1,0 +1,30 @@
+PU2PTU - Radio Link Planner v0.6.2
+Licença de avaliação e termos de uso
+© 2026 Mario Pin — PU2PTU
+
+1. Usos permitidos
+
+O autor concede licença gratuita e não exclusiva para instalar e usar esta versão em avaliações pessoais, projetos próprios de radioamadorismo, ensino e pesquisa sem finalidade comercial. A permissão inclui atividades didáticas em instituições de ensino e testes em radioclubes. Consultoria, prestação de serviços, entregas a clientes e uso do programa na operação profissional de uma rede exigem licença específica.
+
+2. Compartilhamento
+
+O instalador oficial pode ser compartilhado gratuitamente, íntegro e com seus avisos de autoria e licença. A venda de cópias, o reempacotamento e a distribuição de versões modificadas do aplicativo exigem autorização escrita do autor, respeitadas a legislação e as licenças de terceiros. Relatórios e mapas produzidos nos usos permitidos podem ser compartilhados com os créditos das fontes utilizadas.
+
+3. Limites das simulações
+
+Margens de enlace, níveis de sinal, mapas de cobertura e estimativas de disponibilidade dependem dos parâmetros informados, do modelo escolhido e da qualidade dos dados. Relevo, vegetação, edificações, ruído, interferência e condições reais de instalação podem alterar o desempenho observado. Antes de decisões de instalação, segurança ou conformidade regulatória, valide por análise independente e, quando cabível, medições de campo. Em emergências ou operações críticas, use apenas como apoio.
+
+4. Versão de avaliação e responsabilidade
+
+Esta versão é fornecida no estado em que se encontra e pode apresentar falhas, incompatibilidades ou resultados incorretos. Serviços externos podem ficar indisponíveis. Cabe ao usuário conferir parâmetros e interpretar resultados. Aplicam-se a legislação brasileira e as responsabilidades previstas em lei.
+
+5. Licenças e dados de terceiros
+
+O NTIA ITM, o Py1812, o Py2001 e as bibliotecas empacotadas seguem suas respectivas licenças. O MapLibre GL JS usa BSD de 3 cláusulas. Os dados do OpenStreetMap usam ODbL, e o servidor de mosaicos tem política própria. O relevo Copernicus GLO-30 tem licença própria que exige atribuição. Os produtos digitais da UIT-R são obtidos da fonte oficial para uso local e seguem as condições da UIT.
+
+Avisos de terceiros do projeto
+https://github.com/mariopin80/Radio-Link-Planner/blob/main/legal/THIRD_PARTY_NOTICES.txt
+
+6. Privacidade
+
+A avaliação dispensa cadastro e ativação. Os cálculos são locais, e os projetos, relatórios e dados em cache ficam no computador. As consultas a mapas e os downloads de relevo e dados da UIT são feitos a serviços externos. Esses serviços podem receber o endereço IP e o identificador dos arquivos ou blocos solicitados, que em alguns casos indicam a região consultada.

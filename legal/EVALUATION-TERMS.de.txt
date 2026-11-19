@@ -1,0 +1,30 @@
+PU2PTU - Radio Link Planner v0.6.2
+Evaluierungslizenz und Nutzungsbedingungen
+© 2026 Mario Pin — PU2PTU
+
+1. Erlaubte Nutzung
+
+Der Autor gewährt eine kostenlose, nicht ausschließliche Lizenz zur Installation und Nutzung dieser Version für persönliche Evaluierungen, eigene Amateurfunkprojekte sowie nicht kommerzielle Lehre und Forschung. Die Erlaubnis umfasst Lehrveranstaltungen in Bildungseinrichtungen und Tests in Amateurfunkvereinen. Beratung, Dienstleistungen, Arbeitsergebnisse für Kunden und der Einsatz des Programms beim professionellen Betrieb eines Netzes erfordern eine gesonderte Lizenz.
+
+2. Weitergabe
+
+Das offizielle Installationsprogramm darf kostenlos und vollständig einschließlich seiner Urheber- und Lizenzhinweise weitergegeben werden. Der Verkauf von Kopien, die Neuverpackung und die Verbreitung veränderter Versionen bedürfen der schriftlichen Zustimmung des Autors. Das geltende Recht und die Lizenzen Dritter sind zu beachten. Berichte und Karten aus erlaubten Nutzungsarten dürfen unter Angabe der verwendeten Quellen weitergegeben werden.
+
+3. Grenzen der Simulation
+
+Verbindungsmargen, Signalpegel, Abdeckungskarten und Schätzungen der Verfügbarkeit hängen von den eingegebenen Parametern, dem gewählten Modell und der Datenqualität ab. Gelände, Vegetation, Gebäude, Rauschen, Störungen und die tatsächlichen Installationsbedingungen können die beobachtete Leistung beeinflussen. Prüfen Sie die Ergebnisse vor Entscheidungen zu Installation, Sicherheit oder Einhaltung von Vorschriften durch unabhängige Analysen und gegebenenfalls Feldmessungen. Verwenden Sie das Programm in Notfällen oder bei kritischen Einsätzen nur als Hilfsmittel.
+
+4. Evaluierungsversion und Verantwortung
+
+Diese Version wird im vorliegenden Zustand bereitgestellt und kann Fehler, Inkompatibilitäten oder falsche Ergebnisse aufweisen. Externe Dienste können ausfallen. Die Nutzer sind für die Prüfung der Parameter und die Auswertung der Ergebnisse verantwortlich. Es gelten das brasilianische Recht und die gesetzlich vorgesehenen Verantwortlichkeiten.
+
+5. Lizenzen und Daten Dritter
+
+Für NTIA ITM, Py1812, Py2001 und die mitgelieferten Bibliotheken gelten deren jeweilige Lizenzen. MapLibre GL JS verwendet die BSD-3-Klausel-Lizenz. Die OpenStreetMap-Daten stehen unter der ODbL. Für den Kachelserver gilt eine eigene Richtlinie. Die Geländedaten Copernicus GLO-30 unterliegen einer eigenen Lizenz, die eine Quellenangabe verlangt. Die digitalen Produkte der ITU-R werden zur lokalen Nutzung von der offiziellen Quelle bezogen und unterliegen den Bedingungen der ITU.
+
+Hinweise des Projekts zu Drittanbietern
+https://github.com/mariopin80/Radio-Link-Planner/blob/main/legal/THIRD_PARTY_NOTICES.txt
+
+6. Datenschutz
+
+Die Evaluierung erfordert keine Registrierung oder Aktivierung. Die Berechnungen erfolgen lokal, und Projekte, Berichte und zwischengespeicherte Daten verbleiben auf dem Computer. Kartenabfragen und Downloads von Gelände- und ITU-Daten greifen auf externe Dienste zu. Diese Dienste können die IP-Adresse und die Kennungen der angeforderten Dateien oder Kacheln erhalten, aus denen sich in manchen Fällen das abgefragte Gebiet ableiten lässt.

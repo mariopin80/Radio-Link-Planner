@@ -1,0 +1,30 @@
+PU2PTU - Radio Link Planner v0.6.2
+Evaluation license and terms of use
+© 2026 Mario Pin — PU2PTU
+
+1. Permitted uses
+
+The author grants a free, non-exclusive license to install and use this version for personal evaluation, personal amateur radio projects, and noncommercial teaching and research. This permission includes teaching activities at educational institutions and testing at amateur radio clubs. Consulting, providing services, delivering work to clients, and using the program to operate a network professionally require a separate license.
+
+2. Sharing
+
+The official installer may be shared free of charge, intact and with its authorship and license notices. Selling copies, repackaging, or distributing modified versions of the application requires written permission from the author, subject to applicable law and third-party licenses. Reports and maps produced for permitted uses may be shared with attribution to the sources used.
+
+3. Simulation limits
+
+Link margins, signal levels, coverage maps, and availability estimates depend on the input parameters, the chosen model, and the quality of the data. Terrain, vegetation, buildings, noise, interference, and actual installation conditions can affect observed performance. Before making installation, safety, or regulatory compliance decisions, validate the results through independent analysis and, where appropriate, field measurements. In emergencies or critical operations, use the program only as a supplementary tool.
+
+4. Evaluation version and responsibility
+
+This version is provided as is and may contain faults, incompatibilities, or incorrect results. External services may become unavailable. Users are responsible for checking their input parameters and interpreting the results. Brazilian law and the responsibilities established by law apply.
+
+5. Third-party licenses and data
+
+NTIA ITM, Py1812, Py2001, and bundled libraries are subject to their respective licenses. MapLibre GL JS uses the BSD 3-Clause license. OpenStreetMap data uses the ODbL, and the tile server has its own policy. Copernicus GLO-30 terrain data has its own license requiring attribution. ITU-R digital products are obtained from the official source for local use and are subject to ITU terms.
+
+Project third-party notices
+https://github.com/mariopin80/Radio-Link-Planner/blob/main/legal/THIRD_PARTY_NOTICES.txt
+
+6. Privacy
+
+Evaluation requires no registration or activation. Calculations run locally, and projects, reports, and cached data stay on the computer. Map requests and downloads of terrain and ITU data connect to external services. These services may receive the IP address and the identifiers of the requested files or tiles, which in some cases indicate the area being viewed.
