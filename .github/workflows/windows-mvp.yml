@@ -66,7 +66,15 @@ jobs:
         run: python scripts/bootstrap_itu_data.py
 
       - name: Run scientific test suite
-        run: pytest
+        run: pytest -k "not test_preview_simulation_and_explicit_application and not test_ui_languages_projects_about_and_single_remaining_time"
+
+      - name: Run Windows interface tests in fresh Python processes
+        shell: pwsh
+        run: |
+          python -m pytest tests/test_height_optimization.py::test_preview_simulation_and_explicit_application
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pytest tests/test_i18n.py::test_ui_languages_projects_about_and_single_remaining_time
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build desktop application
         shell: pwsh

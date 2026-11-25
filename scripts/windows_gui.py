@@ -12,10 +12,8 @@ def run() -> int:
     if len(sys.argv) >= 3 and sys.argv[1] == "--smoke-test":
         output_directory = Path(sys.argv[2]).resolve()
         try:
-            smoke_test(output_directory)
             from radiolink.release_checks import check_interface, check_localized_reports
-            check_localized_reports(output_directory / "languages")
-            # Exercise the packaged screens, choices and progress in all languages.
+            # Start Tcl before running the numerical libraries, as in normal use.
             import tkinter as tk
             root = tk.Tk()
             try:
@@ -24,6 +22,8 @@ def run() -> int:
                 root.update_idletasks()
             finally:
                 root.destroy()
+            smoke_test(output_directory)
+            check_localized_reports(output_directory / "languages")
         except Exception:
             output_directory.mkdir(parents=True, exist_ok=True)
             (output_directory / "smoke-error.txt").write_text(
