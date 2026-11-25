@@ -39,6 +39,10 @@ _MATPLOTLIB_CACHE.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("MPLCONFIGDIR", str(_MATPLOTLIB_CACHE))
 os.environ.setdefault("MPLBACKEND", "Agg")
 MAPLIBRE_VERSION = "5.24.0"
+MONTE_CARLO_PLOTS = {
+    "a_to_b": ("monte_carlo_plot", "monte_carlo.png"),
+    "b_to_a": ("monte_carlo_reverse_plot", "monte_carlo_b_to_a.png"),
+}
 
 
 def describe_geometry_clearance(geometry: dict[str, Any]) -> str:
@@ -94,10 +98,12 @@ def write_outputs(
         profile_path = destination / "profile.png"
         render_profile_plot(project, profile, result, geometry_arrays, profile_path)
         paths["profile_plot"] = profile_path
-    if make_plots and result["directions"]["a_to_b"]["monte_carlo"]:
-        monte_carlo_path = destination / "monte_carlo.png"
-        render_monte_carlo_plot(project, result, monte_carlo_path)
-        paths["monte_carlo_plot"] = monte_carlo_path
+    if make_plots:
+        for direction_id, (key, filename) in MONTE_CARLO_PLOTS.items():
+            if result["directions"][direction_id]["monte_carlo"]:
+                plot_path = destination / filename
+                render_monte_carlo_plot(project, result, plot_path, direction_id=direction_id)
+                paths[key] = plot_path
     map_assets = _install_map_assets(destination)
     report_path.write_text(
         build_html_report(
@@ -269,126 +275,111 @@ def render_profile_plot(
 
 
 def render_monte_carlo_plot(
-    project: Project, result: dict[str, Any], output_path: str | Path
+    project: Project,
+    result: dict[str, Any],
+    output_path: str | Path,
+    *,
+    direction_id: str = "a_to_b",
 ) -> None:
     import matplotlib.pyplot as plt
 
-    direction = result["directions"]["a_to_b"]
-    simulations = direction["monte_carlo"]
-    percentiles = {model["model_id"]: model["percentile"] for model in direction["design_models"]}
-    fig, (axis_hist, axis_bar) = plt.subplots(
-        1, 2, figsize=(14, 5.5), dpi=150, gridspec_kw={"width_ratios": [1.55, 1]}
-    )
+    direction = result["directions"][direction_id]
+    mode = project.primary_mode.upper()
+    percentiles = {item["model_id"]: item["percentile"] for item in direction["design_models"]}
     colors = {"itm": "#4464ad", "p1812": "#e07a2d", "p2001": "#7f3c8d"}
-    for simulation in simulations:
+    distributions = []
+    annual = []
+    conditional = []
+    for simulation in direction["monte_carlo"]:
+        primary = next(item for item in simulation["mode_results"] if item["mode"] == mode)
+        model = simulation["model_id"]
+        label = model.upper()
+        color = colors.get(model, "#555555")
+        bounds = primary.get("annual_availability_bounds_percent")
+        if bounds is None:
+            percent = percentiles.get(model)
+            if percent is not None:
+                label = f"{label} (p{percent:g})"
+            probability = primary["success_probability_percent"]
+            conditional.append((label, color, probability, probability))
+        else:
+            annual.append((label, color, *bounds))
+        distributions.append((simulation, label, color, primary["threshold_dbm"]))
+
+    groups = [(True, annual), (False, conditional)]
+    groups = [(is_annual, rows) for is_annual, rows in groups if rows]
+    fig = plt.figure(figsize=(14, 7 if len(groups) > 1 else 5.5), dpi=150)
+    layout = fig.add_gridspec(len(groups), 2, width_ratios=[1.55, 1])
+    axis_hist = fig.add_subplot(layout[:, 0])
+    for simulation, label, color, _ in distributions:
         edges = np.asarray(simulation["histogram_edges_dbm"], dtype=float)
         counts = np.asarray(simulation["histogram_counts"], dtype=float)
         centers = (edges[:-1] + edges[1:]) / 2.0
         area = np.trapezoid(counts, centers)
         density = counts / area if area > 0.0 else counts
-        axis_hist.plot(
-            centers,
-            density,
-            linewidth=1.8,
-            color=colors.get(simulation["model_id"]),
-            label=(
-                tr('{model} (condicional em p{percent:g})',
-                   model=simulation["model_id"].upper(), percent=percentiles[simulation["model_id"]])
-                if simulation["temporal_sampling"] == "conditional_fixed_quantile"
-                else simulation["model_id"].upper()
-            ),
-        )
-    threshold = None
-    labels: list[str] = []
-    probabilities: list[float] = []
-    upper_bounds: list[float] = []
-    bar_colors: list[str] = []
-    for simulation in simulations:
-        primary = next(
-            item
-            for item in simulation["mode_results"]
-            if item["mode"] == project.primary_mode.upper()
-        )
-        threshold = primary["threshold_dbm"]
-        labels.append(
-            f"{simulation['model_id'].upper()}\n(p{percentiles[simulation['model_id']]:g})"
-            if simulation["temporal_sampling"] == "conditional_fixed_quantile"
-            else simulation["model_id"].upper()
-        )
-        bounds = primary.get("annual_availability_bounds_percent")
-        probability = primary["success_probability_percent"]
-        probabilities.append(bounds[0] if bounds else probability)
-        upper_bounds.append(bounds[1] if bounds else probability)
-        bar_colors.append(colors.get(simulation["model_id"], "#555555"))
-    if threshold is not None:
-        axis_hist.axvline(
-            threshold,
-            color="#d62728",
-            linestyle="--",
-            linewidth=1.2,
-            label=tr('Limiar {x0}: {x1:.1f} dBm', x0=project.primary_mode.upper(), x1=threshold),
-        )
-    axis_hist.set_title(tr('Distribuição da potência recebida'), loc="left")
-    axis_hist.set_xlabel(tr('Potência no receptor (dBm)'))
-    axis_hist.set_ylabel(tr('Densidade relativa'))
-    axis_hist.grid(True, alpha=0.18)
-    axis_hist.legend(fontsize=8)
-    bars = axis_bar.bar(labels, probabilities, color=bar_colors)
-    axis_bar.axhline(
-        project.target_availability_percent,
+        axis_hist.plot(centers, density, linewidth=1.8, color=color, label=label)
+    axis_hist.axvline(
+        distributions[0][3],
         color="#d62728",
         linestyle="--",
         linewidth=1.2,
-        label=tr("Meta {percent}%", percent=percentage_text(project.target_availability_percent)),
+        label=tr("Limiar {mode}: {threshold:g} dBm", mode=mode, threshold=distributions[0][3]),
     )
-    axis_bar.set_ylim(0.0, 105.0)
-    axis_bar.set_ylabel(tr("Disponibilidade estimada / sucesso condicional (%)"))
-    axis_bar.set_title(tr('Funcionamento em {x0}', x0=project.primary_mode.upper()), loc="left")
-    axis_bar.grid(True, axis="y", alpha=0.18)
-    axis_bar.legend(fontsize=8)
-    for bar, value, upper, simulation in zip(bars, probabilities, upper_bounds, simulations):
-        center = bar.get_x() + bar.get_width() / 2.0
-        if upper > value:
-            axis_bar.errorbar(center, value, yerr=[[0.0], [upper - value]], fmt="none",
+    axis_hist.set_title(tr("Distribuição da potência recebida"), loc="left")
+    axis_hist.set_xlabel(tr("Potência no receptor (dBm)"))
+    axis_hist.set_ylabel(tr("Densidade relativa"))
+    axis_hist.grid(True, alpha=0.18)
+    axis_hist.legend(fontsize=8)
+
+    notes = []
+    if any(high > low for _, _, low, high in annual):
+        notes.append(tr("Os traços mostram a faixa anual com caudas desconhecidas."))
+    if conditional:
+        notes.append(tr("* Sucesso condicional ao percentil indicado."))
+    for index, (is_annual, rows) in enumerate(groups):
+        axis = fig.add_subplot(layout[index, 1])
+        axis.set_title(
+            tr("Disponibilidade anual estimada") if is_annual else tr("Sucesso condicional"),
+            loc="left",
+        )
+        axis.set_ylabel("%")
+        axis.set_ylim(0.0, 116.0)
+        axis.set_yticks([0, 25, 50, 75, 100])
+        axis.grid(True, axis="y", alpha=0.18)
+        bars = axis.bar(
+            [label for label, _, _, _ in rows],
+            [low for _, _, low, _ in rows],
+            color=[color for _, color, _, _ in rows],
+        )
+        if is_annual:
+            axis.axhline(
+                project.target_availability_percent,
+                color="#d62728",
+                linestyle="--",
+                linewidth=1.2,
+                label=tr("Meta {percent}%", percent=percentage_text(project.target_availability_percent)),
+            )
+            axis.legend(fontsize=8, loc="lower right")
+        for bar, (_, _, low, high) in zip(bars, rows):
+            center = bar.get_x() + bar.get_width() / 2.0
+            display = percentage_text(low)
+            if high > low:
+                axis.errorbar(center, low, yerr=[[0.0], [high - low]], fmt="none",
                               ecolor="#333333", capsize=4)
-        display = percentage_text(value)
-        if upper > value:
-            display += "–" + percentage_text(upper)
-        suffix = (
-            "*"
-            if simulation["temporal_sampling"] == "conditional_fixed_quantile"
-            else ""
-        )
-        axis_bar.text(
-            bar.get_x() + bar.get_width() / 2.0,
-            upper + 2.0,
-            f"{display}%{suffix}",
-            ha="center",
-            va="bottom",
-            fontsize=9,
-        )
-    has_conditional_result = any(
-        item["temporal_sampling"] == "conditional_fixed_quantile"
-        for item in simulations
-    )
-    if has_conditional_result or upper_bounds != probabilities:
-        fig.text(
-            0.05,
-            0.018,
-            tr("Os traços mostram a faixa anual com caudas desconhecidas. * Sucesso condicional ao percentil indicado."),
-            fontsize=7.5,
-            color="#555555",
-            ha="left",
-        )
+                display += "–" + percentage_text(high)
+            suffix = "" if is_annual else "*"
+            axis.annotate(
+                f"{display}%{suffix}", (center, high), xytext=(0, 3),
+                textcoords="offset points", ha="center", va="bottom", fontsize=9,
+            )
+
+    if notes:
+        fig.text(0.05, 0.018, " ".join(notes), fontsize=8, color="#555555")
     fig.suptitle(
-        f"Monte Carlo — {result['directions']['a_to_b']['transmitter']} → "
-        f"{result['directions']['a_to_b']['receiver']}",
-        fontsize=14,
-        fontweight="bold",
-        x=0.04,
-        ha="left",
+        f"{tr('Monte Carlo')} — {direction['transmitter']} → {direction['receiver']} ({mode})",
+        fontsize=14, fontweight="bold", x=0.04, ha="left",
     )
-    fig.tight_layout(rect=(0.0, 0.055 if has_conditional_result or upper_bounds != probabilities else 0.0, 1.0, 0.95))
+    fig.tight_layout(rect=(0, 0.055 if notes else 0, 1, 0.95))
     fig.savefig(output_path, bbox_inches="tight")
     plt.close(fig)
 
@@ -558,11 +549,15 @@ def build_html_report(
             '<section class="visual"><img src="profile.png" '
             f'alt="{html.escape(tr("Perfil técnico do enlace"))}"></section>'
         )
-    if make_plots and result["directions"]["a_to_b"]["monte_carlo"]:
-        images += (
-            '<section class="visual"><img src="monte_carlo.png" '
-            f'alt="{html.escape(tr("Resultado de Monte Carlo"))}"></section>'
-        )
+    if make_plots:
+        for direction_id, (_, filename) in MONTE_CARLO_PLOTS.items():
+            direction = result["directions"][direction_id]
+            if direction["monte_carlo"]:
+                description = f"{tr('Resultado de Monte Carlo')} — {direction['transmitter']} → {direction['receiver']}"
+                images += (
+                    f'<section class="visual"><img src="{filename}" '
+                    f'alt="{html.escape(description, quote=True)}"></section>'
+                )
     return f"""<!doctype html>
 <html lang="{html_language()}">
 <head>

@@ -26,11 +26,22 @@ def verify(directory: Path) -> None:
             assert "\u25a0" not in text, (language, key, "missing glyph")
             assert "Copernicus WorldDEM-30" in text, (language, key, "missing DEM credit")
             assert "Airbus Defence and Space" in text, (language, key, "missing DEM rights holder")
+            fonts = [
+                font.get_object()
+                for page in reader.pages
+                for font in page["/Resources"]["/Font"].values()
+            ]
+            assert fonts and all(
+                "/FontDescriptor" in font and "/FontFile2" in font["/FontDescriptor"]
+                for font in fonts
+            ), (language, key, "PDF text fonts must be embedded")
             if key == "coverage_pdf":
                 assert re.search(re.escape(tr("Células calculadas")) + r"\s+" + str(values["coverage_cells"]) + r"\b", text), (language, "incorrect cell count in PDF")
+                assert tr("Modo RX") in text, (language, "missing RX mode")
             else:
                 for model in ("ITM", "P1812", "P2001"):
                     assert model in text, (language, model)
+                assert tr("Amostras que violam o critério de Fresnel (%)") in " ".join(text.split()), (language, "Fresnel label")
         for report in (directory / language).rglob("*.html"):
             body = report.read_text(encoding="utf-8")
             assert APP_NAME in body, (language, report, "product name")

@@ -482,6 +482,31 @@ def test_coverage_map_javascript_parses(tmp_path: Path) -> None:
         text=True, encoding="utf-8", check=False,
     )
     assert checked.returncode == 0, checked.stderr
+    legend = json.loads(re.search(r"const legendLabels = (.*);", script)[1])
+    assert legend["margin"]["ticks"] == [
+        ["≤−12", 0], ["0", 0.4], ["+6", 0.6], ["+12", 0.8], ["≥+18", 1],
+    ]
+    drawing = script[script.index("function isPartialCoverageView"):script.index("const exportMessages")]
+    test_script = """
+      const assert = require("node:assert/strict");
+      const coveragePerimeter = [[-47, -23]];
+      const scaleSelect = {value:"margin"};
+      const palette = [[0, "#000"], [1, "#fff"]];
+      const labels = [];
+      const ctx = {
+        fillText: text => labels.push(text), fillRect: () => {},
+        createLinearGradient: () => ({addColorStop: () => {}}),
+      };
+      let y = 200;
+      const map = {getCenter: () => ({lng:-47}), project: () => ({x:200, y})};
+    """ + "const legendLabels = " + json.dumps(legend) + ";" + drawing + """
+      drawCoverageLegend(ctx, 800, 600);
+      assert.ok(!labels.includes("Vista parcial da cobertura"));
+      y = -20;
+      drawCoverageLegend(ctx, 800, 600);
+      assert.ok(labels.includes("Vista parcial da cobertura"));
+    """
+    subprocess.run(["node", "-"], input=test_script, text=True, encoding="utf-8", check=True)
 
 
 def test_map_screenshot_export_returns_pdf_and_checks_origin(tmp_path: Path) -> None:
@@ -496,6 +521,9 @@ def test_map_screenshot_export_returns_pdf_and_checks_origin(tmp_path: Path) -> 
         "minimum_margin_db": -10, "maximum_margin_db": 20,
         "covered_percent": 80, "margin_3_db_percent": 70,
         "margin_6_db_percent": 60, "margin_12_db_percent": 30,
+        "engine_version": "2", "terrain_profile_step_m": 35,
+        "terrain_zone_assumption": "all_inland_land",
+        "maximum_margin_free_space_distance_m": 600.0,
     }
     outcome = CoverageOutcome(
         request=request, radials=(), paths={"report_html": html_report},
@@ -551,6 +579,11 @@ def test_map_screenshot_export_returns_pdf_and_checks_origin(tmp_path: Path) -> 
         extracted = "\n".join(page.extract_text() for page in PdfReader(pdf).pages)
         assert "Mapa de cobertura com referências geográficas" in extracted
         assert "OpenStreetMap contributors" in extracted
+        assert "Modo RX" in extracted and "FM" in extracted
+        assert "Versão do motor: 2" in extracted
+        assert "35 m" in extracted and "600 m" in extracted
+        assert "terra interior em todo o perfil" in extracted
+        assert "células válidas do raio de 50 km" in extracted
     finally:
         server.shutdown()
         server.server_close()
@@ -756,9 +789,11 @@ def test_grid_worker_executes_one_p1812_call_per_eligible_cell(
     assert result.failed_cells == 0
 
 
-def test_cancelled_grid_is_resumed_from_saved_blocks(
+@pytest.mark.parametrize("interruption", ["cancelled", "temporary_lock", "persistent_lock"])
+def test_coverage_survives_interruption(
     tmp_path: Path,
     monkeypatch,
+    interruption: str,
 ) -> None:
     request = _request(
         tmp_path / "resumable",
@@ -843,24 +878,47 @@ def test_cancelled_grid_is_resumed_from_saved_blocks(
     monkeypatch.setattr(coverage_grid, "_record_performance", lambda **_: None)
 
     cancel = threading.Event()
+    attempted_replacements = []
+    original_replace = os.replace
+    failed_attempts = {"cancelled": 0, "temporary_lock": 2, "persistent_lock": 5}[interruption]
+
+    def replace_checkpoint(source, destination):
+        if Path(destination).name == "checkpoint.json" and len(attempted_replacements) < failed_attempts:
+            payload = Path(source).read_bytes()
+            if json.loads(payload)["completed_cells"]:
+                attempted_replacements.append(payload)
+                error = PermissionError("synthetic Windows file lock")
+                error.winerror = 5
+                raise error
+        return original_replace(source, destination)
+
+    monkeypatch.setattr(coverage_grid.os, "replace", replace_checkpoint)
 
     def cancel_after_first_block(state) -> None:
         if state.phase == "cells" and state.completed > 0:
             cancel.set()
 
-    with pytest.raises(CoverageCancelled) as cancelled:
-        run_coverage_analysis(
-            request,
-            progress=cancel_after_first_block,
-            cancel_event=cancel,
-            worker_count=1,
-        )
-    assert cancelled.value.completed_cells > 0
-    assert estimate_coverage(request, worker_count=1).resumable_cells > 0
+    if interruption == "cancelled":
+        with pytest.raises(CoverageCancelled) as cancelled:
+            run_coverage_analysis(
+                request, progress=cancel_after_first_block, cancel_event=cancel, worker_count=1,
+            )
+        assert cancelled.value.completed_cells > 0
+    elif interruption == "persistent_lock":
+        with pytest.raises(RuntimeError, match="mesmos parâmetros") as failure:
+            run_coverage_analysis(request, worker_count=1)
+        checkpoint = next(request.output_directory.glob(".coverage-checkpoint-*"))
+        assert str(checkpoint) in str(failure.value)
+        assert json.loads((checkpoint / "checkpoint.json").read_text(encoding="utf-8"))["completed_cells"] == 0
 
+    resumed = interruption != "temporary_lock"
+    if resumed:
+        assert estimate_coverage(request, worker_count=1).resumable_cells > 0
     outcome = run_coverage_analysis(request, worker_count=1)
-    assert outcome.statistics["resumed"] is True
-    assert outcome.statistics["resume_count"] == 1
+    assert len(attempted_replacements) == failed_attempts
+    assert len(set(attempted_replacements)) <= 1
+    assert outcome.statistics["resumed"] is resumed
+    assert outcome.statistics["resume_count"] == int(resumed)
     assert outcome.statistics["calculated_cells"] == coverage_circle_cell_count(
         50,
         5_000,

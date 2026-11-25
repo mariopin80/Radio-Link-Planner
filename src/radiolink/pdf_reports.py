@@ -21,7 +21,7 @@ from .legal_notices import (
     OSM_COPYRIGHT_URL,
     uses_copernicus_glo30,
 )
-from .report import describe_fresnel_clearance, describe_geometry_clearance
+from .report import MONTE_CARLO_PLOTS, describe_fresnel_clearance, describe_geometry_clearance
 from .propagation.p1812 import P1812_TIME_HELP
 from .version import APP_NAME
 
@@ -29,6 +29,8 @@ _RED = "#c62835"
 _DARK = "#20252b"
 _GRAY = "#5e6872"
 _LIGHT = "#eef0f2"
+_PDF_FONT = "RadioLinkSans"
+_PDF_BOLD = "RadioLinkSans-Bold"
 
 
 def write_link_pdf(
@@ -119,7 +121,7 @@ def write_link_pdf(
                     [tr('Distância'), f"{geometry['profile_distance_km']:.3f} km"],
                     [tr('Condição limitante'), describe_geometry_clearance(geometry)],
                     [
-                        tr('Fresnel livre (%)'),
+                        tr("Amostras que violam o critério de Fresnel (%)"),
                         describe_fresnel_clearance(geometry),
                     ],
                     [
@@ -238,17 +240,22 @@ def write_link_pdf(
         story.append(report["Paragraph"](tr("Otimização da altura das antenas"), styles["heading"]))
         story.extend(report["Paragraph"](_escape(line), styles["body"]) for line in height_summary_lines(optimization))
 
-    for title, key in (
+    figures = [
         (tr('Mapa geográfico do enlace'), "geographic_map"),
         (tr('Perfil topográfico e zona de Fresnel'), "profile_plot"),
-        (tr('Análise de Monte Carlo'), "monte_carlo_plot"),
-    ):
+    ]
+    for direction_id, (key, _) in MONTE_CARLO_PLOTS.items():
+        if key in paths:
+            direction = result["directions"][direction_id]
+            heading = f"{tr('Análise de Monte Carlo')} — {direction['transmitter']} → {direction['receiver']}"
+            figures.append((heading, key))
+    for title, key in figures:
         image_path = paths.get(key)
         if image_path and image_path.is_file():
             story.extend(
                 [
                     report["PageBreak"](),
-                    report["Paragraph"](title, styles["heading"]),
+                    report["Paragraph"](_escape(title), styles["heading"]),
                     report["Spacer"](1, 8),
                     _fit_image(report, image_path, 500, 650),
                 ]
@@ -262,12 +269,16 @@ def write_link_pdf(
             report["Paragraph"](_escape(tr(VIABILITY_CRITERIA)), styles["small"]),
             report["Paragraph"](_escape(tr(AGREEMENT_CRITERIA)), styles["small"]),
             report["Paragraph"](
+                _escape(tr("Versão do motor: {x0}", x0=result.get("engine_version", "—"))),
+                styles["small"],
+            ),
+            report["Paragraph"](
                 _escape(tr("Meta de disponibilidade do enlace: {target:g}%.", target=project.target_availability_percent)),
                 styles["small"],
             ),
             report["Paragraph"](
                 (
-                    tr("Identificador do resultado: <font name='Courier'>{x0}</font>", x0=_escape(str(result.get('result_sha256', '—'))))
+                    _escape(tr("Identificador do resultado: {x0}", x0=result.get("result_sha256", "—")))
                 ),
                 styles["small"],
             ),
@@ -279,6 +290,32 @@ def write_link_pdf(
             ),
         ]
     )
+    mode = project.primary_mode.upper()
+    for direction in result["directions"].values():
+        threshold = direction.get("mode_thresholds", {}).get(mode, {}).get("threshold_dbm")
+        if threshold is None:
+            threshold = next(
+                (budget["receiver_threshold_dbm"] for budget in direction.get("link_budgets", ())
+                 if budget.get("mode") == mode and "receiver_threshold_dbm" in budget),
+                None,
+            )
+        if threshold is not None:
+            line = tr(
+                "Limiar RX em {receiver} ({mode}): {threshold:g} dBm.",
+                receiver=direction["receiver"], mode=mode, threshold=threshold,
+            )
+            story.append(report["Paragraph"](_escape(line), styles["small"]))
+        counts = ", ".join(
+            f"{simulation['model_id'].upper()} {simulation['runs']:,}"
+            for simulation in direction.get("monte_carlo", ())
+            if simulation.get("runs") is not None
+        )
+        if counts:
+            line = tr(
+                "Simulações de Monte Carlo em {transmitter} → {receiver}: {counts}.",
+                transmitter=direction["transmitter"], receiver=direction["receiver"], counts=counts,
+            )
+            story.append(report["Paragraph"](_escape(line), styles["small"]))
     if project.models.p1812:
         story.append(report["Paragraph"](_escape(tr(P1812_TIME_HELP)), styles["small"]))
         if project.target_availability_percent > 50.0:
@@ -361,6 +398,11 @@ def write_coverage_pdf(
                     tr("Perda no cabo transmissor"), f"{request.transmitter_line_loss_db:g} dB",
                     tr("Perda no cabo receptor"), f"{request.receiver_line_loss_db:g} dB",
                 ],
+                [
+                    tr("Modo RX"), _escape(request.mode.upper()),
+                    tr("Amostragem do terreno nos perfis"),
+                    f"{statistics.get('terrain_profile_step_m', request.terrain_step_m):g} m",
+                ],
             ],
             widths=(100, 155, 100, 130),
         ),
@@ -388,6 +430,27 @@ def write_coverage_pdf(
             widths=(245, 240),
         ),
     ]
+    engine_version = statistics.get("engine_version")
+    if engine_version is not None:
+        story.append(report["Paragraph"](
+            _escape(tr("Versão do motor: {x0}", x0=engine_version)), styles["small"],
+        ))
+    story.append(report["Paragraph"](
+        _escape(tr(
+            "Os percentuais usam todas as células válidas do raio de {radius:g} km, incluindo células sobre o mar quando presentes.",
+            radius=request.radius_km,
+        )),
+        styles["small"],
+    ))
+    free_space_distance = statistics.get("maximum_margin_free_space_distance_m")
+    if free_space_distance is not None:
+        story.append(report["Paragraph"](
+            _escape(tr(
+                "A margem máxima vem de uma célula calculada em espaço livre a uma distância efetiva de {distance:g} m.",
+                distance=free_space_distance,
+            )),
+            styles["small"],
+        ))
     if request.transmitter_pattern:
         story.append(report["Paragraph"](_escape(tr(ANTENNA_APPROXIMATION_NOTE)), styles["small"]))
     display_resolution = statistics.get("display_resolution_m", request.resolution_m)
@@ -429,6 +492,14 @@ def write_coverage_pdf(
             ),
         ]
     )
+    if statistics.get("terrain_zone_assumption") == "all_inland_land":
+        story.append(report["Paragraph"](
+            _escape(tr(
+                "O cálculo considera terra interior em todo o perfil, inclusive nos trechos sobre água. "
+                "Interprete os resultados costeiros e marítimos considerando essa aproximação."
+            )),
+            styles["small"],
+        ))
     story.extend(_copernicus_pdf_notice(report, styles))
     _build_document(report, destination, story)
     return destination
@@ -463,6 +534,8 @@ def _reportlab() -> dict[str, Any]:
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import mm
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
         from reportlab.platypus import (
             Image,
             PageBreak,
@@ -476,6 +549,10 @@ def _reportlab() -> dict[str, Any]:
         raise RuntimeError(
             tr('A dependência de relatórios PDF (ReportLab) não está instalada.')
         ) from exc
+    fonts = Path(__file__).with_name("fonts")
+    if _PDF_FONT not in pdfmetrics.getRegisteredFontNames():
+        pdfmetrics.registerFont(TTFont(_PDF_BOLD, str(fonts / "DejaVuSans-Bold.ttf")))
+        pdfmetrics.registerFont(TTFont(_PDF_FONT, str(fonts / "DejaVuSans.ttf")))
     return locals()
 
 
@@ -486,7 +563,7 @@ def _styles(report: dict[str, Any]) -> dict[str, Any]:
         "eyebrow": paragraph_style(
             "Eyebrow",
             parent=base["Normal"],
-            fontName="Helvetica-Bold",
+            fontName=_PDF_BOLD,
             fontSize=8,
             textColor=report["colors"].HexColor(_RED),
             spaceAfter=5,
@@ -495,7 +572,7 @@ def _styles(report: dict[str, Any]) -> dict[str, Any]:
         "title": paragraph_style(
             "Title",
             parent=base["Title"],
-            fontName="Helvetica-Bold",
+            fontName=_PDF_BOLD,
             fontSize=22,
             leading=26,
             textColor=report["colors"].HexColor(_DARK),
@@ -505,6 +582,7 @@ def _styles(report: dict[str, Any]) -> dict[str, Any]:
         "subtitle": paragraph_style(
             "Subtitle",
             parent=base["Normal"],
+            fontName=_PDF_FONT,
             fontSize=10,
             leading=14,
             textColor=report["colors"].HexColor(_GRAY),
@@ -512,7 +590,7 @@ def _styles(report: dict[str, Any]) -> dict[str, Any]:
         "heading": paragraph_style(
             "Heading",
             parent=base["Heading2"],
-            fontName="Helvetica-Bold",
+            fontName=_PDF_BOLD,
             fontSize=13,
             textColor=report["colors"].HexColor(_DARK),
             spaceBefore=4,
@@ -521,7 +599,7 @@ def _styles(report: dict[str, Any]) -> dict[str, Any]:
         "subheading": paragraph_style(
             "Subheading",
             parent=base["Heading3"],
-            fontName="Helvetica-Bold",
+            fontName=_PDF_BOLD,
             fontSize=10,
             textColor=report["colors"].HexColor(_RED),
             spaceBefore=4,
@@ -530,6 +608,7 @@ def _styles(report: dict[str, Any]) -> dict[str, Any]:
         "body": paragraph_style(
             "Body",
             parent=base["BodyText"],
+            fontName=_PDF_FONT,
             fontSize=8.5,
             leading=12,
             textColor=report["colors"].HexColor(_DARK),
@@ -538,6 +617,7 @@ def _styles(report: dict[str, Any]) -> dict[str, Any]:
         "small": paragraph_style(
             "Small",
             parent=base["BodyText"],
+            fontName=_PDF_FONT,
             fontSize=7.5,
             leading=10.5,
             textColor=report["colors"].HexColor(_GRAY),
@@ -546,6 +626,7 @@ def _styles(report: dict[str, Any]) -> dict[str, Any]:
         "notice": paragraph_style(
             "Notice",
             parent=base["BodyText"],
+            fontName=_PDF_FONT,
             fontSize=8,
             leading=11,
             textColor=report["colors"].HexColor(_DARK),
@@ -580,7 +661,7 @@ def _table(
                 str(value),
                 report["ParagraphStyle"](
                     "TableHeader" if row_index < header_rows else "TableCell",
-                    fontName="Helvetica-Bold" if row_index < header_rows else "Helvetica",
+                    fontName=_PDF_BOLD if row_index < header_rows else _PDF_FONT,
                     fontSize=7.5,
                     leading=10,
                     textColor=report["colors"].white if row_index < header_rows else report["colors"].HexColor(_DARK),
@@ -597,7 +678,7 @@ def _table(
         hAlign="LEFT",
     )
     commands: list[tuple[Any, ...]] = [
-        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+        ("FONTNAME", (0, 0), (-1, -1), _PDF_FONT),
         ("FONTSIZE", (0, 0), (-1, -1), 7.5),
         ("LEADING", (0, 0), (-1, -1), 10),
         ("TEXTCOLOR", (0, 0), (-1, -1), report["colors"].HexColor(_DARK)),
@@ -617,7 +698,7 @@ def _table(
             [
                 ("BACKGROUND", (0, 0), (-1, header_rows - 1), report["colors"].HexColor(_DARK)),
                 ("TEXTCOLOR", (0, 0), (-1, header_rows - 1), report["colors"].white),
-                ("FONTNAME", (0, 0), (-1, header_rows - 1), "Helvetica-Bold"),
+                ("FONTNAME", (0, 0), (-1, header_rows - 1), _PDF_BOLD),
             ]
         )
     table.setStyle(report["TableStyle"](commands))
@@ -652,6 +733,7 @@ def _build_document(
         bottomMargin=17 * report["mm"],
         title=destination.stem,
         author=APP_NAME,
+        initialFontName=_PDF_FONT,
     )
 
     def footer(canvas: Any, doc: Any) -> None:
@@ -665,7 +747,7 @@ def _build_document(
             width - 16 * report["mm"],
             12 * report["mm"],
         )
-        canvas.setFont("Helvetica", 7)
+        canvas.setFont(_PDF_FONT, 7)
         canvas.setFillColor(report["colors"].HexColor(_GRAY))
         canvas.drawString(
             16 * report["mm"],

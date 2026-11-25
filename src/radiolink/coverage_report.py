@@ -22,6 +22,7 @@ from .coverage import (
     ProgressCallback,
     RadialCoverage,
 )
+from .coverage_grid import MINIMUM_P1812_DISTANCE_M, short_range_effective_distance_m
 from .geodesy import destination_point, great_circle_distance_m, initial_bearing_deg
 from .legal_notices import (
     COPERNICUS_GLO30_DERIVED_CREDIT,
@@ -48,6 +49,16 @@ S_CONTOUR_LEVELS_DBM = (
     ("S5", S9_DBM - 4 * S_UNIT_DB),
     ("S7", S9_DBM - 2 * S_UNIT_DB),
     ("S9+", S9_DBM),
+)
+MARGIN_COLOR_LIMITS_DB = (-12.0, 18.0)
+COVERAGE_COLOR_STOPS = (
+    (0.00, "#65121b"),
+    (0.20, "#c62828"),
+    (0.36, "#ef6c00"),
+    (0.44, "#ffd54f"),
+    (0.58, "#9ccc65"),
+    (0.76, "#2e7d32"),
+    (1.00, "#0b5969"),
 )
 def coverage_cell_at(
     outcome: CoverageOutcome, latitude_deg: float, longitude_deg: float,
@@ -159,7 +170,13 @@ def write_coverage_outputs(
     _check_cancelled(cancel_check)
     display_resolution = round((axis_km[1] - axis_km[0]) * 1000.0) if len(axis_km) > 1 else request.resolution_m
     grid_metadata = {**grid_metadata, "display_resolution_m": display_resolution}
-    statistics = {**_coverage_statistics(grid), "display_resolution_m": display_resolution}
+    statistics = _coverage_statistics(
+        grid,
+        short_range_resolution_m=(
+            request.resolution_m if grid_metadata.get("short_range_free_space_cells") else None
+        ),
+    )
+    statistics["display_resolution_m"] = display_resolution
     report_path.write_text(
         _build_coverage_report(
             request=request,
@@ -229,15 +246,7 @@ def _coverage_colormap():
 
     return LinearSegmentedColormap.from_list(
         "radio_link_margin",
-        [
-            (0.00, "#65121b"),
-            (0.20, "#c62828"),
-            (0.36, "#ef6c00"),
-            (0.44, "#ffd54f"),
-            (0.58, "#9ccc65"),
-            (0.76, "#2e7d32"),
-            (1.00, "#0b5969"),
-        ],
+        COVERAGE_COLOR_STOPS,
     )
 
 
@@ -254,7 +263,7 @@ def _render_overlay(
 
     if scale == "margin":
         render_values = grid
-        minimum, maximum = -12.0, 18.0
+        minimum, maximum = MARGIN_COLOR_LIMITS_DB
     elif scale == "s":
         render_values = grid + request.receiver_threshold_dbm
         minimum, maximum = S_CONTOUR_LEVELS_DBM[0][1], S9_DBM
@@ -320,7 +329,8 @@ def _render_heatmap_and_contours(
     if segments is None:
         segments = _contour_segments(grid, axis_km, CONTOUR_LEVELS_DB)
     colormap = _coverage_colormap()
-    normalization = Normalize(vmin=-12.0, vmax=18.0, clip=True)
+    minimum, maximum = MARGIN_COLOR_LIMITS_DB
+    normalization = Normalize(vmin=minimum, vmax=maximum, clip=True)
     figure, axis = plt.subplots(figsize=(10.8, 9.2), dpi=150)
     image = axis.imshow(
         grid,
@@ -441,11 +451,14 @@ def _local_km_to_lon_lat(
     return coordinates
 
 
-def _coverage_statistics(grid: np.ndarray) -> dict[str, Any]:
+def _coverage_statistics(
+    grid: np.ndarray, *, short_range_resolution_m: int | None = None,
+) -> dict[str, Any]:
     finite_count = 0
     threshold_counts = {level: 0 for level in CONTOUR_LEVELS_DB}
     minimum = float("inf")
     maximum = float("-inf")
+    maximum_distance_m = None
     chunk_rows = 256
     for start in range(0, grid.shape[0], chunk_rows):
         values = np.asarray(grid[start : start + chunk_rows])
@@ -454,12 +467,19 @@ def _coverage_statistics(grid: np.ndarray) -> dict[str, Any]:
             continue
         finite_count += len(finite)
         minimum = min(minimum, float(np.min(finite)))
-        maximum = max(maximum, float(np.max(finite)))
+        block_maximum = float(np.max(finite))
+        if block_maximum > maximum:
+            maximum = block_maximum
+            if short_range_resolution_m is not None:
+                row, column = divmod(int(np.argmax(values == maximum)), grid.shape[1])
+                maximum_distance_m = short_range_resolution_m * math.hypot(
+                    start + row - grid.shape[0] // 2, column - grid.shape[1] // 2,
+                )
         for level in threshold_counts:
             threshold_counts[level] += int(np.count_nonzero(finite >= level))
     if finite_count == 0:
         raise ValueError("coverage grid contains no finite cells")
-    return {
+    statistics = {
         "minimum_margin_db": minimum,
         "maximum_margin_db": maximum,
         "covered_percent": 100.0 * threshold_counts[0.0] / finite_count,
@@ -467,6 +487,11 @@ def _coverage_statistics(grid: np.ndarray) -> dict[str, Any]:
         "margin_6_db_percent": 100.0 * threshold_counts[6.0] / finite_count,
         "margin_12_db_percent": 100.0 * threshold_counts[12.0] / finite_count,
     }
+    if maximum_distance_m is not None and maximum_distance_m < MINIMUM_P1812_DISTANCE_M:
+        statistics["maximum_margin_free_space_distance_m"] = short_range_effective_distance_m(
+            maximum_distance_m, short_range_resolution_m,
+        )
+    return statistics
 
 
 def _build_coverage_report(
@@ -483,6 +508,39 @@ def _build_coverage_report(
 ) -> str:
     map_css, map_js = map_assets
     bounds = _coverage_bounds(request)
+    perimeter = []
+    for bearing in range(0, 360, 5):
+        latitude, longitude = destination_point(
+            request.latitude_deg, request.longitude_deg, bearing, request.radius_km * 1000.0,
+        )
+        perimeter.append([longitude, latitude])
+    minimum, maximum = MARGIN_COLOR_LIMITS_DB
+    s_minimum = S_CONTOUR_LEVELS_DBM[0][1]
+    legend_labels = {
+        "margin": {
+            "title": tr("Margem do enlace (dB)"),
+            "ticks": [
+                (label, (value - minimum) / (maximum - minimum))
+                for label, value in (
+                    (f"≤−{abs(minimum):g}", minimum), ("0", 0.0), ("+6", 6.0),
+                    ("+12", 12.0), (f"≥{maximum:+g}", maximum),
+                )
+            ],
+            "contours": tr("Contornos: 0, +3, +6 e +12 dB"),
+        },
+        "s": {
+            "title": tr("Potência recebida estimada (escala S)"),
+            "ticks": [
+                (label, (value - s_minimum) / (S9_DBM - s_minimum))
+                for label, value in S_CONTOUR_LEVELS_DBM
+            ],
+            "contours": tr("Contornos: S1, S3, S5, S7 e S9+"),
+        },
+    }
+    margin_legend = legend_labels["margin"]
+    gradient_stops = ", ".join(
+        f"{color} {position:.0%}" for position, color in COVERAGE_COLOR_STOPS
+    )
     pattern = request.transmitter_pattern
     antenna_rows = "".join(
         f"<tr><th>{html.escape(key)}</th><td>{html.escape(value)}</td></tr>"
@@ -609,9 +667,11 @@ def _build_coverage_report(
                border-radius:6px; box-shadow:0 2px 10px rgba(0,0,0,.2);
                width:235px; font-size:12px; }}
     .legend-gradient {{ height:13px; border-radius:3px; margin:5px 0 3px;
-      background:linear-gradient(90deg,#65121b,#c62828,#ef6c00,#ffd54f,
-                                 #9ccc65,#2e7d32,#0b5969); }}
-    .legend-ticks {{ display:flex; justify-content:space-between; color:#34383e; }}
+      background:linear-gradient(90deg,{gradient_stops}); }}
+    .legend-ticks {{ position:relative; height:16px; color:#34383e; }}
+    .legend-ticks span {{ position:absolute; transform:translateX(-50%); white-space:nowrap; }}
+    .legend-ticks span:first-child {{ transform:none; }}
+    .legend-ticks span:last-child {{ transform:translateX(-100%); }}
     .legend-classes {{ margin-top:6px; }}
     .legend-classes div {{ display:flex; align-items:center; gap:6px; margin-top:3px; }}
     .legend-swatch {{ width:12px; height:10px; border-radius:2px; flex:none; }}
@@ -664,11 +724,10 @@ def _build_coverage_report(
       <p class="note">{html.escape(tr('Clique no mapa para consultar a célula.'))}</p>
       <div id="coverage-map" aria-label="{html.escape(tr('Mapa de cobertura'), quote=True)}"></div>
       <div class="legend" id="coverage-legend">
-        <strong id="legend-title">{html.escape(tr('Margem do enlace'))}</strong>
+        <strong id="legend-title">{html.escape(margin_legend["title"])}</strong>
         <div class="legend-gradient"></div>
-        <div class="legend-ticks" id="legend-ticks"><span>−12</span><span>0</span>
-          <span>+6</span><span>+12</span><span>{html.escape(tr('+18 dB'))}</span></div>
-        <div style="margin-top:7px" id="legend-contours">{html.escape(tr('Contornos: 0, +3, +6 e +12 dB'))}</div>
+        <div class="legend-ticks" id="legend-ticks"></div>
+        <div style="margin-top:7px" id="legend-contours">{html.escape(margin_legend["contours"])}</div>
       </div>
     </section>
     <section class="card">
@@ -726,16 +785,9 @@ def _build_coverage_report(
     const antennaBeam = {json.dumps(_antenna_beam(request))};
     const stationCoordinates = [{request.longitude_deg}, {request.latitude_deg}];
     const scaleSelect = document.getElementById("coverage-scale");
-    const legendLabels = {{
-      margin: {{title:{json.dumps(tr('Margem do enlace'))},
-                ticks:["−12", "0", "+6", "+12", "+18 dB"],
-                contours:{json.dumps(tr('Contornos: 0, +3, +6 e +12 dB'))}}},
-      s: {{title:{json.dumps(tr('Potência recebida estimada (escala S)'))},
-          ticks:["S1", "S3", "S5", "S7", "S9+"],
-          contours:{json.dumps(tr('Contornos: S1, S3, S5, S7 e S9+'))}}}
-    }};
-    const palette = ["#65121b", "#c62828", "#ef6c00", "#ffd54f",
-                     "#9ccc65", "#2e7d32", "#0b5969"];
+    const legendLabels = {json.dumps(legend_labels, ensure_ascii=False)};
+    const palette = {json.dumps(COVERAGE_COLOR_STOPS)};
+    const coveragePerimeter = {json.dumps(perimeter, separators=(",", ":"))};
     const map = new maplibregl.Map({{
       locale: {json.dumps(map_locale(), ensure_ascii=False)},
       container: "coverage-map",
@@ -867,9 +919,10 @@ def _build_coverage_report(
       const label = legendLabels[scaleSelect.value];
       document.getElementById("legend-title").textContent = label.title;
       document.getElementById("legend-ticks").replaceChildren(
-        ...label.ticks.map(text => {{
+        ...label.ticks.map(([text, position]) => {{
           const item = document.createElement("span");
           item.textContent = text;
+          item.style.left = (100 * position) + "%";
           return item;
         }})
       );
@@ -908,9 +961,19 @@ def _build_coverage_report(
       if (layersReady) updateScale();
     }});
 
+    function isPartialCoverageView(width, height) {{
+      const centerLongitude = map.getCenter().lng;
+      return coveragePerimeter.some(([longitude, latitude]) => {{
+        const visibleLongitude = longitude + 360 * Math.round((centerLongitude - longitude) / 360);
+        const point = map.project([visibleLongitude, latitude]);
+        return point.x < -1 || point.x > width + 1 || point.y < -1 || point.y > height + 1;
+      }});
+    }}
+
     function drawCoverageLegend(ctx, cssWidth, cssHeight) {{
       const legendWidth = Math.min(300, cssWidth-24);
-      const legendHeight = 91;
+      const partial = isPartialCoverageView(cssWidth, cssHeight);
+      const legendHeight = partial ? 110 : 91;
       const legendX = 14;
       const legendY = cssHeight-legendHeight-28;
       ctx.fillStyle = "rgba(255,255,255,0.94)";
@@ -920,20 +983,23 @@ def _build_coverage_report(
       const label = legendLabels[scaleSelect.value];
       ctx.fillText(label.title,legendX+10,legendY+17,legendWidth-20);
       const gradient = ctx.createLinearGradient(legendX+10,0,legendX+legendWidth-10,0);
-      palette.forEach((color,index) => gradient.addColorStop(index/(palette.length-1),color));
+      palette.forEach(([position, color]) => gradient.addColorStop(position, color));
       ctx.fillStyle = gradient;
       ctx.fillRect(legendX+10,legendY+25,legendWidth-20,13);
       ctx.fillStyle = "#34383e";
       ctx.font = "11px Arial, sans-serif";
-      label.ticks.forEach((text,index) => {{
-        const tickX = legendX+10+(legendWidth-20)*index/(label.ticks.length-1);
+      label.ticks.forEach(([text, position], index) => {{
+        const tickX = legendX+10+(legendWidth-20)*position;
         ctx.textAlign = index === 0 ? "left" :
                         index === label.ticks.length-1 ? "right" : "center";
         ctx.fillText(text,tickX,legendY+52);
       }});
       ctx.textAlign = "left";
       ctx.fillText(label.contours,legendX+10,legendY+73,legendWidth-20);
-
+      if (partial) {{
+        ctx.font = "bold 11px Arial, sans-serif";
+        ctx.fillText({json.dumps(tr("Vista parcial da cobertura"))},legendX+10,legendY+92,legendWidth-20);
+      }}
     }}
     {map_export_script()}
     enableMapExport(map, [{{coordinates:stationCoordinates, color:"#c91f37"}}],

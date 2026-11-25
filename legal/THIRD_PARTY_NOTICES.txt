@@ -60,6 +60,9 @@ dependencies. Complete the release-package audit before commercial launch.
    purchase is not strictly required; review current upstream terms.
    https://jrsoftware.org/inno-setup/purchase
 
+9. DejaVu Sans and DejaVu Sans Bold are embedded in exported PDF reports.
+   The full licence notice accompanies the fonts as LICENSE-DejaVu.txt.
+
 ITU-R integral digital products are intentionally excluded from the
 distributable. The user downloads them from official ITU sources into the
 user's local profile. Commercial automated-download terms remain subject to

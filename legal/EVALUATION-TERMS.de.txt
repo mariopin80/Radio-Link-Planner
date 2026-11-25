@@ -1,4 +1,4 @@
-PU2PTU - Radio Link Planner v0.6.2
+PU2PTU - Radio Link Planner v0.6.3
 Evaluierungslizenz und Nutzungsbedingungen
 © 2026 Mario Pin — PU2PTU
 

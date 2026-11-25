@@ -66,3 +66,48 @@ def test_unknown_tails_are_not_reported_as_certain_annual_success(reference_proj
     assert fm.annual_availability_bounds_percent == (98.0, 100.0)
     assert "98% a 100%" in describe_simulated_success(simulation.to_dict(), "FM", 99.5)
     assert percentage_text(99.99999) == "99.99999"
+
+
+def test_plot_uses_reverse_receiver_and_separates_conditional_success(
+    reference_project, tmp_path, monkeypatch,
+) -> None:
+    matplotlib = pytest.importorskip("matplotlib.figure")
+    from radiolink.report import render_monte_carlo_plot
+
+    project = reference_project.model_copy(deep=True)
+    project.terminal_a.receiver.threshold_overrides_dbm = {"FM": -104.0}
+    project.terminal_b.receiver.threshold_overrides_dbm = {"FM": -115.0}
+    project.target_availability_percent = 70.0
+    curve = QuantileCurve(
+        model_id="itm", direction="b_to_a",
+        percentiles=np.array([0.1, 50.0, 99.9]),
+        loss_db=np.array([100.0, 101.0, 102.0]),
+        percentile_meaning="time_percent_loss_not_exceeded",
+        complete_annual_distribution=True,
+    )
+    reverse = {
+        "transmitter": project.terminal_b.name, "receiver": project.terminal_a.name,
+        "design_models": [{"model_id": "p1812", "percentile": 50.0}],
+        "monte_carlo": [
+            simulate(project, Direction.B_TO_A, "itm", curve).to_dict(),
+            simulate(project, Direction.B_TO_A, "p1812", None, fixed_loss_db=100.0).to_dict(),
+        ],
+    }
+    figures = []
+    monkeypatch.setattr(matplotlib.Figure, "savefig", lambda figure, *a, **k: figures.append(figure))
+    render_monte_carlo_plot(
+        project, {"directions": {"b_to_a": reverse}}, tmp_path / "reverse.png", direction_id="b_to_a",
+    )
+
+    figure, = figures
+    figure.canvas.draw()
+    histogram, annual, conditional = figure.axes
+    threshold_line = histogram.lines[-1]
+    assert list(threshold_line.get_xdata()) == [-104.0, -104.0]
+    assert annual.get_legend().get_texts()[0].get_text() == "Meta 70%"
+    assert conditional.get_legend() is None
+    assert conditional.get_xticklabels()[0].get_text() == "P1812 (p50)"
+    assert "100%*" in [label.get_text() for label in conditional.texts]
+    renderer = figure.canvas.get_renderer()
+    for axis in (annual, conditional):
+        assert all(label.get_window_extent(renderer).y1 < axis.bbox.y1 for label in axis.texts)
