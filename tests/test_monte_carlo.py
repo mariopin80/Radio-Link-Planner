@@ -100,7 +100,10 @@ def test_plot_uses_reverse_receiver_and_separates_conditional_success(
     )
 
     figure, = figures
-    figure.canvas.draw()
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+    canvas = FigureCanvasAgg(figure)
+    canvas.draw()
     histogram, annual, conditional = figure.axes
     threshold_line = histogram.lines[-1]
     assert list(threshold_line.get_xdata()) == [-104.0, -104.0]
@@ -108,6 +111,6 @@ def test_plot_uses_reverse_receiver_and_separates_conditional_success(
     assert conditional.get_legend() is None
     assert conditional.get_xticklabels()[0].get_text() == "P1812 (p50)"
     assert "100%*" in [label.get_text() for label in conditional.texts]
-    renderer = figure.canvas.get_renderer()
+    renderer = canvas.get_renderer()
     for axis in (annual, conditional):
         assert all(label.get_window_extent(renderer).y1 < axis.bbox.y1 for label in axis.texts)

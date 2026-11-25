@@ -139,6 +139,11 @@ class RadioLinkPlannerApp:
         self.current_mode: str | None = None
         self.coverage_cancel_event: threading.Event | None = None
         self.home_images: list[tk.PhotoImage] = []
+        flags_directory = bundle_root() / "assets" / "flags"
+        self.flag_images = {
+            code: tk.PhotoImage(master=root, file=str(flags_directory / f"{flag}.png"))
+            for code, (_, flag) in LANGUAGES.items()
+        }
         self.link_form_initialized = False
         self._automatic_output = {"link": True, "coverage": True}
         self._writing_output = False
@@ -424,9 +429,7 @@ class RadioLinkPlannerApp:
         controls = ttk.Frame(header, style="App.TFrame")
         controls.grid(row=0, column=1, sticky="e")
         self.language_flags = {}
-        for column, (code, (_name, flag)) in enumerate(LANGUAGES.items()):
-            photo = tk.PhotoImage(file=str(bundle_root() / "assets" / "flags" / f"{flag}.png"))
-            self.home_images.append(photo)
+        for column, (code, photo) in enumerate(self.flag_images.items()):
             selector = tk.Label(
                 controls, image=photo, background="#11151a", borderwidth=0,
                 highlightthickness=2, highlightbackground="#11151a",

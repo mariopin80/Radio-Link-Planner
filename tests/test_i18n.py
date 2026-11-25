@@ -115,6 +115,7 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
     root = tk.Tk()
     root.withdraw()
     app = RadioLinkPlannerApp(root, load_preferences=False)
+    flag_images = {code: flag.cget("image") for code, flag in app.language_flags.items()}
     filename = tmp_path / "coverage.rlp"
     monkeypatch.setattr("radiolink.desktop.filedialog.asksaveasfilename", lambda **_: str(filename))
     monkeypatch.setattr("radiolink.desktop.filedialog.askopenfilename", lambda **_: str(filename))
@@ -153,6 +154,7 @@ def test_ui_languages_projects_about_and_single_remaining_time(tmp_path, monkeyp
             app._change_language(language, persist=False)
             root.update_idletasks()
             assert len(app.language_flags) == 5
+            assert {code: flag.cget("image") for code, flag in app.language_flags.items()} == flag_images
             check_home_layout(root, tmp_path / "interface")
             app._open_mode("link")
             assert choice_id(app.polarization_var.get(), ("vertical", "horizontal")) == "vertical"
