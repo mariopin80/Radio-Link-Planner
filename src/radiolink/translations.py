@@ -1,6 +1,98 @@
 """English, Spanish, French and German translations of Portuguese source messages."""
 
 MESSAGES: dict[str, tuple[str, str, str, str]] = {
+    "O Windows bloqueou a gravação do checkpoint de cobertura em {path}.": (
+        "Windows blocked writing the coverage checkpoint at {path}.",
+        "Windows bloqueó la escritura del punto de control de cobertura en {path}.",
+        "Windows a bloqué l’écriture du point de reprise de couverture dans {path}.",
+        "Windows hat das Schreiben des Versorgungsprüfpunkts in {path} blockiert.",
+    ),
+    "Execute novamente com os mesmos parâmetros e a mesma pasta de saída para retomar.": (
+        "Run again with the same parameters and output folder to resume.",
+        "Vuelva a ejecutar con los mismos parámetros y la misma carpeta de salida para reanudar.",
+        "Relancez avec les mêmes paramètres et le même dossier de sortie pour reprendre.",
+        "Starten Sie die Berechnung mit denselben Parametern und demselben Ausgabeordner erneut.",
+    ),
+    "Os modelos indicam margem suficiente nas condições simuladas.": (
+        "The models indicate sufficient margin under the simulated conditions.",
+        "Los modelos indican un margen suficiente en las condiciones simuladas.",
+        "Les modèles indiquent une marge suffisante dans les conditions simulées.",
+        "Die Modelle zeigen eine ausreichende Reserve unter den simulierten Bedingungen.",
+    ),
+    "Verifique o ruído e a interferência no receptor antes de decidir sobre o equipamento.": (
+        "Check noise and interference at the receiver before making equipment decisions.",
+        "Compruebe el ruido y la interferencia en el receptor antes de decidir sobre el equipo.",
+        "Vérifiez le bruit et les interférences au récepteur avant de décider du matériel.",
+        "Prüfen Sie Rauschen und Störungen am Empfänger, bevor Sie über die Ausrüstung entscheiden.",
+    ),
+    "Amostras que violam o critério de Fresnel (%)": (
+        "Samples below Fresnel clearance criterion (%)",
+        "Muestras que incumplen el criterio de Fresnel (%)",
+        "Échantillons sous le critère de dégagement de Fresnel (%)",
+        "Stützpunkte unter dem Fresnel-Freiraumkriterium (%)",
+    ),
+    "Identificador do resultado: {x0}": (
+        "Result identifier: {x0}", "Identificador del resultado: {x0}",
+        "Identifiant du résultat : {x0}", "Ergebniskennung: {x0}",
+    ),
+    "Limiar {mode}: {threshold:g} dBm": (
+        "{mode} threshold: {threshold:g} dBm", "Umbral {mode}: {threshold:g} dBm",
+        "Seuil {mode} : {threshold:g} dBm", "Schwellenwert {mode}: {threshold:g} dBm",
+    ),
+    "Limiar RX em {receiver} ({mode}): {threshold:g} dBm.": (
+        "RX threshold at {receiver} ({mode}): {threshold:g} dBm.",
+        "Umbral RX en {receiver} ({mode}): {threshold:g} dBm.",
+        "Seuil RX à {receiver} ({mode}) : {threshold:g} dBm.",
+        "Empfangsschwelle bei {receiver} ({mode}): {threshold:g} dBm.",
+    ),
+    "Simulações de Monte Carlo em {transmitter} → {receiver}: {counts}.": (
+        "Monte Carlo trials for {transmitter} → {receiver}: {counts}.",
+        "Simulaciones de Monte Carlo en {transmitter} → {receiver}: {counts}.",
+        "Simulations de Monte-Carlo pour {transmitter} → {receiver} : {counts}.",
+        "Monte-Carlo-Durchläufe für {transmitter} → {receiver}: {counts}.",
+    ),
+    "Disponibilidade anual estimada": (
+        "Estimated annual availability", "Disponibilidad anual estimada",
+        "Disponibilité annuelle estimée", "Geschätzte Jahresverfügbarkeit",
+    ),
+    "Sucesso condicional": (
+        "Conditional success", "Éxito condicional", "Succès conditionnel", "Bedingter Erfolg",
+    ),
+    "Os traços mostram a faixa anual com caudas desconhecidas.": (
+        "Whiskers show the annual range with unknown tails.",
+        "Los trazos muestran el intervalo anual con colas desconocidas.",
+        "Les traits montrent la plage annuelle avec queues inconnues.",
+        "Striche zeigen die Jahresspanne bei unbekannten Randbereichen.",
+    ),
+    "* Sucesso condicional ao percentil indicado.": (
+        "* Success conditional on the indicated percentile.",
+        "* Éxito condicionado al percentil indicado.",
+        "* Succès conditionnel au percentile indiqué.",
+        "* Erfolg bedingt durch das angegebene Perzentil.",
+    ),
+    "Modo RX": ("RX mode", "Modo RX", "Mode RX", "Empfangsbetriebsart"),
+    "Vista parcial da cobertura": (
+        "Partial coverage view", "Vista parcial de la cobertura",
+        "Vue partielle de la couverture", "Teilausschnitt der Funkversorgung",
+    ),
+    "Os percentuais usam todas as células válidas do raio de {radius:g} km, incluindo células sobre o mar quando presentes.": (
+        "Percentages use all valid cells within the {radius:g} km radius, including cells over the sea when present.",
+        "Los porcentajes usan todas las celdas válidas en el radio de {radius:g} km, incluidas las celdas sobre el mar cuando las haya.",
+        "Les pourcentages portent sur toutes les cellules valides dans le rayon de {radius:g} km, y compris les cellules en mer le cas échéant.",
+        "Die Prozentwerte beziehen sich auf alle gültigen Zellen im Radius von {radius:g} km, einschließlich vorhandener Zellen über dem Meer.",
+    ),
+    "A margem máxima vem de uma célula calculada em espaço livre a uma distância efetiva de {distance:g} m.": (
+        "The maximum margin comes from a cell evaluated in free space at an effective distance of {distance:g} m.",
+        "El margen máximo corresponde a una celda calculada en espacio libre a una distancia efectiva de {distance:g} m.",
+        "La marge maximale provient d’une cellule calculée en espace libre à une distance effective de {distance:g} m.",
+        "Die maximale Reserve stammt aus einer mit Freiraumdämpfung berechneten Zelle in {distance:g} m effektiver Entfernung.",
+    ),
+    "O cálculo considera terra interior em todo o perfil, inclusive nos trechos sobre água. Interprete os resultados costeiros e marítimos considerando essa aproximação.": (
+        "The calculation treats the entire profile as inland, including sections over water. Consider this approximation when interpreting coastal and maritime results.",
+        "El cálculo considera el perfil completo como tierra interior, incluidos los tramos sobre agua. Tenga en cuenta esta aproximación al interpretar los resultados costeros y marítimos.",
+        "Le calcul assimile tout le profil à des terres intérieures, y compris les sections au-dessus de l’eau. Tenez compte de cette approximation pour interpréter les résultats côtiers et maritimes.",
+        "Die Berechnung behandelt das gesamte Profil als Binnenland, auch Abschnitte über Wasser. Berücksichtigen Sie diese Näherung bei Küsten- und Seepfaden.",
+    ),
     'S estimado': ('Estimated S', 'S estimado', 'S estimé', 'Geschätzter S-Wert'),
     'Condição de visada': ('Line of sight', 'Línea de vista', 'Visibilité directe', 'Sichtverbindung'),
     'Azimute': ('Azimuth', 'Azimut', 'Azimut', 'Azimut'),
@@ -140,11 +232,11 @@ MESSAGES: dict[str, tuple[str, str, str, str]] = {
         'Concordance des modèles : {level} • écart {spread:.2f} dB ({low_model} {low_loss:.2f} dB ↔ {high_model} {high_loss:.2f} dB).',
         'Modellübereinstimmung: {level} • Spannweite {spread:.2f} dB ({low_model} {low_loss:.2f} dB ↔ {high_model} {high_loss:.2f} dB).',
     ),
-    'Dispersão entre a maior e a menor perda: alta até 3 dB, média acima de 3 até 6 dB, baixa acima de 6 dB. É uma comparação numérica entre modelos.': (
-        'Agreement by spread between the highest and lowest loss: high through 3 dB, medium above 3 through 6 dB, low above 6 dB. This is a numerical comparison of models.',
-        'Concordancia según la dispersión entre la mayor y la menor pérdida: alta hasta 3 dB, media por encima de 3 y hasta 6 dB, baja por encima de 6 dB. Es una comparación numérica de los modelos.',
-        'Concordance selon l’écart entre les pertes extrêmes : élevée jusqu’à 3 dB, moyenne au-delà de 3 et jusqu’à 6 dB, faible au-delà de 6 dB. Il s’agit d’une comparaison numérique des modèles.',
-        'Übereinstimmung nach Spannweite zwischen größter und kleinster Dämpfung: hoch bis 3 dB, mittel über 3 bis 6 dB, gering über 6 dB. Das ist ein numerischer Modellvergleich.',
+    'Concordância entre modelos: alta até 3 dB de dispersão, média acima de 3 até 6 dB e baixa acima de 6 dB. A dispersão é a diferença entre a maior e a menor perda prevista.': (
+        'Model agreement is high up to 3 dB of spread, medium above 3 through 6 dB and low above 6 dB. Spread is the difference between the highest and lowest predicted loss.',
+        'La concordancia entre modelos es alta hasta 3 dB de dispersión, media por encima de 3 y hasta 6 dB y baja por encima de 6 dB. La dispersión es la diferencia entre la mayor y la menor pérdida prevista.',
+        'La concordance des modèles est élevée jusqu’à 3 dB d’écart, moyenne au-delà de 3 et jusqu’à 6 dB et faible au-delà de 6 dB. L’écart est la différence entre les pertes prévues maximale et minimale.',
+        'Die Modellübereinstimmung ist bis 3 dB Spannweite hoch, über 3 bis 6 dB mittel und über 6 dB gering. Die Spannweite ist die Differenz zwischen größter und kleinster prognostizierter Dämpfung.',
     ),
     'Margem de projeto: robusto quando todas são ≥10 dB; viável quando todas são ≥3 dB; marginal quando ao menos uma é ≥−3 dB; improvável abaixo disso; indeterminado sem margem aplicável.': (
         'Design margins: robust if all are ≥10 dB, viable if all are ≥3 dB, marginal if any is ≥−3 dB, unlikely below that, and indeterminate without an applicable margin.',

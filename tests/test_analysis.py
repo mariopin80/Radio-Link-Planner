@@ -46,7 +46,9 @@ def test_recommendations_follow_viability_and_mode_permission(reference_project,
         assert assessment.uncertainties
         if classification == "robust":
             assert not assessment.recommendations
-            assert "dispensa mudanças" in recommendation_lines(assessment.to_dict())[0]
+            lines = recommendation_lines(assessment.to_dict())
+            assert "nas condições simuladas" in lines[0]
+            assert "interferência no receptor" in lines[1]
             continue
         ssb = [item for item in assessment.recommendations if "SSB" in item["action"]]
         assert bool(ssb) is allow_mode_change

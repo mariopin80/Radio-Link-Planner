@@ -10,9 +10,10 @@ from .modes import threshold_dbm
 
 
 AGREEMENT_CRITERIA = (
-    "Dispersão entre a maior e a menor perda: alta até 3 dB, média acima de 3 até 6 dB, "
-    "baixa acima de 6 dB. É uma comparação numérica entre modelos."
+    "Concordância entre modelos: alta até 3 dB de dispersão, média acima de 3 até 6 dB "
+    "e baixa acima de 6 dB. A dispersão é a diferença entre a maior e a menor perda prevista."
 )
+LOCAL_NOISE_UNKNOWN = "o ruído local do receptor ainda não foi medido"
 VIABILITY_CRITERIA = (
     "Margem de projeto: robusto quando todas são ≥10 dB; viável quando todas são ≥3 dB; "
     "marginal quando ao menos uma é ≥−3 dB; improvável abaixo disso; indeterminado sem margem aplicável."
@@ -92,11 +93,8 @@ def assess(
         "vegetação e edificações não estão representadas"
         if not project.clutter_included
         else "a qualidade da cobertura do solo varia ao longo do percurso",
-        "o ruído local do receptor ainda não foi medido"
-        if all(
-            terminal.receiver.external_noise_db == 0.0
-            for terminal in (project.terminal_a, project.terminal_b)
-        )
+        LOCAL_NOISE_UNKNOWN
+        if direction.terminals(project)[1].receiver.external_noise_db == 0.0
         else "o ruído externo se baseia na estimativa configurada",
         "erros verticais do DEM não são amostrados no Monte Carlo 0.1",
     ]
@@ -209,7 +207,10 @@ def model_diagnostic_lines(direction: dict) -> list[str]:
 def recommendation_lines(assessment: dict) -> list[str]:
     classification = assessment["classification"]
     if classification == "robust":
-        return [tr("A margem calculada é suficiente. A análise dispensa mudanças de equipamento.")]
+        lines = [tr("Os modelos indicam margem suficiente nas condições simuladas.")]
+        if LOCAL_NOISE_UNKNOWN in assessment.get("uncertainties", ()):
+            lines.append(tr("Verifique o ruído e a interferência no receptor antes de decidir sobre o equipamento."))
+        return lines
     if classification == "indeterminate":
         return [tr("Confirme os dados e obtenha uma margem de projeto para orientar as recomendações.")]
     items = assessment["recommendations"]

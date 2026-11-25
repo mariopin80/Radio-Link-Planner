@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "radio-link-planner"
-version = "0.6.2"
+version = "0.6.3"
 description = "Planejamento científico local de enlaces e cobertura VHF/UHF"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -44,6 +44,9 @@ radio-link-desktop = "radiolink.desktop:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+radiolink = ["fonts/*.ttf", "fonts/LICENSE-DejaVu.txt"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"

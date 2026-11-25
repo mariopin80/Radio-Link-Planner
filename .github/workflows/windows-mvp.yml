@@ -5,7 +5,7 @@ on:
   push:
     branches:
       - main
-      - release/v0.6.2
+      - release/v0.6.3
     paths:
       - ".github/workflows/windows-mvp.yml"
       - ".github/workflows/tests.yml"
@@ -29,6 +29,11 @@ jobs:
   build-windows:
     runs-on: windows-latest
     timeout-minutes: 45
+    env:
+      RLP_RELEASE_VERSION: "0.6.3"
+      RLP_SETUP_FILE: RadioLinkPlanner-0.6.3-Windows-x64-Setup.exe
+      RLP_PREVIOUS_TAG: "v0.6.2"
+      RLP_PREVIOUS_SETUP_FILE: RadioLinkPlanner-0.6.2-Windows-x64-Setup-r2.exe
     steps:
       - uses: actions/checkout@v4
 
@@ -61,7 +66,15 @@ jobs:
         run: python scripts/bootstrap_itu_data.py
 
       - name: Run scientific test suite
-        run: pytest
+        run: pytest -k "not test_preview_simulation_and_explicit_application and not test_ui_languages_projects_about_and_single_remaining_time"
+
+      - name: Run Windows interface tests in fresh Python processes
+        shell: pwsh
+        run: |
+          python -m pytest tests/test_height_optimization.py::test_preview_simulation_and_explicit_application
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pytest tests/test_i18n.py::test_ui_languages_projects_about_and_single_remaining_time
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build desktop application
         shell: pwsh
@@ -82,6 +95,7 @@ jobs:
             --add-data "legal/THIRD_PARTY_NOTICES.txt;licenses" `
             --paths src `
             --add-data "assets;assets" `
+            --add-data "src/radiolink/fonts;radiolink/fonts" `
             --add-data "examples/morro_jacu_palmira.json;examples" `
             --add-data "tests/reference/morro_jacu_palmira/terrain_profile.csv;tests/reference/morro_jacu_palmira" `
             --add-data ".map-deps/node_modules/maplibre-gl/dist/maplibre-gl.js;map-assets" `
@@ -101,7 +115,7 @@ jobs:
         run: |
           $names = @(
             "Py1812-NOTICE.txt", "Py2001-NOTICE.txt",
-            "THIRD_PARTY_NOTICES.txt", "LICENSE.md", "NOTICE.md"
+            "THIRD_PARTY_NOTICES.txt", "LICENSE.md", "NOTICE.md", "LICENSE-DejaVu.txt"
           )
           foreach ($name in $names) {
             $found = Get-ChildItem -Path "dist/RadioLinkPlanner" -Recurse -File -Filter $name
@@ -201,7 +215,7 @@ jobs:
       - name: Verify installer terms and acceptance
         shell: pwsh
         run: |
-          python scripts/verify_windows_installer_terms.py "installer-output/RadioLinkPlanner-0.6.2-Windows-x64-Setup-r2.exe"
+          python scripts/verify_windows_installer_terms.py "installer-output/$env:RLP_SETUP_FILE"
 
       - name: Smoke-test upgrade, shortcuts and installed application
         shell: pwsh
@@ -209,20 +223,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $installer = Resolve-Path `
-            "installer-output\RadioLinkPlanner-0.6.2-Windows-x64-Setup-r2.exe"
+            "installer-output\$env:RLP_SETUP_FILE"
           $installDirectory = Join-Path $env:RUNNER_TEMP "RadioLinkPlanner"
           $smokeOutput = Join-Path $env:RUNNER_TEMP "rlp-installer-smoke"
           $previousDirectory = Join-Path $env:RUNNER_TEMP "rlp-previous-installer"
-          gh release download "v0.6.1" `
+          gh release download "$env:RLP_PREVIOUS_TAG" `
             --repo "$env:GITHUB_REPOSITORY" `
-            --pattern "RadioLinkPlanner-0.6.1-Windows-x64-Setup.exe" `
+            --pattern $env:RLP_PREVIOUS_SETUP_FILE `
             --dir $previousDirectory
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $previousSetup = Start-Process `
-            -FilePath (Join-Path $previousDirectory "RadioLinkPlanner-0.6.1-Windows-x64-Setup.exe") `
+            -FilePath (Join-Path $previousDirectory $env:RLP_PREVIOUS_SETUP_FILE) `
             -ArgumentList @(
               "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-",
-              "/TASKS=desktopicon", "/DIR=$installDirectory"
+              "/ACCEPTTERMS=1", "/TASKS=desktopicon", "/DIR=$installDirectory"
             ) `
             -Wait -PassThru
           if ($previousSetup.ExitCode -ne 0) { exit $previousSetup.ExitCode }
@@ -242,7 +256,7 @@ jobs:
             exit $setup.ExitCode
           }
           & "scripts\verify_windows_shortcuts.ps1" `
-            -InstallDirectory $installDirectory -Version "0.6.2"
+            -InstallDirectory $installDirectory -Version "$env:RLP_RELEASE_VERSION"
           $process = Start-Process `
             -FilePath "$installDirectory\RadioLinkPlanner.exe" `
             -ArgumentList "--smoke-test", $smokeOutput `
@@ -297,7 +311,7 @@ jobs:
         shell: pwsh
         run: |
           $files = @(
-            "installer-output\RadioLinkPlanner-0.6.2-Windows-x64-Setup-r2.exe"
+            "installer-output\$env:RLP_SETUP_FILE"
           )
           $lines = foreach ($file in $files) {
             $hash = Get-FileHash -Algorithm SHA256 $file
@@ -305,62 +319,50 @@ jobs:
           }
           $lines | Set-Content -Encoding ascii "SHA256SUMS.txt"
 
-      - name: Publish revised Windows installer
+      - name: Publish validated Windows installer
         if: github.ref == 'refs/heads/main'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "v0.6.2"
+          $version = $env:RLP_RELEASE_VERSION
+          $tag = "v$version"
           $repository = $env:GITHUB_REPOSITORY
           $currentHead = gh api "repos/$repository/git/ref/heads/main" --jq .object.sha
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($currentHead -ne $env:GITHUB_SHA) {
-            Write-Host "A newer commit is being validated; skipping this release."
+            Write-Host "A newer commit is being validated; skipping publication."
             exit 0
           }
+          $null = gh api "repos/$repository/releases/tags/$tag" 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag already exists."
+            exit 0
+          }
+          $tagRef = git ls-remote origin "refs/tags/$tag"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($tagRef -and ($tagRef -split '\s+')[0] -ne $env:GITHUB_SHA) {
+            throw "Tag $tag points to a different commit."
+          }
+          gh release create $tag "installer-output/$env:RLP_SETUP_FILE" "SHA256SUMS.txt" `
+            --repo $repository --target $env:GITHUB_SHA `
+            --prerelease --title "PU2PTU - Radio Link Planner $version" `
+            --notes-file "docs/release-$version.md"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           $release = gh api "repos/$repository/releases/tags/$tag" | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if ($release.id -ne 451960880 -or $release.draft -or -not $release.prerelease) {
-            throw "Unexpected release for $tag."
-          }
-          $name = "RadioLinkPlanner-0.6.2-Windows-x64-Setup-r2.exe"
-          $previousName = "RadioLinkPlanner-0.6.2-Windows-x64-Setup.exe"
-          $previous = $release.assets | Where-Object { $_.name -ceq $previousName }
-          if ($previous -and $previous.id -ne 769362252) {
-            throw "Unexpected original installer for $tag."
-          }
-          $revision = $release.assets | Where-Object { $_.name -ceq $name }
-          if (-not $revision) {
-            gh release upload $tag "installer-output/$name" --repo $repository
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            $updated = gh api "repos/$repository/releases/tags/$tag" | ConvertFrom-Json
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            $revision = $updated.assets | Where-Object { $_.name -ceq $name }
-            $hash = (Get-FileHash -Algorithm SHA256 "installer-output/$name").Hash.ToLowerInvariant()
-            if ($revision.digest -cne "sha256:$hash") { throw "Uploaded installer hash mismatch." }
-          }
-          if ($revision.state -ne "uploaded" -or $revision.digest -cnotmatch '^sha256:[a-f0-9]{64}$') {
-            throw "The revised installer is missing or incomplete."
-          }
-
-          $checksum = Join-Path $env:RUNNER_TEMP "SHA256SUMS.txt"
-          "$($revision.digest.Substring(7))  $name" | Set-Content -Encoding ascii $checksum
-          gh release upload $tag $checksum --clobber --repo $repository
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          gh release edit $tag --notes-file "docs/release-0.6.2.md" --repo $repository
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if ($previous) {
-            gh release delete-asset $tag $previousName --yes --repo $repository
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $asset = $release.assets | Where-Object { $_.name -ceq $env:RLP_SETUP_FILE }
+          $hash = (Get-FileHash -Algorithm SHA256 "installer-output/$env:RLP_SETUP_FILE").Hash.ToLowerInvariant()
+          if ($asset.state -ne "uploaded" -or $asset.digest -cne "sha256:$hash") {
+            throw "Uploaded installer hash mismatch."
           }
 
       - uses: actions/upload-artifact@v4
         with:
-          name: RadioLinkPlanner-0.6.2-Windows-x64
+          name: RadioLinkPlanner-${{ env.RLP_RELEASE_VERSION }}-Windows-x64
           path: |
-            installer-output/RadioLinkPlanner-0.6.2-Windows-x64-Setup-r2.exe
+            installer-output/${{ env.RLP_SETUP_FILE }}
             SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
@@ -368,7 +370,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: validation-0.6.2-reports
+          name: validation-${{ env.RLP_RELEASE_VERSION }}-reports
           path: smoke-output
           retention-days: 14
 

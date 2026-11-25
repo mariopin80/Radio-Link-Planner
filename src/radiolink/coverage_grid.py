@@ -55,6 +55,7 @@ DIRECT_GRID_ENGINE_VERSION = "2"
 GRID_PROJECTION = "spherical azimuthal equidistant"
 GRID_BLOCK_SIZE = 16
 MINIMUM_P1812_DISTANCE_M = 250.0
+CHECKPOINT_RETRY_DELAYS_S = (0.1, 0.2, 0.4, 0.8)
 MAXIMUM_WORKERS = 12
 PERFORMANCE_HISTORY_LIMIT = 12
 # The optimized model has substantial fixed work per cell. A profile-point-only
@@ -1058,14 +1059,9 @@ def _evaluate_grid_block(spec: GridBlockSpec) -> GridBlockResult:
             try:
                 short_range = distance_m < MINIMUM_P1812_DISTANCE_M
                 if short_range:
-                    effective_distance = max(
-                        1.0,
-                        distance_m,
-                        configuration.resolution_m / 2.0,
-                    )
                     loss = _free_space_loss(
                         configuration,
-                        effective_distance,
+                        short_range_effective_distance_m(distance_m, configuration.resolution_m),
                     )
                 else:
                     bearing_deg = math.degrees(math.atan2(east_m, north_m)) % 360.0
@@ -1244,6 +1240,10 @@ def _free_space_margin(
     distance_m: float,
 ) -> float:
     return _margin_from_loss(configuration, _free_space_loss(configuration, distance_m))
+
+
+def short_range_effective_distance_m(distance_m: float, resolution_m: int) -> float:
+    return max(1.0, distance_m, resolution_m / 2.0)
 
 
 def _free_space_loss(
@@ -1504,7 +1504,23 @@ def _update_checkpoint_metadata(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    os.replace(temporary, paths.metadata)
+    for attempt in range(len(CHECKPOINT_RETRY_DELAYS_S) + 1):
+        try:
+            os.replace(temporary, paths.metadata)
+        except OSError as exc:
+            if getattr(exc, "winerror", None) not in (5, 32, 33):
+                raise
+            if attempt == len(CHECKPOINT_RETRY_DELAYS_S):
+                message = tr("O Windows bloqueou a gravação do checkpoint de cobertura em {path}.",
+                             path=paths.directory)
+                if completed_cells and paths.metadata.is_file():
+                    message += " " + tr(
+                        "Execute novamente com os mesmos parâmetros e a mesma pasta de saída para retomar."
+                    )
+                raise RuntimeError(message) from exc
+            time.sleep(CHECKPOINT_RETRY_DELAYS_S[attempt])
+        else:
+            return
 
 
 def _remove_completed_checkpoint(paths: _CheckpointPaths) -> None:
