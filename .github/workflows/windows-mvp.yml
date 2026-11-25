@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - release/v0.6.3
+      - release/v0.6.3-publish
     paths:
       - ".github/workflows/windows-mvp.yml"
       - ".github/workflows/tests.yml"
@@ -320,7 +321,9 @@ jobs:
           $lines | Set-Content -Encoding ascii "SHA256SUMS.txt"
 
       - name: Publish validated Windows installer
-        if: github.ref == 'refs/heads/main'
+        if: >-
+          github.repository == 'mariopin80/Radio-Link-Planner' &&
+          (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/v0.6.3-publish')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -328,7 +331,8 @@ jobs:
           $version = $env:RLP_RELEASE_VERSION
           $tag = "v$version"
           $repository = $env:GITHUB_REPOSITORY
-          $currentHead = gh api "repos/$repository/git/ref/heads/main" --jq .object.sha
+          $branch = $env:GITHUB_REF_NAME
+          $currentHead = gh api "repos/$repository/git/ref/heads/$branch" --jq .object.sha
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($currentHead -ne $env:GITHUB_SHA) {
             Write-Host "A newer commit is being validated; skipping publication."
